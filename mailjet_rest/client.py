@@ -5,8 +5,10 @@ import json
 import logging
 
 import requests
+from requests.auth import HTTPBasicAuth
 from requests.compat import urljoin
 from .utils.version import get_version
+from .utils.auth import HTTPBearerAuth
 
 requests.packages.urllib3.disable_warnings()
 
@@ -27,14 +29,15 @@ class Config(object):
         # Forward slash is ignored if present in self.version.
         url = urljoin(url, self.version + '/')
         headers = {'Content-type': 'application/json', 'User-agent': self.user_agent}
-        if key.lower() == 'contactslist_csvdata':
-            url = urljoin(url, 'DATA/')
-            headers['Content-type'] = 'text/plain'
-        elif key.lower() == 'batchjob_csverror':
-            url = urljoin(url, 'DATA/')
-            headers['Content-type'] = 'text/csv'
-        elif key.lower() != 'send':
-            url = urljoin(url, 'REST/')
+        if self.version == 'v3' or self.version == 'v3.1':
+            if key.lower() == 'contactslist_csvdata':
+                url = urljoin(url, 'DATA/')
+                headers['Content-type'] = 'text/plain'
+            elif key.lower() == 'batchjob_csverror':
+                url = urljoin(url, 'DATA/')
+                headers['Content-type'] = 'text/csv'
+            elif key.lower() != 'send':
+                url = urljoin(url, 'REST/')
         url = url + key.split('_')[0].lower()
         return url, headers
 
@@ -73,7 +76,7 @@ class Endpoint(object):
 class Client(object):
 
     def __init__(self, auth=None, **kwargs):
-        self.auth = auth
+        self.auth = get_auth(auth)
         version = kwargs.get('version', None)
         self.config = Config(version=version)
 
@@ -89,6 +92,16 @@ class Client(object):
                 action = 'csverror/text:csv'
         url, headers = self.config[name]
         return type(fname, (Endpoint,), {})(url=url, headers=headers, action=action, auth=self.auth)
+
+
+def get_auth(auth):
+    if isinstance(auth, tuple) and len(auth) == 2:
+        return HTTPBasicAuth(*auth)
+    elif isinstance(auth, str):
+        return HTTPBearerAuth(auth)
+    else:
+        raise AuthorizationError('Unsupported authorization format!')
+
 
 
 def api_call(auth, method, url, headers, data=None, filters=None, resource_id=None,
