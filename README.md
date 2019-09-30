@@ -40,7 +40,7 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 ## Compatibility
 
-This library officially supports the following Node.js versions:
+This library officially supports the following Python versions:
 
  - v2.7
  - v3.5
