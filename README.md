@@ -88,23 +88,17 @@ api_key = os.environ['MJ_APIKEY_PUBLIC']
 api_secret = os.environ['MJ_APIKEY_PRIVATE']
 mailjet = Client(auth=(api_key, api_secret), version='v3.1')
 data = {
-  'Messages': [
+  'FromEmail': "pilot@mailjet.com",
+  'FromName': "Your Mailjet Pilot",
+  'Recipients': [
     {
-      "From": {
-        "Email": "$SENDER_EMAIL",
-        "Name": "Me"
-      },
-      "To": [
-        {
-          "Email": "$RECIPIENT_EMAIL",
-          "Name": "You"
-        }
-      ],
-      "Subject": "My first Mailjet Email!",
-      "TextPart": "Greetings from Mailjet!",
-      "HTMLPart": "<h3>Dear passenger 1, welcome to <a href=\"https://www.mailjet.com/\">Mailjet</a>!</h3><br />May the delivery force be with you!"
+      "Email": "passenger@mailjet.com",
+      "Name": "Passenger 1"
     }
-  ]
+  ],
+  'Subject': "Your email flight plan!",
+  'Text-part': "Dear passenger, welcome to Mailjet! May the delivery force be with you!",
+  'Html-part': "<h3>Dear passenger, welcome to Mailjet!</h3><br />May the delivery force be with you!"
 }
 result = mailjet.send.create(data=data)
 print result.status_code
