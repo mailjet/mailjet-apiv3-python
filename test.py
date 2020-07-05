@@ -72,7 +72,7 @@ class TestSuite(unittest.TestCase):
 
     def test_post_with_no_param(self):
         result = self.client.sender.create(data={}).json()
-        self.assertTrue('StatusCode' in result and result['StatusCode'] is not 400)
+        self.assertTrue('StatusCode' in result and result['StatusCode'] != 400)
 
     def test_client_custom_version(self):
         self.client = Client(
