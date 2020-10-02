@@ -139,7 +139,7 @@ For additional information refer to our [API Reference](https://dev.preprod.mail
 
 ### Base URL
 
-The default base domain name for the Mailjet API is `api.mailjet.com`. You can modify this base URL by setting a value for `api_url` in your call:
+The default base domain name for the Mailjet API is `api.eu.mailjet.com`. You can modify this base URL by setting a value for `api_url` in your call:
 
 ```python
 mailjet = Client(auth=(api_key, api_secret),api_url="https://api.us.mailjet.com/")
