@@ -107,8 +107,8 @@ data = {
   ]
 }
 result = mailjet.send.create(data=data)
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 ## Client / Call Configuration Specifics
@@ -166,8 +166,8 @@ data = {
   'Email': 'Mister@mailjet.com'
 }
 result = mailjet.contact.create(data=data)
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 #### Using actions
@@ -195,8 +195,8 @@ data = {
         ]
 }
 result = mailjet.contact_managecontactslists.create(id=id, data=data)
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 ### GET Request
@@ -213,8 +213,8 @@ api_key = os.environ['MJ_APIKEY_PUBLIC']
 api_secret = os.environ['MJ_APIKEY_PRIVATE']
 mailjet = Client(auth=(api_key, api_secret))
 result = mailjet.contact.get()
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 #### Using filtering
@@ -232,8 +232,8 @@ filters = {
   'IsExcludedFromCampaigns': false,
 }
 result = mailjet.contact.get(filters=filters)
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 #### Retrieve a single object
@@ -249,8 +249,8 @@ api_secret = os.environ['MJ_APIKEY_PRIVATE']
 mailjet = Client(auth=(api_key, api_secret))
 id = 'Contact_ID'
 result = mailjet.contact.get(id=id)
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 ### PUT request
@@ -282,8 +282,8 @@ data = {
         ]
 }
 result = mailjet.contactdata.update(id=id, data=data)
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 ### DELETE request
@@ -303,8 +303,8 @@ api_secret = os.environ['MJ_APIKEY_PRIVATE']
 mailjet = Client(auth=(api_key, api_secret))
 id = 'Template_ID'
 result = mailjet.template.delete(id=id)
-print result.status_code
-print result.json()
+print(result.status_code)
+print(result.json())
 ```
 
 ## Contribute
