@@ -39,6 +39,27 @@ class Config(object):
         return url, headers
 
 
+def api_call(auth, method, url, headers, data=None, filters=None, resource_id=None,
+             timeout=60, debug=False, action=None, action_id=None, **kwargs):
+    url = build_url(url, method=method, action=action, resource_id=resource_id, action_id=action_id)
+    req_method = getattr(requests, method)
+
+    try:
+        filters_str = None
+        if filters:
+            filters_str = "&".join("%s=%s" % (k, v) for k, v in filters.items())
+        response = req_method(url, data=data, params=filters_str, headers=headers, auth=auth,
+                              timeout=timeout, verify=True, stream=False)
+        return response
+
+    except requests.exceptions.Timeout:
+        raise TimeoutError
+    except requests.RequestException as e:
+        raise ApiError(e)
+    except Exception as e:
+        raise
+
+
 class Endpoint(object):
 
     def __init__(self, url, headers, auth, action=None):
@@ -47,8 +68,11 @@ class Endpoint(object):
     def __doc__(self):
         return self._doc
 
+    def _api_call(self, *args, **kwargs):
+        return api_call(*args, **kwargs)
+
     def _get(self, filters=None, action_id=None, id=None, **kwargs):
-        return api_call(self._auth, 'get', self._url, headers=self.headers, action=self.action, action_id=action_id, filters=filters, resource_id=id, **kwargs)
+        return self._api_call(self._auth, 'get', self._url, headers=self.headers, action=self.action, action_id=action_id, filters=filters, resource_id=id, **kwargs)
 
     def get_many(self, filters=None, action_id=None, **kwargs):
         return self._get(filters=filters, action_id=action_id **kwargs)
@@ -59,18 +83,20 @@ class Endpoint(object):
     def create(self, data=None, filters=None, id=None, action_id=None, **kwargs):
         if self.headers['Content-type'] == 'application/json':
             data = json.dumps(data)
-        return api_call(self._auth, 'post', self._url, headers=self.headers, resource_id=id, data=data, action=self.action, action_id=action_id, filters=filters, **kwargs)
+        return self._api_call(self._auth, 'post', self._url, headers=self.headers, resource_id=id, data=data, action=self.action, action_id=action_id, filters=filters, **kwargs)
 
     def update(self, id, data, filters=None, action_id=None, **kwargs):
         if self.headers['Content-type'] == 'application/json':
             data = json.dumps(data)
-        return api_call(self._auth, 'put', self._url, resource_id=id, headers=self.headers, data=data, action=self.action, action_id=action_id, filters=filters, **kwargs)
+        return self._api_call(self._auth, 'put', self._url, resource_id=id, headers=self.headers, data=data, action=self.action, action_id=action_id, filters=filters, **kwargs)
 
     def delete(self, id, **kwargs):
-        return api_call(self._auth, 'delete', self._url, action=self.action, headers=self.headers, resource_id=id, **kwargs)
+        return self._api_call(self._auth, 'delete', self._url, action=self.action, headers=self.headers, resource_id=id, **kwargs)
 
 
 class Client(object):
+
+    endpoint_class = Endpoint
 
     def __init__(self, auth=None, **kwargs):
         self.auth = auth
@@ -91,28 +117,7 @@ class Client(object):
             if action == 'csverror':
                 action = 'csverror/text:csv'
         url, headers = self.config[name]
-        return type(fname, (Endpoint,), {})(url=url, headers=headers, action=action, auth=self.auth)
-
-
-def api_call(auth, method, url, headers, data=None, filters=None, resource_id=None,
-             timeout=60, debug=False, action=None, action_id=None, **kwargs):
-    url = build_url(url, method=method, action=action, resource_id=resource_id, action_id=action_id)
-    req_method = getattr(requests, method)
-
-    try:
-        filters_str = None
-        if filters:
-            filters_str = "&".join("%s=%s" % (k, v) for k, v in filters.items())
-        response = req_method(url, data=data, params=filters_str, headers=headers, auth=auth,
-                              timeout=timeout, verify=True, stream=False)
-        return response
-
-    except requests.exceptions.Timeout:
-        raise TimeoutError
-    except requests.RequestException as e:
-        raise ApiError(e)
-    except Exception as e:
-        raise
+        return type(fname, (self.endpoint_class,), {})(url=url, headers=headers, action=action, auth=self.auth)
 
 
 def build_headers(resource, action=None, extra_headers=None):
