@@ -38,9 +38,9 @@ setup(
     license='MIT',
     keywords='Mailjet API v3 / v3.1 Python Wrapper',
 
-    include_package_data=True,
     install_requires=['requests>=2.4.3'],
     tests_require=['unittest'],
     entry_points={},
     packages=find_packages(),
+    package_data={'mailjet_rest': ['py.typed', '*.pyi']}
 )
