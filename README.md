@@ -26,13 +26,14 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 - [Client / Call configuration specifics](#client--call-configuration-specifics)
   - [API versioning](#api-versioning)
   - [Base URL](#base-url)
+- [Pagination](#pagination)
 - [Request examples](#request-examples)
   - [POST request](#post-request)
     - [Simple POST request](#simple-post-request)
     - [Using actions](#using-actions)
   - [GET request](#get-request)
     - [Retrieve all objects](#retrieve-all-objects)
-    - [Use filtering](#use-filtering)
+    - [Using filtering](#using-filtering)
     - [Retrieve a single object](#retrieve-a-single-object)
   - [PUT request](#put-request)
   - [DELETE request](#delete-request)
@@ -146,6 +147,23 @@ mailjet = Client(auth=(api_key, api_secret),api_url="https://api.us.mailjet.com/
 ```
 
 If your account has been moved to Mailjet's **US architecture**, the URL value you need to set is `https://api.us.mailjet.com`.
+
+## Pagination
+Some of the API calls may be paginated. By default if an API call has pagination on it the default amount shown is 10 records.<br/>
+If you want to influence the data you get back you have three API options: `limit`, `offset` and `sort`.<br/>
+These options can always be passed along in the `.get()` of your API call. An example for this can be shown for getting the e-mail templates:<br/>
+```python
+from mailjet_rest import Client
+import os
+api_key = os.environ['MJ_APIKEY_PUBLIC']
+api_secret = os.environ['MJ_APIKEY_PRIVATE']
+mailjet = Client(auth=(api_key, api_secret))
+
+result = mailjet.template.get(filters={'limit': 100, 'offset': 10, 'sort': 'ID asc'}).json()
+```
+In this sample the API call would return 100 transactional e-mail templates, sorted by ID ascending, starting from position 11 up to position 111.<br/>
+You can find the official documentation [here](https://dev.mailjet.com/email/guides/).
+
 
 ## Request examples
 
