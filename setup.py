@@ -28,7 +28,7 @@ setup(
     classifiers=['Development Status :: 4 - Beta',
                  'Environment :: Console',
                  'Intended Audience :: Developers',
-                 'License :: OSI Approved :: GNU General Public License (GPL)',
+                 'License :: The MIT License (MIT)',
                  'Natural Language :: English',
                  'Operating System :: OS Independent',
                  'Programming Language :: Python :: 2.7',
