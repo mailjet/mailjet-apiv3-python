@@ -137,7 +137,7 @@ API_SECRET = os.environ['MJ_APIKEY_PRIVATE']
 mailjet = Client(auth=(API_KEY, API_SECRET), version='v3.1')
 ```
 
-For additional information refer to our [API Reference](https://dev.preprod.mailjet.com/reference/overview/versioning/).
+For additional information refer to our [API Reference](https://dev.mailjet.com/reference/overview/versioning/).
 
 ### Base URL
 
