@@ -172,6 +172,8 @@ python_version = "3.11"
 pretty = true
 # 3rd party import
 ignore_missing_imports = true
+# flag to suppress Name <var> already defined on line
+allow_redefinition = true
 # Disallow dynamic typing
 disallow_any_unimported = false
 disallow_any_expr = false

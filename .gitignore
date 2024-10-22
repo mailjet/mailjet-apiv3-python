@@ -32,3 +32,5 @@ build/
 dist/
 venv/
 .idea/
+
+.ruff_cache/

@@ -1,7 +1,10 @@
-VERSION = (1, 3, 3)
+from __future__ import annotations
 
 
-def get_version(version=None):
+VERSION: tuple[int, int, int] = (1, 3, 3)
+
+
+def get_version(version: tuple | None = None) -> str:
     """
     Calculate package version based on a 3 item tuple.
     In addition verify that the tuple contains 3 items

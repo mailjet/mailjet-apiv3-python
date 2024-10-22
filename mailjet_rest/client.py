@@ -1,17 +1,23 @@
+from __future__ import annotations
+
 import json
 import logging
 import re
+from collections.abc import Callable
+from typing import AnyStr, Any, Union
+from re import Match
 
 import requests
 from requests.compat import urljoin
+from requests.models import Response
 
 from .utils.version import get_version
 
 
-requests.packages.urllib3.disable_warnings()
+requests.packages.urllib3.disable_warnings()  # type: ignore
 
 
-def prepare_url(key):
+def prepare_url(key: Match[str]) -> str:
     """Replaces capital letters to lower one with dash prefix."""
     char_elem = key.group(0)
     if char_elem.isupper():
@@ -25,12 +31,12 @@ class Config:
     version = "v3"
     user_agent = "mailjet-apiv3-python/v" + get_version()
 
-    def __init__(self, version=None, api_url=None):
+    def __init__(self, version: str | None = None, api_url: str | None = None):
         if version is not None:
             self.version = version
         self.api_url = api_url or self.DEFAULT_API_URL
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         # Append version to URL.
         # Forward slash is ignored if present in self.version.
         url = urljoin(self.api_url, self.version + "/")
@@ -48,10 +54,16 @@ class Config:
 
 
 class Endpoint:
-    def __init__(self, url, headers, auth, action=None):
+    def __init__(self, url: str, headers: dict[str, str], auth: tuple[str, str], action: str | None =None):
         self._url, self.headers, self._auth, self.action = url, headers, auth, action
 
-    def _get(self, filters=None, action_id=None, id=None, **kwargs):
+    def _get(  # type: ignore[no-untyped-def]
+        self,
+        filters: dict[str, str | int | float] | None = None,
+        action_id: str | None = None,
+        id: str | None = None,
+        **kwargs,  # type: ignore
+    ) -> Response:
         return api_call(
             self._auth,
             "get",
@@ -64,69 +76,80 @@ class Endpoint:
             **kwargs,
         )
 
-    def get_many(self, filters=None, action_id=None, **kwargs):
+    def get_many(  # type: ignore[no-untyped-def]
+        self,
+        filters: dict[str, str | int | float] | None = None,
+        action_id: str | None = None,
+        **kwargs,
+    ) -> Response:
         return self._get(filters=filters, action_id=action_id, **kwargs)
 
-    def get(self, id=None, filters=None, action_id=None, **kwargs):
+    def get(  # type: ignore[no-untyped-def]
+        self,
+        id: str | None = None,
+        filters: dict[str, str | int | float] | None = None,
+        action_id: str | None = None,
+        **kwargs,
+    ) -> Response:
         return self._get(id=id, filters=filters, action_id=action_id, **kwargs)
 
-    def create(
+    def create(  # type: ignore[no-untyped-def]
         self,
-        data=None,
-        filters=None,
-        id=None,
-        action_id=None,
-        ensure_ascii=True,
-        data_encoding="utf-8",
+        data: dict | None = None,
+        filters: dict[str, str | int | float] | None = None,
+        id: str | None = None,
+        action_id: str | None = None,
+        ensure_ascii: bool = True,
+        data_encoding: str = "utf-8",
         **kwargs,
-    ):
-        if self.headers["Content-type"] == "application/json":
-            if ensure_ascii:
-                data = json.dumps(data)
-            else:
-                data = json.dumps(data, ensure_ascii=False).encode(data_encoding)
+    ) -> Response:
+        json_data: Union[str, bytes, None] = None
+        if self.headers.get("Content-type") == "application/json" and data is not None:
+            json_data = json.dumps(data, ensure_ascii=ensure_ascii)
+            if not ensure_ascii:
+                json_data = json_data.encode(data_encoding)
         return api_call(
             self._auth,
             "post",
             self._url,
             headers=self.headers,
             resource_id=id,
-            data=data,
+            data=json_data,
             action=self.action,
             action_id=action_id,
             filters=filters,
             **kwargs,
         )
 
-    def update(
+    def update(  # type: ignore[no-untyped-def]
         self,
-        id,
-        data,
-        filters=None,
-        action_id=None,
-        ensure_ascii=True,
-        data_encoding="utf-8",
+        id: str | None,
+        data: bytes,
+        filters: dict[str, str | int | float] | None = None,
+        action_id: str | None = None,
+        ensure_ascii: bool = True,
+        data_encoding: str = "utf-8",
         **kwargs,
-    ):
-        if self.headers["Content-type"] == "application/json":
-            if ensure_ascii:
-                data = json.dumps(data)
-            else:
-                data = json.dumps(data, ensure_ascii=False).encode(data_encoding)
+    ) -> Response:
+        json_data: Union[str, bytes, None] = None
+        if self.headers.get("Content-type") == "application/json" and data is not None:
+            json_data = json.dumps(data, ensure_ascii=ensure_ascii)
+            if not ensure_ascii:
+                json_data = json_data.encode(data_encoding)
         return api_call(
             self._auth,
             "put",
             self._url,
             resource_id=id,
             headers=self.headers,
-            data=data,
+            data=json_data,
             action=self.action,
             action_id=action_id,
             filters=filters,
             **kwargs,
         )
 
-    def delete(self, id, **kwargs):
+    def delete(self, id: str | None, **kwargs) -> Response:  # type: ignore[no-untyped-def]
         return api_call(
             self._auth,
             "delete",
@@ -139,13 +162,13 @@ class Endpoint:
 
 
 class Client:
-    def __init__(self, auth=None, **kwargs):
+    def __init__(self, auth: tuple[str, str] | None=None, **kwargs):  # type: ignore[no-untyped-def]
         self.auth = auth
         version = kwargs.get("version")
         api_url = kwargs.get("api_url")
         self.config = Config(version=version, api_url=api_url)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> str:
         name = re.sub(r"[A-Z]", prepare_url, name)
         split = name.split("_")
         # identify the resource
@@ -164,20 +187,20 @@ class Client:
         )
 
 
-def api_call(
-    auth,
-    method,
-    url,
-    headers,
-    data=None,
-    filters=None,
-    resource_id=None,
-    timeout=60,
-    debug=False,
-    action=None,
-    action_id=None,
+def api_call(  # type: ignore[no-untyped-def]
+    auth: tuple[str, str],
+    method: str | None,
+    url: str,
+    headers: dict[str, str],
+    data: str| bytes | None = None,
+    filters: dict[str, str | int | float] | None = None,
+    resource_id: str | None = None,
+    timeout: int = 60,
+    debug: bool = False,
+    action: str | None = None,
+    action_id: str | None = None,
     **kwargs,
-):
+) -> Response:
     url = build_url(
         url, method=method, action=action, resource_id=resource_id, action_id=action_id
     )
@@ -208,7 +231,10 @@ def api_call(
         return response
 
 
-def build_headers(resource, action=None, extra_headers=None):
+def build_headers(
+    resource: str, action: str | None = None, extra_headers: dict | None = None
+) -> dict[str, str]:
+    """Build headers based on resource and action."""
     headers = {"Content-type": "application/json"}
 
     if resource.lower() == "contactslist" and action.lower() == "csvdata":
@@ -222,17 +248,23 @@ def build_headers(resource, action=None, extra_headers=None):
     return headers
 
 
-def build_url(url, method, action=None, resource_id=None, action_id=None):
+def build_url(
+    url: str,
+    method: str | None,
+    action: str | None = None,
+    resource_id: str | None = None,
+    action_id: str | None = None,
+) -> str:
+    if resource_id:
+        url += f"/{resource_id}"
     if action:
         url += f"/{action}"
         if action_id:
             url += f"/{action_id}"
-    if resource_id:
-        url += f"/{resource_id}"
     return url
 
 
-def parse_response(response, debug=False):
+def parse_response(response: Response, debug: bool = False) -> dict:
     data = response.json()
 
     if debug:
