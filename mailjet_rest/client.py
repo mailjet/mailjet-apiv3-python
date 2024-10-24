@@ -26,10 +26,10 @@ def prepare_url(key: Match[str]) -> str:
 
 
 class Config:
-    DEFAULT_API_URL = "https://api.mailjet.com/"
-    API_REF = "http://dev.mailjet.com/email-api/v3/"
-    version = "v3"
-    user_agent = "mailjet-apiv3-python/v" + get_version()
+    DEFAULT_API_URL: str = "https://api.mailjet.com/"
+    API_REF: str = "http://dev.mailjet.com/email-api/v3/"
+    version: str = "v3"
+    user_agent: str = "mailjet-apiv3-python/v" + get_version()
 
     def __init__(self, version: str | None = None, api_url: str | None = None):
         if version is not None:
@@ -124,7 +124,7 @@ class Endpoint:
     def update(  # type: ignore[no-untyped-def]
         self,
         id: str | None,
-        data: bytes,
+        data: dict | None = None,
         filters: dict[str, str | int | float] | None = None,
         action_id: str | None = None,
         ensure_ascii: bool = True,

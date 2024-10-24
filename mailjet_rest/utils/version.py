@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-VERSION: tuple[int, int, int] = (1, 3, 3)
+VERSION: tuple[int, int, int] = (1, 3, 5)
 
 
 def get_version(version: tuple | None = None) -> str:

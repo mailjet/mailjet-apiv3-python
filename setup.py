@@ -3,12 +3,14 @@ from pathlib import Path
 from setuptools import find_packages
 from setuptools import setup
 
+from build.lib.mailjet_rest.utils.version import get_version
+
 
 HERE = Path(Path(__file__).parent).resolve()
 PACKAGE_NAME = "mailjet_rest"
 
 # Dynamically calculate the version based on mailjet_rest.VERSION.
-version = "latest"
+version = get_version()
 
 setup(
     name=PACKAGE_NAME,
@@ -16,7 +18,7 @@ setup(
     author_email="starenka0@gmail.com",
     maintainer="Mailjet",
     maintainer_email="api@mailjet.com",
-    version="latest",
+    version=version,
     download_url="https://github.com/mailjet/mailjet-apiv3-python/releases/" + version,
     url="https://github.com/mailjet/mailjet-apiv3-python",
     description=("Mailjet V3 API wrapper"),
