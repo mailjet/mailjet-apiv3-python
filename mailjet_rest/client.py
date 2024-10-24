@@ -186,7 +186,7 @@ def api_call(
     try:
         filters_str = None
         if filters:
-            filters_str = "&".join("%s=%s" % (k, v) for k, v in filters.items())
+            filters_str = "&".join(f"{k}={v}" for k, v in filters.items())
         response = req_method(
             url,
             data=data,
@@ -223,12 +223,12 @@ def build_headers(resource, action=None, extra_headers=None):
 
 
 def build_url(url, method, action=None, resource_id=None, action_id=None):
+    if resource_id:
+        url += f"/{resource_id}"
     if action:
         url += f"/{action}"
         if action_id:
             url += f"/{action_id}"
-    if resource_id:
-        url += f"/{resource_id}"
     return url
 
 

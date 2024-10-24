@@ -140,7 +140,7 @@ If your account has been moved to Mailjet's **US architecture**, the URL value y
 
 ### URL path
 
-According to python special characters limitations we can't use slashes `/` and dashes `-` which is acceptable for URL path building. Instead python client uses another way for path building. You should replase slashes `/` by underscore `_` and dashes `-` by capitalizing next letter in path.
+According to python special characters limitations we can't use slashes `/` and dashes `-` which is acceptable for URL path building. Instead python client uses another way for path building. You should replace slashes `/` by underscore `_` and dashes `-` by capitalizing next letter in path.
 For example, to reach `statistics/link-click` path you should call `statistics_linkClick` attribute of python client.
 
 ```python
@@ -152,7 +152,7 @@ filters = {
 result = mailjet.statistics_linkClick.get(filters=filters)
 print(result.status_code)
 print(result.json())
-``` 
+```
 
 ## Request examples
 
