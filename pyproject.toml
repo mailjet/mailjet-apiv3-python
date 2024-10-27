@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 include = ["mailjet_rest", "mailjet_rest.*", "tests", "test.py"]
 
 [tool.setuptools.package-data]
-mailjet_rest = ["py.typed"]
+mailjet_rest = ["py.typed", "*.pyi"]
 
 [project]
 name = "mailjet_rest"
