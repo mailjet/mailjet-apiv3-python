@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Callable
-from typing import AnyStr, Any, Union
+from collections.abc import Mapping
+from typing import Any
 from re import Match
 
 import requests
@@ -31,7 +31,7 @@ class Config:
     version: str = "v3"
     user_agent: str = "mailjet-apiv3-python/v" + get_version()
 
-    def __init__(self, version: str | None = None, api_url: str | None = None):
+    def __init__(self, version: str | None = None, api_url: str | None = None) -> None:
         if version is not None:
             self.version = version
         self.api_url = api_url or self.DEFAULT_API_URL
@@ -40,7 +40,7 @@ class Config:
         # Append version to URL.
         # Forward slash is ignored if present in self.version.
         url = urljoin(self.api_url, self.version + "/")
-        headers = {"Content-type": "application/json", "User-agent": self.user_agent}
+        headers: dict[str, str] = {"Content-type": "application/json", "User-agent": self.user_agent}
         if key.lower() == "contactslist_csvdata":
             url = urljoin(url, "DATA/")
             headers["Content-type"] = "text/plain"
@@ -54,15 +54,15 @@ class Config:
 
 
 class Endpoint:
-    def __init__(self, url: str, headers: dict[str, str], auth: tuple[str, str], action: str | None =None):
+    def __init__(self, url: str, headers: dict[str, str], auth: tuple[str, str], action: str | None =None) -> None:
         self._url, self.headers, self._auth, self.action = url, headers, auth, action
 
     def _get(  # type: ignore[no-untyped-def]
         self,
-        filters: dict[str, str | int | float] | None = None,
+        filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
         id: str | None = None,
-        **kwargs,  # type: ignore
+        **kwargs: Any,
     ) -> Response:
         return api_call(
             self._auth,
@@ -78,32 +78,32 @@ class Endpoint:
 
     def get_many(  # type: ignore[no-untyped-def]
         self,
-        filters: dict[str, str | int | float] | None = None,
+        filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         return self._get(filters=filters, action_id=action_id, **kwargs)
 
     def get(  # type: ignore[no-untyped-def]
         self,
         id: str | None = None,
-        filters: dict[str, str | int | float] | None = None,
+        filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
         return self._get(id=id, filters=filters, action_id=action_id, **kwargs)
 
     def create(  # type: ignore[no-untyped-def]
         self,
         data: dict | None = None,
-        filters: dict[str, str | int | float] | None = None,
+        filters: Mapping[str, str | Any] | None = None,
         id: str | None = None,
         action_id: str | None = None,
         ensure_ascii: bool = True,
         data_encoding: str = "utf-8",
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
-        json_data: Union[str, bytes, None] = None
+        json_data: str | bytes | None = None
         if self.headers.get("Content-type") == "application/json" and data is not None:
             json_data = json.dumps(data, ensure_ascii=ensure_ascii)
             if not ensure_ascii:
@@ -125,13 +125,13 @@ class Endpoint:
         self,
         id: str | None,
         data: dict | None = None,
-        filters: dict[str, str | int | float] | None = None,
+        filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
         ensure_ascii: bool = True,
         data_encoding: str = "utf-8",
-        **kwargs,
+        **kwargs: Any,
     ) -> Response:
-        json_data: Union[str, bytes, None] = None
+        json_data: str | bytes | None = None
         if self.headers.get("Content-type") == "application/json" and data is not None:
             json_data = json.dumps(data, ensure_ascii=ensure_ascii)
             if not ensure_ascii:
@@ -149,7 +149,7 @@ class Endpoint:
             **kwargs,
         )
 
-    def delete(self, id: str | None, **kwargs) -> Response:  # type: ignore[no-untyped-def]
+    def delete(self, id: str | None, **kwargs: Any) -> Response:  # type: ignore[no-untyped-def]
         return api_call(
             self._auth,
             "delete",
@@ -162,18 +162,18 @@ class Endpoint:
 
 
 class Client:
-    def __init__(self, auth: tuple[str, str] | None=None, **kwargs):  # type: ignore[no-untyped-def]
+    def __init__(self, auth: tuple[str, str] | None=None, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
         self.auth = auth
-        version = kwargs.get("version")
-        api_url = kwargs.get("api_url")
+        version: str | None = kwargs.get("version")
+        api_url: str | None = kwargs.get("api_url")
         self.config = Config(version=version, api_url=api_url)
 
-    def __getattr__(self, name: str) -> str:
-        name = re.sub(r"[A-Z]", prepare_url, name)
-        split = name.split("_")
+    def __getattr__(self, name: str) -> Endpoint:
+        name: str = re.sub(r"[A-Z]", prepare_url, name)
+        split: list[str] = name.split("_")
         # identify the resource
-        fname = split[0]
-        action = None
+        fname: str = split[0]
+        action: str | None = None
         if len(split) > 1:
             # identify the sub resource (action)
             action = split[1]
@@ -193,13 +193,13 @@ def api_call(  # type: ignore[no-untyped-def]
     url: str,
     headers: dict[str, str],
     data: str| bytes | None = None,
-    filters: dict[str, str | int | float] | None = None,
+    filters: Mapping[str, str | Any] | None = None,
     resource_id: str | None = None,
     timeout: int = 60,
     debug: bool = False,
     action: str | None = None,
     action_id: str | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Response:
     url = build_url(
         url, method=method, action=action, resource_id=resource_id, action_id=action_id
@@ -207,7 +207,7 @@ def api_call(  # type: ignore[no-untyped-def]
     req_method = getattr(requests, method)
 
     try:
-        filters_str = None
+        filters_str: str | None = None
         if filters:
             filters_str = "&".join("%s=%s" % (k, v) for k, v in filters.items())
         response = req_method(
@@ -232,10 +232,10 @@ def api_call(  # type: ignore[no-untyped-def]
 
 
 def build_headers(
-    resource: str, action: str | None = None, extra_headers: dict | None = None
+    resource: str, action: str | None = None, extra_headers: dict[str, str] | None = None
 ) -> dict[str, str]:
     """Build headers based on resource and action."""
-    headers = {"Content-type": "application/json"}
+    headers: dict[str, str] = {"Content-type": "application/json"}
 
     if resource.lower() == "contactslist" and action.lower() == "csvdata":
         headers = {"Content-type": "text/plain"}
@@ -264,7 +264,7 @@ def build_url(
     return url
 
 
-def parse_response(response: Response, debug: bool = False) -> dict:
+def parse_response(response: Response, debug: bool = False) -> Any:
     data = response.json()
 
     if debug:
