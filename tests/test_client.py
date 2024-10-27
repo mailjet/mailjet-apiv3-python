@@ -7,7 +7,7 @@ from re import Match
 
 import pytest
 
-from build.lib.mailjet_rest.utils.version import get_version
+from mailjet_rest.utils.version import get_version
 from mailjet_rest import Client
 from mailjet_rest.client import prepare_url, Config, Endpoint
 
