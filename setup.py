@@ -3,7 +3,7 @@ from pathlib import Path
 from setuptools import find_packages
 from setuptools import setup
 
-from build.lib.mailjet_rest.utils.version import get_version
+from mailjet_rest.utils.version import get_version
 
 
 HERE = Path(Path(__file__).parent).resolve()
