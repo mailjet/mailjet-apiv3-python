@@ -57,7 +57,7 @@ class Endpoint:
     def __init__(self, url: str, headers: dict[str, str], auth: tuple[str, str], action: str | None =None) -> None:
         self._url, self.headers, self._auth, self.action = url, headers, auth, action
 
-    def _get(  # type: ignore[no-untyped-def]
+    def _get(
         self,
         filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
@@ -76,7 +76,7 @@ class Endpoint:
             **kwargs,
         )
 
-    def get_many(  # type: ignore[no-untyped-def]
+    def get_many(
         self,
         filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
@@ -84,7 +84,7 @@ class Endpoint:
     ) -> Response:
         return self._get(filters=filters, action_id=action_id, **kwargs)
 
-    def get(  # type: ignore[no-untyped-def]
+    def get(
         self,
         id: str | None = None,
         filters: Mapping[str, str | Any] | None = None,
@@ -93,7 +93,7 @@ class Endpoint:
     ) -> Response:
         return self._get(id=id, filters=filters, action_id=action_id, **kwargs)
 
-    def create(  # type: ignore[no-untyped-def]
+    def create(
         self,
         data: dict | None = None,
         filters: Mapping[str, str | Any] | None = None,
@@ -121,7 +121,7 @@ class Endpoint:
             **kwargs,
         )
 
-    def update(  # type: ignore[no-untyped-def]
+    def update(
         self,
         id: str | None,
         data: dict | None = None,
@@ -149,7 +149,7 @@ class Endpoint:
             **kwargs,
         )
 
-    def delete(self, id: str | None, **kwargs: Any) -> Response:  # type: ignore[no-untyped-def]
+    def delete(self, id: str | None, **kwargs: Any) -> Response:
         return api_call(
             self._auth,
             "delete",
@@ -162,13 +162,13 @@ class Endpoint:
 
 
 class Client:
-    def __init__(self, auth: tuple[str, str] | None=None, **kwargs: Any) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, auth: tuple[str, str] | None=None, **kwargs: Any) -> None:
         self.auth = auth
         version: str | None = kwargs.get("version")
         api_url: str | None = kwargs.get("api_url")
         self.config = Config(version=version, api_url=api_url)
 
-    def __getattr__(self, name: str) -> Endpoint:
+    def __getattr__(self, name: str) -> Any:
         name: str = re.sub(r"[A-Z]", prepare_url, name)
         split: list[str] = name.split("_")
         # identify the resource
@@ -187,7 +187,7 @@ class Client:
         )
 
 
-def api_call(  # type: ignore[no-untyped-def]
+def api_call(
     auth: tuple[str, str],
     method: str | None,
     url: str,
@@ -200,7 +200,7 @@ def api_call(  # type: ignore[no-untyped-def]
     action: str | None = None,
     action_id: str | None = None,
     **kwargs: Any,
-) -> Response:
+) -> Response | Any:
     url = build_url(
         url, method=method, action=action, resource_id=resource_id, action_id=action_id
     )

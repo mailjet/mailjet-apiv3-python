@@ -278,6 +278,8 @@ strict = true
 # Adapted from this StackOverflow post:
 # https://stackoverflow.com/questions/55944201/python-type-hinting-how-do-i-enforce-that-project-wide
 python_version = "3.9"
+mypy_path = "type_stubs"
+namespace_packages = true
 # This flag enhances the user feedback for error messages
 pretty = true
 # 3rd party import
@@ -317,7 +319,7 @@ strict_equality = true
 show_error_context = false
 show_column_numbers = false
 show_error_codes = true
-disable_error_code = 'import-untyped'
+disable_error_code = 'misc'
 
 
 [tool.bandit]

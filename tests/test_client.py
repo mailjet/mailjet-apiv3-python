@@ -4,6 +4,7 @@ import json
 import os
 import re
 from re import Match
+from typing import Callable
 
 import pytest
 
@@ -28,41 +29,44 @@ def client_mj31() -> Client:
     auth: tuple[str, str] = (os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
     return Client(auth=auth, version="v3.1",)
 
-def test_json_data_str_or_bytes_with_ensure_ascii(simple_data) -> None:
+def test_json_data_str_or_bytes_with_ensure_ascii(simple_data: tuple[dict[str, list[dict[str, str]]], str]) -> None:
     data, data_encoding = simple_data
     ensure_ascii: bool = True
 
     if "application/json" and data is not None:
-        json_data: str = json.dumps(data, ensure_ascii=ensure_ascii)
+        json_data: str | bytes | None = None
+        json_data = json.dumps(data, ensure_ascii=ensure_ascii)
 
         assert isinstance(json_data, str)
         if not ensure_ascii:
-            json_data: bytes = json_data.encode(data_encoding)
+            json_data = json_data.encode(data_encoding)
             assert isinstance(json_data, bytes)
 
-def test_json_data_str_or_bytes_with_ensure_ascii_false(simple_data) -> None:
+def test_json_data_str_or_bytes_with_ensure_ascii_false(simple_data: tuple[dict[str, list[dict[str, str]]], str]) -> None:
     data, data_encoding = simple_data
     ensure_ascii: bool = False
 
     if "application/json" and data is not None:
-        json_data: str = json.dumps(data, ensure_ascii=ensure_ascii)
+        json_data: str | bytes | None = None
+        json_data = json.dumps(data, ensure_ascii=ensure_ascii)
 
         assert isinstance(json_data, str)
         if not ensure_ascii:
-            json_data: bytes = json_data.encode(data_encoding)
+            json_data = json_data.encode(data_encoding)
             assert isinstance(json_data, bytes)
 
-def test_json_data_is_none(simple_data) -> None:
+def test_json_data_is_none(simple_data: tuple[dict[str, list[dict[str, str]]], str]) -> None:
     data, data_encoding = simple_data
     ensure_ascii: bool = True
-    data: dict | None = None
+    data: dict[str, list[dict[str, str]]] | None = None
 
     if "application/json" and data is not None:
-        json_data: str = json.dumps(data, ensure_ascii=ensure_ascii)
+        json_data: str | bytes | None = None
+        json_data = json.dumps(data, ensure_ascii=ensure_ascii)
 
         assert isinstance(json_data, str)
         if not ensure_ascii:
-            json_data: bytes = json_data.encode(data_encoding)
+            json_data = json_data.encode(data_encoding)
             assert isinstance(json_data, bytes)
 
 
@@ -91,6 +95,6 @@ def test_prepare_url_headers_and_url() -> None:
 
 # ======= TEST CLIENT ========
 
-def test_post_with_no_param(client_mj30):
+def test_post_with_no_param(client_mj30: Client) -> None:
     result = client_mj30.sender.create(data={}).json()
     assert "StatusCode" in result and result["StatusCode"] == 400
