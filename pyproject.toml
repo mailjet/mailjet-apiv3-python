@@ -315,6 +315,10 @@ strict_equality = true
 #exclude = '''(?x)(
 #    (^|/)test[^/]*\.py$    # files named "test*.py"
 #  )'''
+exclude = [
+    "samples",
+]
+
 # Configuring error messages
 show_error_context = false
 show_column_numbers = false
