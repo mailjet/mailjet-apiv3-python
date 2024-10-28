@@ -95,7 +95,7 @@ class Endpoint:
 
     def create(
         self,
-        data: dict | None = None,
+        data: dict | None = None,  # type: ignore
         filters: Mapping[str, str | Any] | None = None,
         id: str | None = None,
         action_id: str | None = None,
@@ -124,7 +124,7 @@ class Endpoint:
     def update(
         self,
         id: str | None,
-        data: dict | None = None,
+        data: dict | None = None,  # type: ignore
         filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
         ensure_ascii: bool = True,
