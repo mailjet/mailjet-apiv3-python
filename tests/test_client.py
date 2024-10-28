@@ -58,7 +58,7 @@ def test_json_data_str_or_bytes_with_ensure_ascii_false(simple_data: tuple[dict[
 def test_json_data_is_none(simple_data: tuple[dict[str, list[dict[str, str]]], str]) -> None:
     data, data_encoding = simple_data
     ensure_ascii: bool = True
-    data: dict[str, list[dict[str, str]]] | None = None
+    data: dict[str, list[dict[str, str]]] | None = None  # type: ignore
 
     if "application/json" and data is not None:
         json_data: str | bytes | None = None
