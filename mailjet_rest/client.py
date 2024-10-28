@@ -54,7 +54,7 @@ class Config:
 
 
 class Endpoint:
-    def __init__(self, url: str, headers: dict[str, str], auth: tuple[str, str], action: str | None =None) -> None:
+    def __init__(self, url: str, headers: dict[str, str], auth: tuple[str, str] | None, action: str | None =None) -> None:
         self._url, self.headers, self._auth, self.action = url, headers, auth, action
 
     def _get(
@@ -169,8 +169,8 @@ class Client:
         self.config = Config(version=version, api_url=api_url)
 
     def __getattr__(self, name: str) -> Any:
-        name: str = re.sub(r"[A-Z]", prepare_url, name)
-        split: list[str] = name.split("_")
+        name_regex: str = re.sub(r"[A-Z]", prepare_url, name)
+        split: list[str] = name_regex.split("_")
         # identify the resource
         fname: str = split[0]
         action: str | None = None
@@ -188,8 +188,8 @@ class Client:
 
 
 def api_call(
-    auth: tuple[str, str],
-    method: str | None,
+    auth: tuple[str, str] | None,
+    method: str,
     url: str,
     headers: dict[str, str],
     data: str| bytes | None = None,
@@ -232,7 +232,7 @@ def api_call(
 
 
 def build_headers(
-    resource: str, action: str | None = None, extra_headers: dict[str, str] | None = None
+    resource: str, action: str, extra_headers: dict[str, str] | None = None
 ) -> dict[str, str]:
     """Build headers based on resource and action."""
     headers: dict[str, str] = {"Content-type": "application/json"}
