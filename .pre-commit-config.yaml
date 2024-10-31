@@ -126,11 +126,6 @@ repos:
 #      - id: yamllint
 #        args: [--strict]
 
-#  -   repo: https://github.com/mattseymour/pre-commit-pytype
-#      rev: '2020.10.8'
-#      hooks:
-#      -   id: pytype
-
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.19.0
     hooks:
@@ -161,6 +156,19 @@ repos:
             --config-file=./pyproject.toml,
           ]
 
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        args: ["-c", "pyproject.toml", "-r", "."]
+        # ignore all tests, not just tests data
+        exclude: ^tests/
+
+#  -   repo: https://github.com/mattseymour/pre-commit-pytype
+#      rev: '2023.5.8'
+#      hooks:
+#      -   id: pytype
+
 #  - repo: https://github.com/executablebooks/mdformat
 #    rev: 0.7.17
 #    hooks:
@@ -169,11 +177,3 @@ repos:
 #          # gfm = GitHub Flavored Markdown
 #          - mdformat-gfm
 #          - mdformat-black
-
-#  - repo: https://github.com/PyCQA/bandit
-#    rev: 1.7.10
-#    hooks:
-#      - id: bandit
-#        args: ["-r", "."]
-#        # ignore all tests, not just tests data
-#        exclude: ^tests/
