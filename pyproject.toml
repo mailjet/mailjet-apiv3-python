@@ -107,6 +107,8 @@ tests = [
 
 conda_build = ["conda-build"]
 
+other = ["toml"]
+
 
 [tool.black]
 line-length = 88

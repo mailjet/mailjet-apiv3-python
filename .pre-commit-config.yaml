@@ -152,6 +152,7 @@ repos:
         args: ["-c", "pyproject.toml", "-r", "."]
         # ignore all tests, not just tests data
         exclude: ^tests/
+        additional_dependencies: [".[toml]"]
 
 #  - repo: https://github.com/google/yapf
 #    rev: v0.40.2

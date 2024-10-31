@@ -12,3 +12,4 @@ dependencies:
   - pytest >=7.0.0
   # other
   - pre-commit
+  - toml
