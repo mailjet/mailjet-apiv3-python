@@ -9,7 +9,10 @@ from mailjet_rest import Client
 
 class TestSuite(unittest.TestCase):
     def setUp(self) -> None:
-        self.auth: tuple[str, str] = (os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
+        self.auth: tuple[str, str] = (
+            os.environ["MJ_APIKEY_PUBLIC"],
+            os.environ["MJ_APIKEY_PRIVATE"],
+        )
         self.client: Client = Client(auth=self.auth)
 
     def test_get_no_param(self) -> None:
@@ -48,7 +51,9 @@ class TestSuite(unittest.TestCase):
             self.assertTrue(post_contact.status_code == 201)
             contact_id = post_contact.json()["Data"][0]["ID"]
 
-        get_contact_list: Any = self.client.contactslist.get(filters={"limit": 1}).json()
+        get_contact_list: Any = self.client.contactslist.get(
+            filters={"limit": 1}
+        ).json()
         if get_contact_list["Count"] != 0:
             list_id: str = get_contact_list["Data"][0]["ID"]
         else:
@@ -65,7 +70,9 @@ class TestSuite(unittest.TestCase):
             self.assertTrue(post_contact_list.status_code == 201)
             list_id = post_contact_list.json()["Data"][0]["ID"]
 
-        data: dict[str, list[dict[str, str]]] = {"ContactsLists": [{"ListID": list_id, "Action": "addnoforce"}]}
+        data: dict[str, list[dict[str, str]]] = {
+            "ContactsLists": [{"ListID": list_id, "Action": "addnoforce"}]
+        }
         result_add_list = self.client.contact_managecontactslists.create(
             id=contact_id, data=data
         )

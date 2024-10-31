@@ -9,6 +9,7 @@ def test_version_lenght_equal_three() -> None:
     """Verify that the tuple contains 3 items."""
     assert len(VERSION) == 3
 
+
 def test_get_version_is_none() -> None:
     """Test that package version is none."""
     version: None = None
@@ -18,6 +19,7 @@ def test_get_version_is_none() -> None:
     result = tuple(map(int, result.split(".")))
     assert result == VERSION
     assert isinstance(result, tuple)
+
 
 def test_get_version() -> None:
     """Test that package version is string.
@@ -30,8 +32,12 @@ def test_get_version() -> None:
     assert result == VERSION
     assert isinstance(result, tuple)
 
+
 def test_get_version_raises_exception() -> None:
     """Test that package version raise ValueError if its length is not equal 3."""
-    version: tuple[int, int] = (1,2,)
+    version: tuple[int, int] = (
+        1,
+        2,
+    )
     with pytest.raises(ValueError):
         get_version(version)

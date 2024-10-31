@@ -152,14 +152,14 @@ repos:
       hooks:
       -   id: refurb
 
-#  - repo: https://github.com/pre-commit/mirrors-mypy
-#    rev: v1.11.2
-#    hooks:
-#    -   id: mypy
-#        args:
-#          [
-#            --config-file=./pyproject.toml,
-#          ]
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+    -   id: mypy
+        args:
+          [
+            --config-file=./pyproject.toml,
+          ]
 
 #  - repo: https://github.com/executablebooks/mdformat
 #    rev: 0.7.17
