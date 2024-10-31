@@ -118,6 +118,7 @@ def test_prepare_url_headers_and_url() -> None:
 
 # ======= TEST CLIENT ========
 
+
 def test_post_with_no_param(client_mj30: Client) -> None:
     result = client_mj30.sender.create(data={}).json()
     assert "StatusCode" in result and result["StatusCode"] == 400

@@ -1,3 +1,4 @@
+---
 name: mailjet_dev
 channels:
   - defaults
@@ -15,8 +16,7 @@ dependencies:
   - pytest-benchmark
   - coverage >=4.5.4
   # linters & formatters
-  # Match version with .pre-commit-config.yaml to ensure consistent rules with `make lint`.
-  - conda-forge::pylint ==3.2.2
+  - pylint
   - autopep8
   - black
   - isort

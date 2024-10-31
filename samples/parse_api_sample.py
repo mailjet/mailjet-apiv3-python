@@ -3,7 +3,6 @@ import os
 
 from mailjet_rest import Client
 
-
 mailjet30 = Client(
     auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
 )

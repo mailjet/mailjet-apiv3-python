@@ -7,12 +7,11 @@ from collections.abc import Mapping
 from typing import Any
 from re import Match
 
-import requests
-from requests.compat import urljoin
-from requests.models import Response
+import requests  # type: ignore[import-untyped]
+from requests.compat import urljoin  # type: ignore[import-untyped]
+from requests.models import Response  # type: ignore[import-untyped]
 
 from .utils.version import get_version
-
 
 requests.packages.urllib3.disable_warnings()  # type: ignore
 

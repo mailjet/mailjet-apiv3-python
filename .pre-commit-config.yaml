@@ -1,3 +1,4 @@
+---
 # Apply to all files without commiting:
 #   pre-commit run --all-files
 # Update this file:
@@ -108,23 +109,10 @@ repos:
         args:
           - --exit-zero
 
-#  - repo: https://github.com/google/yapf
-#    rev: v0.31.0
-#    hooks:
-#      - id: yapf
-#        name: "yapf"
-#        additional_dependencies: [toml]
-
 #  - repo: https://github.com/RobertCraigie/pyright-python
 #    rev: v1.1.383
 #    hooks:
 #    - id: pyright
-
-#  - repo: https://github.com/adrienverge/yamllint.git
-#    rev: v1.29.0
-#    hooks:
-#      - id: yamllint
-#        args: [--strict]
 
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.19.0
@@ -155,6 +143,7 @@ repos:
           [
             --config-file=./pyproject.toml,
           ]
+        exclude: ^samples/
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.10
@@ -163,6 +152,13 @@ repos:
         args: ["-c", "pyproject.toml", "-r", "."]
         # ignore all tests, not just tests data
         exclude: ^tests/
+
+#  - repo: https://github.com/google/yapf
+#    rev: v0.40.2
+#    hooks:
+#      - id: yapf
+#        name: "yapf"
+#        additional_dependencies: [toml]
 
 #  -   repo: https://github.com/mattseymour/pre-commit-pytype
 #      rev: '2023.5.8'
@@ -177,3 +173,12 @@ repos:
 #          # gfm = GitHub Flavored Markdown
 #          - mdformat-gfm
 #          - mdformat-black
+
+#    - repo: https://github.com/adrienverge/yamllint.git
+#      rev: v1.35.1
+#      hooks:
+#        - id: yamllint
+#          #args: [--strict]
+#          entry: yamllint
+#          language: python
+#          types: [ file, yaml ]
