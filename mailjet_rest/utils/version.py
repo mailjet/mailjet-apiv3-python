@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 
 VERSION: tuple[int, int, int] = (1, 3, 5)
 

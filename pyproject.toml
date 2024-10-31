@@ -162,7 +162,7 @@ extend-exclude = ["tests", "test"]
 
 # Same as Black.
 line-length = 88
-indent-width = 4
+#indent-width = 4
 
 # Assume Python 3.9.
 target-version = "py39"
@@ -173,7 +173,9 @@ target-version = "py39"
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default, ('UP') is pyupgrade.
 # "ERA" - Found commented-out code
 # see https://docs.astral.sh/ruff/rules/#rules
-select = ["A", "ARG", "B", "C4", "DOC", "DTZ", "E", "EM", "ERA", "EXE", "F", "FA", "FLY", "FURB", "G", "ICN", "INP", "INT", "LOG", "N", "PD", "PERF", "PIE", "PLC", "PLE", "PLR", "PLW", "PT", "PTH", "PYI", "Q", "RET", "RSE", "RUF", "S", "SIM", "T10", "TID", "TRY", "UP", "W"]
+select = ["A", "ARG", "B", "C4", "DTZ", "E", "EM", "ERA", "EXE", "F", "FA", "FLY", "FURB", "G", "ICN", "INP", "INT", "LOG", "N", "PD", "PERF", "PIE", "PLC", "PLE", "PLW", "PT", "PTH", "PYI", "Q", "RET", "RSE", "RUF", "S", "SIM", "T10", "TID", "TRY", "UP", "W"]
+
+external = ["DOC", "PLR"]
 
 #extend-select = ["W", "N", "UP", "B", "A", "C4", "PT", "SIM", "PD", "PLE", "RUF"]
 # Never enforce `E501` (line length violations).
@@ -197,7 +199,7 @@ ignore = [
     "PLE0604",
     "PLR2004",  # PLR2004 Magic value used in comparison, consider replacing `XXX` with a constant variable
     "PLR0913",  # PLR0913 Too many arguments in function definition (6 > 5)
-    "PLR0917",  # PLR0917 Too many positional arguments
+    #"PLR0917",  # PLR0917 Too many positional arguments
     # TODO: "Remove Q000 it before the next release
     "Q000",
     "Q003",   # Checks for avoidable escaped quotes ("\"" -> '"')
@@ -243,14 +245,14 @@ line-ending = "auto"
 #
 # This is currently disabled by default, but it is planned for this
 # to be opt-out in the future.
-docstring-code-format = false
+#docstring-code-format = false
 
 # Set the line length limit used when formatting code snippets in
 # docstrings.
 #
 # This only has an effect when the `docstring-code-format` setting is
 # enabled.
-docstring-code-line-length = "dynamic"
+#docstring-code-line-length = "dynamic"
 
 # Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
 [tool.ruff.lint.per-file-ignores]

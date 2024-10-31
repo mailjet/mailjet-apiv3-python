@@ -1,0 +1,179 @@
+# Apply to all files without commiting:
+#   pre-commit run --all-files
+# Update this file:
+#   pre-commit autoupdate
+exclude: ^(.*/versioneer\.py|.*/_version\.py|.*/.*\.svg)
+
+ci:
+    autofix_commit_msg: |
+        [pre-commit.ci] auto fixes from pre-commit.com hooks
+
+        for more information, see https://pre-commit.ci
+    autofix_prs: true
+    autoupdate_branch: ''
+    autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+    autoupdate_schedule: weekly
+    skip: []
+    submodules: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-ast
+      - id: check-builtin-literals
+      - id: fix-byte-order-marker
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-vcs-permalinks
+      # Fail if staged files are above a certain size.
+      # To add a large file, use 'git lfs track <file>; git add <file> to track large files with
+      # git-lfs rather than commiting them directly to the git history
+      - id: check-added-large-files
+        args: [ "--maxkb=500" ]
+      - id: fix-byte-order-marker
+      - id: check-case-conflict
+      # Fails if there are any ">>>>>" lines in files due to merge conflicts.
+      - id: check-merge-conflict
+      # ensure syntaxes are valid
+      - id: check-toml
+      - id: debug-statements
+      - id: detect-private-key
+      # Makes sure files end in a newline and only a newline;
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      # Trims trailing whitespace. Allow a single space on the end of .md lines for hard line breaks.
+      - id: trailing-whitespace
+        args: [ --markdown-linebreak-ext=md ]
+      # Sort requirements in requirements.txt files.
+      - id: requirements-txt-fixer
+      # Prevent committing directly to trunk
+      - id: no-commit-to-branch
+        args: [ "--branch=master" ]
+      # Detects the presence of private keys
+      - id: detect-private-key
+
+  - repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: [--write]
+
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.29.4
+    hooks:
+      - id: check-github-workflows
+
+  - repo: https://github.com/akaihola/darker
+    rev: v2.1.1
+    hooks:
+      - id: darker
+
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.3.1
+    hooks:
+      - id: autoflake
+        args:
+          - --in-place
+          - --remove-all-unused-imports
+          - --remove-unused-variable
+          - --ignore-init-module-imports
+
+  - repo: https://github.com/pre-commit/mirrors-autopep8
+    rev: v2.0.4
+    hooks:
+      - id: autopep8
+        exclude: ^docs/
+
+#  - repo: https://github.com/pycqa/flake8
+#    rev: 7.1.1
+#    hooks:
+#    -   id: flake8
+#        additional_dependencies:
+#          - radon
+#          - flake8-docstrings
+#          - Flake8-pyproject
+#        exclude: ^docs/
+
+
+  - repo: https://github.com/PyCQA/pylint
+    rev: v3.3.1
+    hooks:
+      - id: pylint
+        args:
+          - --exit-zero
+
+#  - repo: https://github.com/google/yapf
+#    rev: v0.31.0
+#    hooks:
+#      - id: yapf
+#        name: "yapf"
+#        additional_dependencies: [toml]
+
+#  - repo: https://github.com/RobertCraigie/pyright-python
+#    rev: v1.1.383
+#    hooks:
+#    - id: pyright
+
+#  - repo: https://github.com/adrienverge/yamllint.git
+#    rev: v1.29.0
+#    hooks:
+#      - id: yamllint
+#        args: [--strict]
+
+#  -   repo: https://github.com/mattseymour/pre-commit-pytype
+#      rev: '2020.10.8'
+#      hooks:
+#      -   id: pytype
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.19.0
+    hooks:
+      - id: pyupgrade
+        args: [--py38-plus, --keep-runtime-typing]
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.7.1
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      # Run the formatter.
+      - id: ruff-format
+
+  -   repo: https://github.com/dosisod/refurb
+      rev: v2.0.0
+      hooks:
+      -   id: refurb
+
+#  - repo: https://github.com/pre-commit/mirrors-mypy
+#    rev: v1.11.2
+#    hooks:
+#    -   id: mypy
+#        args:
+#          [
+#            --config-file=./pyproject.toml,
+#          ]
+
+#  - repo: https://github.com/executablebooks/mdformat
+#    rev: 0.7.17
+#    hooks:
+#      - id: mdformat
+#        additional_dependencies:
+#          # gfm = GitHub Flavored Markdown
+#          - mdformat-gfm
+#          - mdformat-black
+
+#  - repo: https://github.com/PyCQA/bandit
+#    rev: 1.7.10
+#    hooks:
+#      - id: bandit
+#        args: ["-r", "."]
+#        # ignore all tests, not just tests data
+#        exclude: ^tests/

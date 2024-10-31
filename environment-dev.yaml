@@ -1,0 +1,53 @@
+name: mailjet_dev
+channels:
+  - defaults
+dependencies:
+  - python >=3.9
+  # build & host deps
+  - pip
+  # runtime deps
+  - requests >=2.32.3
+  # tests
+  - pytest
+  - pytest-cov
+  - pytest-xdist
+  - conda-forge::pyfakefs
+  - pytest-benchmark
+  - coverage >=4.5.4
+  # linters & formatters
+  # Match version with .pre-commit-config.yaml to ensure consistent rules with `make lint`.
+  - conda-forge::pylint ==3.2.2
+  - autopep8
+  - black
+  - isort
+  - make
+  - pycodestyle
+  - pydocstyle
+  - flake8
+  - pep8-naming
+  - yapf
+  - ruff
+  - mypy
+  - toml
+  - types-requests
+  - pandas-stubs
+  - pyright
+  - radon
+  # other
+  - pre-commit
+  - conda
+  - conda-build
+  - jsonschema
+  - types-jsonschema
+  - python-dotenv >=0.19.2
+  - pip:
+      - pyupgrade
+      - bandit
+      - autoflake8
+      - refurb
+      - monkeytype
+      - pyment >=0.3.3
+      - pytype
+      - vulture
+      - scalene >=1.3.16
+      - snakeviz

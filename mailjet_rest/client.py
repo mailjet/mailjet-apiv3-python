@@ -40,7 +40,10 @@ class Config:
         # Append version to URL.
         # Forward slash is ignored if present in self.version.
         url = urljoin(self.api_url, self.version + "/")
-        headers: dict[str, str] = {"Content-type": "application/json", "User-agent": self.user_agent}
+        headers: dict[str, str] = {
+            "Content-type": "application/json",
+            "User-agent": self.user_agent,
+        }
         if key.lower() == "contactslist_csvdata":
             url = urljoin(url, "DATA/")
             headers["Content-type"] = "text/plain"
@@ -54,7 +57,13 @@ class Config:
 
 
 class Endpoint:
-    def __init__(self, url: str, headers: dict[str, str], auth: tuple[str, str] | None, action: str | None =None) -> None:
+    def __init__(
+        self,
+        url: str,
+        headers: dict[str, str],
+        auth: tuple[str, str] | None,
+        action: str | None = None,
+    ) -> None:
         self._url, self.headers, self._auth, self.action = url, headers, auth, action
 
     def _get(
@@ -162,7 +171,7 @@ class Endpoint:
 
 
 class Client:
-    def __init__(self, auth: tuple[str, str] | None=None, **kwargs: Any) -> None:
+    def __init__(self, auth: tuple[str, str] | None = None, **kwargs: Any) -> None:
         self.auth = auth
         version: str | None = kwargs.get("version")
         api_url: str | None = kwargs.get("api_url")
@@ -170,7 +179,7 @@ class Client:
 
     def __getattr__(self, name: str) -> Any:
         name_regex: str = re.sub(r"[A-Z]", prepare_url, name)
-        split: list[str] = name_regex.split("_")
+        split: list[str] = name_regex.split("_")  # noqa: RUF100, FURB184
         # identify the resource
         fname: str = split[0]
         action: str | None = None
@@ -192,7 +201,7 @@ def api_call(
     method: str,
     url: str,
     headers: dict[str, str],
-    data: str| bytes | None = None,
+    data: str | bytes | None = None,
     filters: Mapping[str, str | Any] | None = None,
     resource_id: str | None = None,
     timeout: int = 60,
@@ -209,7 +218,7 @@ def api_call(
     try:
         filters_str: str | None = None
         if filters:
-            filters_str = "&".join("%s=%s" % (k, v) for k, v in filters.items())
+            filters_str = "&".join(f"{k}={v}" for k, v in filters.items())
         response = req_method(
             url,
             data=data,
@@ -224,7 +233,7 @@ def api_call(
     except requests.exceptions.Timeout:
         raise TimeoutError
     except requests.RequestException as e:
-        raise ApiError(e)
+        raise ApiError(e)  # noqa: RUF100, B904
     except Exception:
         raise
     else:

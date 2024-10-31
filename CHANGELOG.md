@@ -19,7 +19,7 @@
 **Merged pull requests:**
 
 - Update README.md [\#44](https://github.com/mailjet/mailjet-apiv3-python/pull/44) ([Hyask](https://github.com/Hyask))
-- new readme version with standartized content [\#42](https://github.com/mailjet/mailjet-apiv3-python/pull/42) ([adamyanliev](https://github.com/adamyanliev))
+- new readme version with standardized content [\#42](https://github.com/mailjet/mailjet-apiv3-python/pull/42) ([adamyanliev](https://github.com/adamyanliev))
 - fix page [\#41](https://github.com/mailjet/mailjet-apiv3-python/pull/41) ([adamyanliev](https://github.com/adamyanliev))
 - Fix unit tests for new API address [\#37](https://github.com/mailjet/mailjet-apiv3-python/pull/37) ([todorDim](https://github.com/todorDim))
 - Fix URL slicing, update version in unit test [\#36](https://github.com/mailjet/mailjet-apiv3-python/pull/36) ([todorDim](https://github.com/todorDim))
