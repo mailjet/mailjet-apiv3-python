@@ -141,7 +141,7 @@ repos:
         exclude: ^samples/
 
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.383
+    rev: v1.1.387
     hooks:
     - id: pyright
 
@@ -155,7 +155,7 @@ repos:
         additional_dependencies: [".[toml]"]
 
   - repo: https://github.com/crate-ci/typos
-    rev: v1.24.5
+    rev: v1.26.8
     hooks:
       - id: typos
 
