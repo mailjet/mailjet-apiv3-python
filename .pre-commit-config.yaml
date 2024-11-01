@@ -1,5 +1,5 @@
 ---
-# Apply to all files without commiting:
+# Apply to all files without committing:
 #   pre-commit run --all-files
 # Update this file:
 #   pre-commit autoupdate
@@ -29,7 +29,7 @@ repos:
       - id: check-vcs-permalinks
       # Fail if staged files are above a certain size.
       # To add a large file, use 'git lfs track <file>; git add <file> to track large files with
-      # git-lfs rather than commiting them directly to the git history
+      # git-lfs rather than committing them directly to the git history
       - id: check-added-large-files
         args: [ "--maxkb=500" ]
       - id: fix-byte-order-marker
@@ -153,6 +153,11 @@ repos:
         # ignore all tests, not just tests data
         exclude: ^tests/
         additional_dependencies: [".[toml]"]
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.24.5
+    hooks:
+      - id: typos
 
 #  - repo: https://github.com/google/yapf
 #    rev: v0.40.2

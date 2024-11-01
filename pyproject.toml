@@ -107,6 +107,8 @@ tests = [
 
 conda_build = ["conda-build"]
 
+spelling = ["typos"]
+
 other = ["toml"]
 
 

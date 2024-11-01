@@ -133,7 +133,7 @@ def upload_the_csv():
 def import_csv_content_to_a_list():
     """POST https://api.mailjet.com/v3/REST/csvimport"""
     data = {
-        "ErrTreshold": "1",
+        "ErrThreshold": "1",
         "ImportOptions": "",
         "Method": "addnoforce",
         "ContactsListID": "123456",

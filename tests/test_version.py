@@ -5,7 +5,7 @@ import pytest
 from mailjet_rest.utils.version import get_version, VERSION
 
 
-def test_version_lenght_equal_three() -> None:
+def test_version_length_equal_three() -> None:
     """Verify that the tuple contains 3 items."""
     assert len(VERSION) == 3
 
