@@ -109,11 +109,6 @@ repos:
         args:
           - --exit-zero
 
-#  - repo: https://github.com/RobertCraigie/pyright-python
-#    rev: v1.1.383
-#    hooks:
-#    - id: pyright
-
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.19.0
     hooks:
@@ -144,6 +139,11 @@ repos:
             --config-file=./pyproject.toml,
           ]
         exclude: ^samples/
+
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.383
+    hooks:
+    - id: pyright
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.10
