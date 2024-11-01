@@ -3,17 +3,23 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Mapping
-from typing import Any
 from re import Match
+from typing import TYPE_CHECKING
+from typing import Any
 
 import requests  # type: ignore[import-untyped]
 from requests.compat import urljoin  # type: ignore[import-untyped]
-from requests.models import Response  # type: ignore[import-untyped]
 
 from .utils.version import get_version
 
-requests.packages.urllib3.disable_warnings()  # type: ignore
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from requests.models import Response  # type: ignore[import-untyped]
+
+
+requests.packages.urllib3.disable_warnings()
 
 
 def prepare_url(key: Match[str]) -> str:
@@ -103,7 +109,7 @@ class Endpoint:
 
     def create(
         self,
-        data: dict | None = None,  # type: ignore
+        data: dict | None = None,
         filters: Mapping[str, str | Any] | None = None,
         id: str | None = None,
         action_id: str | None = None,
@@ -132,7 +138,7 @@ class Endpoint:
     def update(
         self,
         id: str | None,
-        data: dict | None = None,  # type: ignore
+        data: dict | None = None,
         filters: Mapping[str, str | Any] | None = None,
         action_id: str | None = None,
         ensure_ascii: bool = True,
@@ -191,7 +197,10 @@ class Client:
                 action = "csverror/text:csv"
         url, headers = self.config[name]
         return type(fname, (Endpoint,), {})(
-            url=url, headers=headers, action=action, auth=self.auth
+            url=url,
+            headers=headers,
+            action=action,
+            auth=self.auth,
         )
 
 
@@ -210,7 +219,11 @@ def api_call(
     **kwargs: Any,
 ) -> Response | Any:
     url = build_url(
-        url, method=method, action=action, resource_id=resource_id, action_id=action_id
+        url,
+        method=method,
+        action=action,
+        resource_id=resource_id,
+        action_id=action_id,
     )
     req_method = getattr(requests, method)
 
@@ -240,7 +253,9 @@ def api_call(
 
 
 def build_headers(
-    resource: str, action: str, extra_headers: dict[str, str] | None = None
+    resource: str,
+    action: str,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """Build headers based on resource and action."""
     headers: dict[str, str] = {"Content-type": "application/json"}

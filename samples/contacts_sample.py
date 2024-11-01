@@ -4,8 +4,9 @@ from pathlib import Path
 
 from mailjet_rest import Client
 
+
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
+    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
 )
 
 mailjet31 = Client(
@@ -71,7 +72,7 @@ def manage_the_subscription_status_of_an_existing_contact():
             {"Action": "addnoforce", "ListID": "987654321"},
             {"Action": "remove", "ListID": "987654321"},
             {"Action": "unsub", "ListID": "987654321"},
-        ]
+        ],
     }
     return mailjet30.contact_managecontactslists.create(id=_id, data=data)
 
@@ -87,7 +88,7 @@ def manage_multiple_contacts_in_a_list():
                 "IsExcludedFromCampaigns": "false",
                 "Name": "Passenger 1",
                 "Properties": "object",
-            }
+            },
         ],
     }
     return mailjet30.contactslist_managemanycontacts.create(id=_id, data=data)
@@ -108,7 +109,7 @@ def manage_multiple_contacts_across_multiple_lists():
                 "IsExcludedFromCampaigns": "false",
                 "Name": "Passenger 1",
                 "Properties": "object",
-            }
+            },
         ],
         "ContactsLists": [
             {"Action": "addforce", "ListID": "987654321"},
@@ -150,7 +151,7 @@ def using_csv_with_atetime_contact_data():
         "Method": "addnoforce",
         "ImportOptions": "{\"DateTimeFormat\": \"yyyy/mm/dd\","
                          "\"TimezoneOffset\": 2,\"FieldNames\": "
-                         "[\"email\", \"birthday\"]} "
+                         "[\"email\", \"birthday\"]} ",
     }
     # fmt: on
     return mailjet30.csvimport.create(data=data)
@@ -190,7 +191,7 @@ def using_contact_managemanycontacts():
                 "IsExcludedFromCampaigns": "true",
                 "Properties": {"Property1": "value", "Property2": "value2"},
             },
-        ]
+        ],
     }
     return mailjet30.contact_managemanycontacts.create(data=data)
 

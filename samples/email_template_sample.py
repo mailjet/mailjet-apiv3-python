@@ -3,8 +3,9 @@ import os
 
 from mailjet_rest import Client
 
+
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
+    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
 )
 
 mailjet31 = Client(
@@ -54,8 +55,8 @@ def use_templates_with_send_api():
                 "TemplateID": 1,
                 "TemplateLanguage": True,
                 "Subject": "Your email flight plan!",
-            }
-        ]
+            },
+        ],
     }
     return mailjet31.send.create(data=data)
 

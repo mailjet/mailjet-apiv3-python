@@ -46,13 +46,13 @@ class TestSuite(unittest.TestCase):
                 + "@mailjet.com"
             )
             post_contact = self.client.contact.create(
-                data={"Email": contact_random_email}
+                data={"Email": contact_random_email},
             )
             self.assertTrue(post_contact.status_code == 201)
             contact_id = post_contact.json()["Data"][0]["ID"]
 
         get_contact_list: Any = self.client.contactslist.get(
-            filters={"limit": 1}
+            filters={"limit": 1},
         ).json()
         if get_contact_list["Count"] != 0:
             list_id: str = get_contact_list["Data"][0]["ID"]
@@ -65,16 +65,17 @@ class TestSuite(unittest.TestCase):
                 + "@mailjet.com"
             )
             post_contact_list = self.client.contactslist.create(
-                data={"Name": contact_list_random_name}
+                data={"Name": contact_list_random_name},
             )
             self.assertTrue(post_contact_list.status_code == 201)
             list_id = post_contact_list.json()["Data"][0]["ID"]
 
         data: dict[str, list[dict[str, str]]] = {
-            "ContactsLists": [{"ListID": list_id, "Action": "addnoforce"}]
+            "ContactsLists": [{"ListID": list_id, "Action": "addnoforce"}],
         }
         result_add_list = self.client.contact_managecontactslists.create(
-            id=contact_id, data=data
+            id=contact_id,
+            data=data,
         )
         self.assertTrue(result_add_list.status_code == 201)
 
@@ -84,11 +85,11 @@ class TestSuite(unittest.TestCase):
     def test_get_with_id_filter(self) -> None:
         result_contact: Any = self.client.contact.get(filters={"limit": 1}).json()
         result_contact_with_id: Any = self.client.contact.get(
-            filter={"Email": result_contact["Data"][0]["Email"]}
+            filter={"Email": result_contact["Data"][0]["Email"]},
         ).json()
         self.assertTrue(
             result_contact_with_id["Data"][0]["Email"]
-            == result_contact["Data"][0]["Email"]
+            == result_contact["Data"][0]["Email"],
         )
 
     def test_post_with_no_param(self) -> None:
@@ -99,7 +100,8 @@ class TestSuite(unittest.TestCase):
         self.client = Client(auth=self.auth, version="v3.1")
         self.assertEqual(self.client.config.version, "v3.1")
         self.assertEqual(
-            self.client.config["send"][0], "https://api.mailjet.com/v3.1/send"
+            self.client.config["send"][0],
+            "https://api.mailjet.com/v3.1/send",
         )
 
     def test_user_agent(self) -> None:

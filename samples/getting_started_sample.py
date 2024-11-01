@@ -3,8 +3,9 @@ import os
 
 from mailjet_rest import Client
 
+
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
+    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
 )
 
 mailjet31 = Client(
@@ -27,7 +28,7 @@ def send_messages():
                 "HTMLPart": '<h3>Dear passenger 1, welcome to <a href="https'
                 '://www.mailjet.com/">Mailjet</a>!<br />May the '
                 "delivery force be with you!",
-            }
+            },
         ],
         "SandboxMode": True,  # Remove to send real message.
     }

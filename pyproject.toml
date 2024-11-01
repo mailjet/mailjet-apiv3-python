@@ -175,9 +175,12 @@ target-version = "py39"
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default, ('UP') is pyupgrade.
 # "ERA" - Found commented-out code
 # see https://docs.astral.sh/ruff/rules/#rules
-select = ["A", "ARG", "B", "C4", "DTZ", "E", "EM", "ERA", "EXE", "F", "FA", "FLY", "FURB", "G", "ICN", "INP", "INT", "LOG", "N", "PD", "PERF", "PIE", "PLC", "PLE", "PLW", "PT", "PTH", "PYI", "Q", "RET", "RSE", "RUF", "S", "SIM", "T10", "TID", "TRY", "UP", "W"]
+select = ["ALL"]
+#select = ["A", "ARG", "B", "C4", "DTZ", "E", "EM", "ERA", "EXE", "F", "FA", "FLY", "FURB", "G", "ICN", "INP", "INT", "LOG", "N", "PD", "PERF", "PIE", "PLC", "PLE", "PLW", "PT", "PTH", "PYI", "Q", "RET", "RSE", "RUF", "S", "SIM", "T10", "TID", "TRY", "UP", "W"]
 
 external = ["DOC", "PLR"]
+
+exclude = ["samples/*"]
 
 #extend-select = ["W", "N", "UP", "B", "A", "C4", "PT", "SIM", "PD", "PLE", "RUF"]
 # Never enforce `E501` (line length violations).
@@ -188,9 +191,16 @@ ignore = [
     "A001" ,
     # TODO: Fix A002 Argument `id` is shadowing a Python builtin
     "A002",
+    "ANN401",  # ANN401 Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
     "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None`
     # pycodestyle (E, W)
+    "CPY001",   # Missing copyright notice at top of file
+    # TODO: Enable docstring lints when they will be available.
+    "D",
+    "DOC",
     "E501",
+    "FBT001",  # Boolean-typed positional argument in function definition
+    "FBT002",  # Boolean default positional argument in function definition
     "INP001",  # INP001 File `samples/campaign_sample.py` is part of an implicit namespace package. Add an `__init__.py`.
     "PD901",
     "PD015",
@@ -210,6 +220,7 @@ ignore = [
     # TODO:" PT009 Use a regular `assert` instead of unittest-style `assertTrue`
     "PT009",
     "S311",  # S311 Standard pseudo-random generators are not suitable for cryptographic purposes
+    "T201",  # T201 `print` found
     "UP031",  # pyupgrade (UP): Skip for logging: UP031 Use format specifiers instead of percent format
 ]
 
@@ -324,6 +335,7 @@ exclude = [
 ]
 
 # Configuring error messages
+show-fixes = true
 show_error_context = false
 show_column_numbers = false
 show_error_codes = true
