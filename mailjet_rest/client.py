@@ -23,7 +23,15 @@ requests.packages.urllib3.disable_warnings()
 
 
 def prepare_url(key: Match[str]) -> str:
-    """Replaces capital letters to lower one with dash prefix."""
+    """
+    Replaces capital letters in the input string with a dash prefix and converts them to lowercase.
+
+    Parameters:
+    key (Match[str]): A match object representing a substring from the input string. The substring should contain a single capital letter.
+
+    Returns:
+    str: A string containing a dash followed by the lowercase version of the input capital letter.
+    """
     char_elem = key.group(0)
     if char_elem.isupper():
         return "-" + char_elem.lower()
@@ -31,17 +39,64 @@ def prepare_url(key: Match[str]) -> str:
 
 
 class Config:
+    """
+    Configuration settings for interacting with the Mailjet API.
+
+    This class stores and manages API configuration details, including the API URL,
+    version, and user agent string. It provides methods for initializing these settings
+    and generating endpoint-specific URLs and headers as required for API interactions.
+
+    Attributes:
+        DEFAULT_API_URL (str): The default base URL for Mailjet API requests.
+        API_REF (str): Reference URL for Mailjet's API documentation.
+        version (str): API version to use, defaulting to 'v3'.
+        user_agent (str): User agent string including the package version for tracking.
+    """
+
     DEFAULT_API_URL: str = "https://api.mailjet.com/"
-    API_REF: str = "http://dev.mailjet.com/email-api/v3/"
+    API_REF: str = "https://dev.mailjet.com/email-api/v3/"
     version: str = "v3"
     user_agent: str = "mailjet-apiv3-python/v" + get_version()
 
     def __init__(self, version: str | None = None, api_url: str | None = None) -> None:
+        """
+        Initialize a new Config instance with specified or default API settings.
+
+        This initializer sets the API version and base URL. If no version or URL
+        is provided, it defaults to the predefined class values.
+
+        Parameters:
+        - version (str | None): The API version to use. If None, the default version ('v3') is used.
+        - api_url (str | None): The base URL for API requests. If None, the default URL (DEFAULT_API_URL) is used.
+
+        Returns:
+        - None
+        """
         if version is not None:
             self.version = version
         self.api_url = api_url or self.DEFAULT_API_URL
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
+        """
+        Retrieve the API endpoint URL and headers for a given key.
+
+        This method builds the URL and headers required for specific API interactions.
+        The URL is adjusted based on the API version, and additional headers are
+        appended depending on the endpoint type. Specific keys modify content-type
+        for endpoints expecting CSV or plain text.
+
+        Parameters:
+        - key (str): The name of the API endpoint, which influences URL structure and header configuration.
+
+        Returns:
+        - tuple[str, dict[str, str]]: A tuple containing the constructed URL and headers required for the specified endpoint.
+
+        Examples:
+            For the "contactslist_csvdata" key, a URL pointing to 'DATA/' and a
+            'Content-type' of 'text/plain' is returned.
+            For the "batchjob_csverror" key, a URL with 'DATA/' and a 'Content-type'
+            of 'text/csv' is returned.
+        """
         # Append version to URL.
         # Forward slash is ignored if present in self.version.
         url = urljoin(self.api_url, self.version + "/")
@@ -62,6 +117,28 @@ class Config:
 
 
 class Endpoint:
+    """
+    A class representing a specific Mailjet API endpoint.
+
+    This class provides methods to perform HTTP requests to a given API endpoint,
+    including GET, POST, PUT, and DELETE requests. It manages URL construction,
+    headers, and authentication for interacting with the endpoint.
+
+    Attributes:
+    - _url (str): The base URL of the endpoint.
+    - headers (dict[str, str]): The headers to be included in API requests.
+    - _auth (tuple[str, str] | None): The authentication credentials.
+    - action (str | None): The specific action to be performed on the endpoint.
+
+    Methods:
+    - _get: Internal method to perform a GET request.
+    - get_many: Performs a GET request to retrieve multiple resources.
+    - get: Performs a GET request to retrieve a specific resource.
+    - create: Performs a POST request to create a new resource.
+    - update: Performs a PUT request to update an existing resource.
+    - delete: Performs a DELETE request to delete a resource.
+    """
+
     def __init__(
         self,
         url: str,
@@ -69,6 +146,15 @@ class Endpoint:
         auth: tuple[str, str] | None,
         action: str | None = None,
     ) -> None:
+        """
+        Initialize a new Endpoint instance.
+
+        Args:
+            url (str): The base URL for the endpoint.
+            headers (dict[str, str]): Headers for API requests.
+            auth (tuple[str, str] | None): Authentication credentials.
+            action (str | None): Action to perform on the endpoint, if any.
+        """
         self._url, self.headers, self._auth, self.action = url, headers, auth, action
 
     def _get(
@@ -78,6 +164,21 @@ class Endpoint:
         id: str | None = None,
         **kwargs: Any,
     ) -> Response:
+        """
+        Perform an internal GET request to the endpoint.
+
+        Constructs the URL with the provided filters and action_id to retrieve
+        specific data from the API.
+
+        Parameters:
+        - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
+        - action_id (str | None): The specific action ID for the endpoint to be performed.
+        - id (str | None): The ID of the specific resource to be retrieved.
+        - **kwargs (Any): Additional keyword arguments to be passed to the API call.
+
+        Returns:
+        - Response: The response object from the API call.
+        """
         return api_call(
             self._auth,
             "get",
@@ -96,6 +197,17 @@ class Endpoint:
         action_id: str | None = None,
         **kwargs: Any,
     ) -> Response:
+        """
+        Performs a GET request to retrieve multiple resources.
+
+        Parameters:
+        - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
+        - action_id (str | None): The specific action ID to be performed.
+        - **kwargs (Any): Additional keyword arguments to be passed to the API call.
+
+        Returns:
+        - Response: The response object from the API call containing multiple resources.
+        """
         return self._get(filters=filters, action_id=action_id, **kwargs)
 
     def get(
@@ -105,6 +217,18 @@ class Endpoint:
         action_id: str | None = None,
         **kwargs: Any,
     ) -> Response:
+        """
+        Performs a GET request to retrieve a specific resource.
+
+        Parameters:
+        - id (str | None): The ID of the specific resource to be retrieved.
+        - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
+        - action_id (str | None): The specific action ID to be performed.
+        - **kwargs (Any): Additional keyword arguments to be passed to the API call.
+
+        Returns:
+        - Response: The response object from the API call containing the specific resource.
+        """
         return self._get(id=id, filters=filters, action_id=action_id, **kwargs)
 
     def create(
@@ -117,6 +241,21 @@ class Endpoint:
         data_encoding: str = "utf-8",
         **kwargs: Any,
     ) -> Response:
+        """
+        Performs a POST request to create a new resource.
+
+        Parameters:
+        - data (dict | None): The data to include in the request body.
+        - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
+        - id (str | None): The ID of the specific resource to be created.
+        - action_id (str | None): The specific action ID to be performed.
+        - ensure_ascii (bool): Whether to ensure ASCII characters in the data.
+        - data_encoding (str): The encoding to be used for the data.
+        - **kwargs (Any): Additional keyword arguments to be passed to the API call.
+
+        Returns:
+        - Response: The response object from the API call.
+        """
         json_data: str | bytes | None = None
         if self.headers.get("Content-type") == "application/json" and data is not None:
             json_data = json.dumps(data, ensure_ascii=ensure_ascii)
@@ -145,6 +284,21 @@ class Endpoint:
         data_encoding: str = "utf-8",
         **kwargs: Any,
     ) -> Response:
+        """
+        Performs a PUT request to update an existing resource.
+
+        Parameters:
+        - id (str | None): The ID of the specific resource to be updated.
+        - data (dict | None): The data to be sent in the request body.
+        - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
+        - action_id (str | None): The specific action ID to be performed.
+        - ensure_ascii (bool): Whether to ensure ASCII characters in the data.
+        - data_encoding (str): The encoding to be used for the data.
+        - **kwargs (Any): Additional keyword arguments to be passed to the API call.
+
+        Returns:
+        - Response: The response object from the API call.
+        """
         json_data: str | bytes | None = None
         if self.headers.get("Content-type") == "application/json" and data is not None:
             json_data = json.dumps(data, ensure_ascii=ensure_ascii)
@@ -164,6 +318,16 @@ class Endpoint:
         )
 
     def delete(self, id: str | None, **kwargs: Any) -> Response:
+        """
+        Performs a DELETE request to delete a resource.
+
+        Parameters:
+        - id (str | None): The ID of the specific resource to be deleted.
+        - **kwargs (Any): Additional keyword arguments to be passed to the API call.
+
+        Returns:
+        - Response: The response object from the API call.
+        """
         return api_call(
             self._auth,
             "delete",
@@ -176,13 +340,61 @@ class Endpoint:
 
 
 class Client:
+    """
+    A client for interacting with the Mailjet API.
+
+    This class manages authentication, configuration, and API endpoint access.
+    It initializes with API authentication details and uses dynamic attribute access
+    to allow flexible interaction with various Mailjet API endpoints.
+
+    Attributes:
+    - auth  (tuple[str, str] | None): A tuple containing the API key and secret for authentication.
+    - config (Config): An instance of the Config class, which holds API configuration settings.
+
+    Methods:
+    - __init__: Initializes a new Client instance with authentication and configuration settings.
+    - __getattr__: Handles dynamic attribute access, allowing for accessing API endpoints as attributes.
+    """
+
     def __init__(self, auth: tuple[str, str] | None = None, **kwargs: Any) -> None:
+        """
+        Initialize a new Client instance for API interaction.
+
+        This method sets up API authentication and configuration. The `auth` parameter
+        provides a tuple with the API key and secret. Additional keyword arguments can
+        specify configuration options like API version and URL.
+
+        Parameters:
+        - auth (tuple[str, str] | None): A tuple containing the API key and secret for authentication. If None, authentication is not required.
+        - **kwargs (Any): Additional keyword arguments, such as `version` and `api_url`, for configuring the client.
+
+        Returns:
+        - None
+
+
+        Example:
+            client = Client(auth=("api_key", "api_secret"), version="v3")
+        """
         self.auth = auth
         version: str | None = kwargs.get("version")
         api_url: str | None = kwargs.get("api_url")
         self.config = Config(version=version, api_url=api_url)
 
     def __getattr__(self, name: str) -> Any:
+        """
+        Dynamically access API endpoints as attributes.
+
+        This method allows for flexible, attribute-style access to API endpoints.
+        It constructs the appropriate endpoint URL and headers based on the attribute
+        name, which it parses to identify the resource and optional sub-resources.
+
+        Parameters:
+        - name (str): The name of the attribute being accessed, corresponding to the Mailjet API endpoint.
+
+
+        Returns:
+        - Endpoint: An instance of the `Endpoint` class, initialized with the constructed URL, headers, action, and authentication details.
+        """
         name_regex: str = re.sub(r"[A-Z]", prepare_url, name)
         split: list[str] = name_regex.split("_")  # noqa: RUF100, FURB184
         # identify the resource
@@ -218,6 +430,26 @@ def api_call(
     action_id: str | None = None,
     **kwargs: Any,
 ) -> Response | Any:
+    """
+    This function is responsible for making an API call to a specified URL using the provided method, headers, and other parameters.
+
+    Parameters:
+    - auth (tuple[str, str] | None): A tuple containing the API key and secret for authentication.
+    - method (str): The HTTP method to be used for the API call (e.g., 'get', 'post', 'put', 'delete').
+    - url (str): The URL to which the API call will be made.
+    - headers (dict[str, str]): A dictionary containing the headers to be included in the API call.
+    - data (str | bytes | None): The data to be sent in the request body.
+    - filters (Mapping[str, str | Any] | None): A dictionary containing filters to be applied in the request.
+    - resource_id (str | None): The ID of the specific resource to be accessed.
+    - timeout (int): The timeout for the API call in seconds.
+    - debug (bool): A flag indicating whether debug mode is enabled.
+    - action (str | None): The specific action to be performed on the resource.
+    - action_id (str | None): The ID of the specific action to be performed.
+    - **kwargs (Any): Additional keyword arguments to be passed to the API call.
+
+    Returns:
+    - Response | Any: The response object from the API call if the request is successful, or an exception if an error occurs.
+    """
     url = build_url(
         url,
         method=method,
@@ -257,7 +489,17 @@ def build_headers(
     action: str,
     extra_headers: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Build headers based on resource and action."""
+    """
+    Build headers based on resource and action.
+
+    Parameters:
+    - resource (str): The name of the resource for which headers are being built.
+    - action (str): The specific action being performed on the resource.
+    - extra_headers (dict[str, str] | None): Additional headers to be included in the request. Defaults to None.
+
+    Returns:
+    - dict[str, str]: A dictionary containing the headers to be included in the API request.
+    """
     headers: dict[str, str] = {"Content-type": "application/json"}
 
     if resource.lower() == "contactslist" and action.lower() == "csvdata":
@@ -278,6 +520,22 @@ def build_url(
     resource_id: str | None = None,
     action_id: str | None = None,
 ) -> str:
+    """
+    Construct a URL for making an API request.
+
+    This function takes the base URL, method, action, resource ID, and action ID as parameters
+    and constructs a URL by appending the resource ID, action, and action ID to the base URL.
+
+    Parameters:
+    url (str): The base URL for the API request.
+    method (str | None): The HTTP method for the API request (e.g., 'get', 'post', 'put', 'delete').
+    action (str | None): The specific action to be performed on the resource. Defaults to None.
+    resource_id (str | None): The ID of the specific resource to be accessed. Defaults to None.
+    action_id (str | None): The ID of the specific action to be performed. Defaults to None.
+
+    Returns:
+    str: The constructed URL for the API request.
+    """
     if resource_id:
         url += f"/{resource_id}"
     if action:
@@ -288,6 +546,18 @@ def build_url(
 
 
 def parse_response(response: Response, debug: bool = False) -> Any:
+    """
+    Parse the response from an API request.
+
+    This function extracts the JSON data from the response and logs debug information if the `debug` flag is set to True.
+
+    Parameters:
+    response (requests.models.Response): The response object from the API request.
+    debug (bool, optional): A flag indicating whether debug information should be logged. Defaults to False.
+
+    Returns:
+    Any: The JSON data extracted from the response.
+    """
     data = response.json()
 
     if debug:
@@ -303,32 +573,75 @@ def parse_response(response: Response, debug: bool = False) -> Any:
 
 
 class ApiError(Exception):
-    pass
+    """
+    Base class for all API-related errors.
+
+    This exception serves as the root for all custom API error types,
+    allowing for more specific error handling based on the type of API
+    failure encountered.
+    """
 
 
 class AuthorizationError(ApiError):
-    pass
+    """
+    Error raised for authorization failures.
+
+    This error is raised when the API request fails due to invalid
+    or missing authentication credentials.
+    """
 
 
 class ActionDeniedError(ApiError):
-    pass
+    """
+    Error raised when an action is denied by the API.
+
+    This exception is triggered when an action is requested but is not
+    permitted, likely due to insufficient permissions.
+    """
 
 
 class CriticalApiError(ApiError):
-    pass
+    """
+    Error raised for critical API failures.
+
+    This error represents severe issues with the API or infrastructure
+    that prevent requests from completing.
+    """
 
 
 class ApiRateLimitError(ApiError):
-    pass
+    """
+    Error raised when the API rate limit is exceeded.
+
+    This exception is raised when the user has made too many requests
+    within a given time frame, as enforced by the API's rate limit policy.
+    """
 
 
 class TimeoutError(ApiError):
-    pass
+    """
+    Error raised when an API request times out.
+
+    This error is raised if an API request does not complete within
+    the allowed timeframe, possibly due to network issues or server load.
+    """
 
 
 class DoesNotExistError(ApiError):
-    pass
+    """
+    Error raised when a requested resource does not exist.
+
+    This exception is triggered when a specific resource is requested
+    but cannot be found in the API, indicating a potential data mismatch
+    or invalid identifier.
+    """
 
 
 class ValidationError(ApiError):
-    pass
+    """
+    Error raised for invalid input data.
+
+    This exception is raised when the input data for an API request
+    does not meet validation requirements, such as incorrect data types
+    or missing fields.
+    """
