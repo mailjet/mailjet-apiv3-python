@@ -197,6 +197,7 @@ ignore = [
     "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None`
     # pycodestyle (E, W)
     "CPY001",   # Missing copyright notice at top of file
+    "DOC501",  # DOC501 Raised exception `TimeoutError` and `ApiError` missing from docstring
     "E501",
     "FBT001",  # Boolean-typed positional argument in function definition
     "FBT002",  # Boolean default positional argument in function definition
@@ -210,7 +211,7 @@ ignore = [
     "PLE0604",
     "PLR2004",  # PLR2004 Magic value used in comparison, consider replacing `XXX` with a constant variable
     "PLR0913",  # PLR0913 Too many arguments in function definition (6 > 5)
-    #"PLR0917",  # PLR0917 Too many positional arguments
+    "PLR0917",  # PLR0917 Too many positional arguments
     # TODO: "Remove Q000 it before the next release
     "Q000",
     "Q003",   # Checks for avoidable escaped quotes ("\"" -> '"')

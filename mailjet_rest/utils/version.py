@@ -20,7 +20,18 @@ VERSION: tuple[int, int, int] = (1, 3, 5)
 def get_version(version: tuple[int, ...] | None = None) -> str:
     """Calculate package version based on a 3 item tuple.
 
-    In addition verify that the tuple contains 3 items.
+    In addition, verify that the tuple contains 3 items.
+
+    Parameters:
+    version (tuple[int, ...], optional): A tuple representing the version of the package.
+        If not provided, the function will use the VERSION constant.
+        Default is None.
+
+    Returns:
+    str: The version as a string in the format "major.minor.patch".
+
+    Raises:
+    ValueError: If the provided tuple does not contain exactly 3 items.
     """
     if version is None:
         version = VERSION

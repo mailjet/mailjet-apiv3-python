@@ -29,9 +29,6 @@ class TestSuite(unittest.TestCase):
         Attributes:
         - self.auth (tuple[str, str]): A tuple containing the public and private API keys obtained from the environment variables 'MJ_APIKEY_PUBLIC' and 'MJ_APIKEY_PRIVATE' respectively.
         - self.client (Client):  An instance of the Mailjet Client class, initialized with the provided authentication credentials.
-
-        Returns:
-        None
         """
         self.auth: tuple[str, str] = (
             os.environ["MJ_APIKEY_PUBLIC"],
@@ -46,9 +43,6 @@ class TestSuite(unittest.TestCase):
 
         Parameters:
         None
-
-        Returns:
-        None
         """
         result: Any = self.client.contact.get().json()
         self.assertTrue("Data" in result and "Count" in result)
@@ -60,9 +54,6 @@ class TestSuite(unittest.TestCase):
 
         Parameters:
         None
-
-        Returns:
-        None
         """
         result: Any = self.client.contact.get(filters={"limit": 2}).json()
         self.assertTrue(result["Count"] >= 0 or result["Count"] <= 2)
@@ -73,9 +64,6 @@ class TestSuite(unittest.TestCase):
         It verifies that the response contains 'Count' field, demonstrating that invalid parameters are ignored.
 
         Parameters:
-        None
-
-        Returns:
         None
         """
         # invalid parameters are ignored
@@ -89,9 +77,6 @@ class TestSuite(unittest.TestCase):
 
         Parameters:
         None
-
-        Returns:
-        None
         """
         # it shouldn't use data
         result = self.client.contact.get(data={"Email": "api@mailjet.com"})
@@ -104,9 +89,6 @@ class TestSuite(unittest.TestCase):
         Finally, it verifies that the contact has been successfully added to the list.
 
         Parameters:
-        None
-
-        Returns:
         None
 
         Attributes:
@@ -176,9 +158,6 @@ class TestSuite(unittest.TestCase):
         Parameters:
         None
 
-        Returns:
-        None
-
         Attributes:
         - result_contact (Any): The result of the initial contact retrieval, containing a single contact.
         - result_contact_with_id (Any): The result of the contact retrieval using the email address from the initial contact as a filter.
@@ -202,9 +181,6 @@ class TestSuite(unittest.TestCase):
 
         Parameters:
         None
-
-        Returns:
-        None
         """
         result: Any = self.client.sender.create(data={}).json()
         self.assertTrue("StatusCode" in result and result["StatusCode"] == 400)
@@ -217,9 +193,6 @@ class TestSuite(unittest.TestCase):
         Additionally, it verifies that the send endpoint URL in the client's configuration is updated to the correct version.
 
         Parameters:
-        None
-
-        Returns:
         None
         """
         self.client = Client(auth=self.auth, version="v3.1")
@@ -237,9 +210,6 @@ class TestSuite(unittest.TestCase):
         This test ensures that the client's user agent is properly configured and includes the correct version information.
 
         Parameters:
-        None
-
-        Returns:
         None
         """
         self.client = Client(auth=self.auth, version="v3.1")

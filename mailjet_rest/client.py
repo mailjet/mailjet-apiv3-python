@@ -93,9 +93,6 @@ class Config:
         Parameters:
         - version (str | None): The API version to use. If None, the default version ('v3') is used.
         - api_url (str | None): The base URL for API requests. If None, the default URL (DEFAULT_API_URL) is used.
-
-        Returns:
-        - None
         """
         if version is not None:
             self.version = version
@@ -381,10 +378,6 @@ class Client:
         Parameters:
         - auth (tuple[str, str] | None): A tuple containing the API key and secret for authentication. If None, authentication is not required.
         - **kwargs (Any): Additional keyword arguments, such as `version` and `api_url`, for configuring the client.
-
-        Returns:
-        - None
-
 
         Example:
             client = Client(auth=("api_key", "api_secret"), version="v3")
