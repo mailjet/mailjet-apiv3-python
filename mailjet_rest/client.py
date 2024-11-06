@@ -1,3 +1,31 @@
+"""This module provides the main client and helper classes for interacting with the Mailjet API.
+
+The `mailjet_rest.client` module includes the core `Client` class for managing
+API requests, configuration, and error handling, as well as utility functions
+and classes for building request headers, URLs, and parsing responses.
+
+Classes:
+    - Config: Manages configuration settings for the Mailjet API.
+    - Endpoint: Represents specific API endpoints and provides methods for
+      common HTTP operations like GET, POST, PUT, and DELETE.
+    - Client: The main API client for authenticating and making requests.
+    - ApiError: Base class for handling API-specific errors, with subclasses
+      for more specific error types (e.g., `AuthorizationError`, `TimeoutError`).
+
+Functions:
+    - prepare_url: Prepares URLs for API requests.
+    - api_call: A helper function that sends HTTP requests to the API and handles
+      responses.
+    - build_headers: Builds HTTP headers for the requests.
+    - build_url: Constructs the full API URL based on endpoint and parameters.
+    - parse_response: Parses API responses and handles error conditions.
+
+Exceptions:
+    - ApiError: Base exception for API errors, with subclasses to represent
+      specific error types, such as `AuthorizationError`, `TimeoutError`,
+      `ActionDeniedError`, and `ValidationError`.
+"""
+
 from __future__ import annotations
 
 import json
@@ -23,8 +51,7 @@ requests.packages.urllib3.disable_warnings()
 
 
 def prepare_url(key: Match[str]) -> str:
-    """
-    Replaces capital letters in the input string with a dash prefix and converts them to lowercase.
+    """Replaces capital letters in the input string with a dash prefix and converts them to lowercase.
 
     Parameters:
     key (Match[str]): A match object representing a substring from the input string. The substring should contain a single capital letter.
@@ -39,8 +66,7 @@ def prepare_url(key: Match[str]) -> str:
 
 
 class Config:
-    """
-    Configuration settings for interacting with the Mailjet API.
+    """Configuration settings for interacting with the Mailjet API.
 
     This class stores and manages API configuration details, including the API URL,
     version, and user agent string. It provides methods for initializing these settings
@@ -59,8 +85,7 @@ class Config:
     user_agent: str = "mailjet-apiv3-python/v" + get_version()
 
     def __init__(self, version: str | None = None, api_url: str | None = None) -> None:
-        """
-        Initialize a new Config instance with specified or default API settings.
+        """Initialize a new Config instance with specified or default API settings.
 
         This initializer sets the API version and base URL. If no version or URL
         is provided, it defaults to the predefined class values.
@@ -77,8 +102,7 @@ class Config:
         self.api_url = api_url or self.DEFAULT_API_URL
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
-        """
-        Retrieve the API endpoint URL and headers for a given key.
+        """Retrieve the API endpoint URL and headers for a given key.
 
         This method builds the URL and headers required for specific API interactions.
         The URL is adjusted based on the API version, and additional headers are
@@ -117,8 +141,7 @@ class Config:
 
 
 class Endpoint:
-    """
-    A class representing a specific Mailjet API endpoint.
+    """A class representing a specific Mailjet API endpoint.
 
     This class provides methods to perform HTTP requests to a given API endpoint,
     including GET, POST, PUT, and DELETE requests. It manages URL construction,
@@ -146,8 +169,7 @@ class Endpoint:
         auth: tuple[str, str] | None,
         action: str | None = None,
     ) -> None:
-        """
-        Initialize a new Endpoint instance.
+        """Initialize a new Endpoint instance.
 
         Args:
             url (str): The base URL for the endpoint.
@@ -164,8 +186,7 @@ class Endpoint:
         id: str | None = None,
         **kwargs: Any,
     ) -> Response:
-        """
-        Perform an internal GET request to the endpoint.
+        """Perform an internal GET request to the endpoint.
 
         Constructs the URL with the provided filters and action_id to retrieve
         specific data from the API.
@@ -197,8 +218,7 @@ class Endpoint:
         action_id: str | None = None,
         **kwargs: Any,
     ) -> Response:
-        """
-        Performs a GET request to retrieve multiple resources.
+        """Performs a GET request to retrieve multiple resources.
 
         Parameters:
         - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
@@ -217,8 +237,7 @@ class Endpoint:
         action_id: str | None = None,
         **kwargs: Any,
     ) -> Response:
-        """
-        Performs a GET request to retrieve a specific resource.
+        """Performs a GET request to retrieve a specific resource.
 
         Parameters:
         - id (str | None): The ID of the specific resource to be retrieved.
@@ -241,8 +260,7 @@ class Endpoint:
         data_encoding: str = "utf-8",
         **kwargs: Any,
     ) -> Response:
-        """
-        Performs a POST request to create a new resource.
+        """Performs a POST request to create a new resource.
 
         Parameters:
         - data (dict | None): The data to include in the request body.
@@ -284,8 +302,7 @@ class Endpoint:
         data_encoding: str = "utf-8",
         **kwargs: Any,
     ) -> Response:
-        """
-        Performs a PUT request to update an existing resource.
+        """Performs a PUT request to update an existing resource.
 
         Parameters:
         - id (str | None): The ID of the specific resource to be updated.
@@ -318,8 +335,7 @@ class Endpoint:
         )
 
     def delete(self, id: str | None, **kwargs: Any) -> Response:
-        """
-        Performs a DELETE request to delete a resource.
+        """Performs a DELETE request to delete a resource.
 
         Parameters:
         - id (str | None): The ID of the specific resource to be deleted.
@@ -340,8 +356,7 @@ class Endpoint:
 
 
 class Client:
-    """
-    A client for interacting with the Mailjet API.
+    """A client for interacting with the Mailjet API.
 
     This class manages authentication, configuration, and API endpoint access.
     It initializes with API authentication details and uses dynamic attribute access
@@ -357,8 +372,7 @@ class Client:
     """
 
     def __init__(self, auth: tuple[str, str] | None = None, **kwargs: Any) -> None:
-        """
-        Initialize a new Client instance for API interaction.
+        """Initialize a new Client instance for API interaction.
 
         This method sets up API authentication and configuration. The `auth` parameter
         provides a tuple with the API key and secret. Additional keyword arguments can
@@ -381,8 +395,7 @@ class Client:
         self.config = Config(version=version, api_url=api_url)
 
     def __getattr__(self, name: str) -> Any:
-        """
-        Dynamically access API endpoints as attributes.
+        """Dynamically access API endpoints as attributes.
 
         This method allows for flexible, attribute-style access to API endpoints.
         It constructs the appropriate endpoint URL and headers based on the attribute
@@ -430,8 +443,7 @@ def api_call(
     action_id: str | None = None,
     **kwargs: Any,
 ) -> Response | Any:
-    """
-    This function is responsible for making an API call to a specified URL using the provided method, headers, and other parameters.
+    """This function is responsible for making an API call to a specified URL using the provided method, headers, and other parameters.
 
     Parameters:
     - auth (tuple[str, str] | None): A tuple containing the API key and secret for authentication.
@@ -489,8 +501,7 @@ def build_headers(
     action: str,
     extra_headers: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """
-    Build headers based on resource and action.
+    """Build headers based on resource and action.
 
     Parameters:
     - resource (str): The name of the resource for which headers are being built.
@@ -520,8 +531,7 @@ def build_url(
     resource_id: str | None = None,
     action_id: str | None = None,
 ) -> str:
-    """
-    Construct a URL for making an API request.
+    """Construct a URL for making an API request.
 
     This function takes the base URL, method, action, resource ID, and action ID as parameters
     and constructs a URL by appending the resource ID, action, and action ID to the base URL.
@@ -546,8 +556,7 @@ def build_url(
 
 
 def parse_response(response: Response, debug: bool = False) -> Any:
-    """
-    Parse the response from an API request.
+    """Parse the response from an API request.
 
     This function extracts the JSON data from the response and logs debug information if the `debug` flag is set to True.
 
@@ -573,8 +582,7 @@ def parse_response(response: Response, debug: bool = False) -> Any:
 
 
 class ApiError(Exception):
-    """
-    Base class for all API-related errors.
+    """Base class for all API-related errors.
 
     This exception serves as the root for all custom API error types,
     allowing for more specific error handling based on the type of API
@@ -583,8 +591,7 @@ class ApiError(Exception):
 
 
 class AuthorizationError(ApiError):
-    """
-    Error raised for authorization failures.
+    """Error raised for authorization failures.
 
     This error is raised when the API request fails due to invalid
     or missing authentication credentials.
@@ -592,8 +599,7 @@ class AuthorizationError(ApiError):
 
 
 class ActionDeniedError(ApiError):
-    """
-    Error raised when an action is denied by the API.
+    """Error raised when an action is denied by the API.
 
     This exception is triggered when an action is requested but is not
     permitted, likely due to insufficient permissions.
@@ -601,8 +607,7 @@ class ActionDeniedError(ApiError):
 
 
 class CriticalApiError(ApiError):
-    """
-    Error raised for critical API failures.
+    """Error raised for critical API failures.
 
     This error represents severe issues with the API or infrastructure
     that prevent requests from completing.
@@ -610,8 +615,7 @@ class CriticalApiError(ApiError):
 
 
 class ApiRateLimitError(ApiError):
-    """
-    Error raised when the API rate limit is exceeded.
+    """Error raised when the API rate limit is exceeded.
 
     This exception is raised when the user has made too many requests
     within a given time frame, as enforced by the API's rate limit policy.
@@ -619,8 +623,7 @@ class ApiRateLimitError(ApiError):
 
 
 class TimeoutError(ApiError):
-    """
-    Error raised when an API request times out.
+    """Error raised when an API request times out.
 
     This error is raised if an API request does not complete within
     the allowed timeframe, possibly due to network issues or server load.
@@ -628,8 +631,7 @@ class TimeoutError(ApiError):
 
 
 class DoesNotExistError(ApiError):
-    """
-    Error raised when a requested resource does not exist.
+    """Error raised when a requested resource does not exist.
 
     This exception is triggered when a specific resource is requested
     but cannot be found in the API, indicating a potential data mismatch
@@ -638,8 +640,7 @@ class DoesNotExistError(ApiError):
 
 
 class ValidationError(ApiError):
-    """
-    Error raised for invalid input data.
+    """Error raised for invalid input data.
 
     This exception is raised when the input data for an API request
     does not meet validation requirements, such as incorrect data types

@@ -1,3 +1,5 @@
+"""A suite of tests for Mailjet API client functionality."""
+
 import os
 import random
 import string
@@ -8,7 +10,29 @@ from mailjet_rest import Client
 
 
 class TestSuite(unittest.TestCase):
+    """A suite of tests for Mailjet API client functionality.
+
+    This class provides setup and teardown functionality for tests involving the
+    Mailjet API client, with authentication and client initialization handled
+    in `setUp`. Each test in this suite operates with the configured Mailjet client
+    instance to simulate API interactions.
+    """
+
     def setUp(self) -> None:
+        """Set up the test environment by initializing authentication credentials and the Mailjet client.
+
+        This method is called before each test to ensure a consistent testing
+        environment. It retrieves the API keys from environment variables and
+        uses them to create an instance of the Mailjet `Client` for authenticated
+        API interactions.
+
+        Attributes:
+        - self.auth (tuple[str, str]): A tuple containing the public and private API keys obtained from the environment variables 'MJ_APIKEY_PUBLIC' and 'MJ_APIKEY_PRIVATE' respectively.
+        - self.client (Client):  An instance of the Mailjet Client class, initialized with the provided authentication credentials.
+
+        Returns:
+        None
+        """
         self.auth: tuple[str, str] = (
             os.environ["MJ_APIKEY_PUBLIC"],
             os.environ["MJ_APIKEY_PRIVATE"],
@@ -16,24 +40,86 @@ class TestSuite(unittest.TestCase):
         self.client: Client = Client(auth=self.auth)
 
     def test_get_no_param(self) -> None:
+        """This test function sends a GET request to the Mailjet API endpoint for contacts without any parameters.
+
+        It verifies that the response contains 'Data' and 'Count' fields.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         result: Any = self.client.contact.get().json()
         self.assertTrue("Data" in result and "Count" in result)
 
     def test_get_valid_params(self) -> None:
+        """This test function sends a GET request to the Mailjet API endpoint for contacts with a valid parameter 'limit'.
+
+        It verifies that the response contains a count of contacts that is within the range of 0 to 2.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         result: Any = self.client.contact.get(filters={"limit": 2}).json()
         self.assertTrue(result["Count"] >= 0 or result["Count"] <= 2)
 
     def test_get_invalid_parameters(self) -> None:
+        """This test function sends a GET request to the Mailjet API endpoint for contacts with an invalid parameter.
+
+        It verifies that the response contains 'Count' field, demonstrating that invalid parameters are ignored.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         # invalid parameters are ignored
         result: Any = self.client.contact.get(filters={"invalid": "false"}).json()
         self.assertTrue("Count" in result)
 
     def test_get_with_data(self) -> None:
+        """This test function sends a GET request to the Mailjet API endpoint for contacts with 'data' parameter.
+
+        It verifies that the request is successful (status code 200) and does not use the 'data' parameter.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         # it shouldn't use data
         result = self.client.contact.get(data={"Email": "api@mailjet.com"})
         self.assertTrue(result.status_code == 200)
 
     def test_get_with_action(self) -> None:
+        """This function tests the functionality of adding a contact to a contact list using the Mailjet API client.
+
+        It first retrieves a contact and a contact list from the API, then adds the contact to the list.
+        Finally, it verifies that the contact has been successfully added to the list.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+
+        Attributes:
+        - get_contact (Any): The result of the initial contact retrieval, containing a single contact.
+        - contact_id (str): The ID of the retrieved contact.
+        - post_contact (Response): The response from creating a new contact if no contact was found.
+        - get_contact_list (Any): The result of the contact list retrieval, containing a single contact list.
+        - list_id (str): The ID of the retrieved contact list.
+        - post_contact_list (Response): The response from creating a new contact list if no contact list was found.
+        - data (dict[str, list[dict[str, str]]]): The data for managing contact lists, containing the list ID and action to add the contact.
+        - result_add_list (Response): The response from adding the contact to the contact list.
+        - result (Any): The result of retrieving the contact's contact lists, containing the count of contact lists.
+        """
         get_contact: Any = self.client.contact.get(filters={"limit": 1}).json()
         if get_contact["Count"] != 0:
             contact_id: str = get_contact["Data"][0]["ID"]
@@ -83,6 +169,20 @@ class TestSuite(unittest.TestCase):
         self.assertTrue("Count" in result)
 
     def test_get_with_id_filter(self) -> None:
+        """This test function sends a GET request to the Mailjet API endpoint for contacts with a specific email address obtained from a previous contact retrieval.
+
+        It verifies that the response contains a contact with the same email address as the one used in the filter.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+
+        Attributes:
+        - result_contact (Any): The result of the initial contact retrieval, containing a single contact.
+        - result_contact_with_id (Any): The result of the contact retrieval using the email address from the initial contact as a filter.
+        """
         result_contact: Any = self.client.contact.get(filters={"limit": 1}).json()
         result_contact_with_id: Any = self.client.contact.get(
             filter={"Email": result_contact["Data"][0]["Email"]},
@@ -93,10 +193,35 @@ class TestSuite(unittest.TestCase):
         )
 
     def test_post_with_no_param(self) -> None:
+        """This function tests the behavior of the Mailjet API client when attempting to create a sender with no parameters.
+
+        The function sends a POST request to the Mailjet API endpoint for creating a sender with an empty
+        data dictionary. It then verifies that the response contains a 'StatusCode' field with a value of 400,
+        indicating a bad request. This test ensures that the client handles missing required parameters
+        appropriately.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         result: Any = self.client.sender.create(data={}).json()
         self.assertTrue("StatusCode" in result and result["StatusCode"] == 400)
 
     def test_client_custom_version(self) -> None:
+        """This test function verifies the functionality of setting a custom version for the Mailjet API client.
+
+        The function initializes a new instance of the Mailjet Client with custom version "v3.1".
+        It then asserts that the client's configuration version is correctly set to "v3.1".
+        Additionally, it verifies that the send endpoint URL in the client's configuration is updated to the correct version.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         self.client = Client(auth=self.auth, version="v3.1")
         self.assertEqual(self.client.config.version, "v3.1")
         self.assertEqual(
@@ -105,6 +230,18 @@ class TestSuite(unittest.TestCase):
         )
 
     def test_user_agent(self) -> None:
+        """This function tests the user agent configuration of the Mailjet API client.
+
+        The function initializes a new instance of the Mailjet Client with a custom version "v3.1".
+        It then asserts that the client's user agent is correctly set to "mailjet-apiv3-python/v1.3.5".
+        This test ensures that the client's user agent is properly configured and includes the correct version information.
+
+        Parameters:
+        None
+
+        Returns:
+        None
+        """
         self.client = Client(auth=self.auth, version="v3.1")
         self.assertEqual(self.client.config.user_agent, "mailjet-apiv3-python/v1.3.5")
 
