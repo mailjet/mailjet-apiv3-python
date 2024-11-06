@@ -201,27 +201,16 @@ ignore = [
     "E501",
     "FBT001",  # Boolean-typed positional argument in function definition
     "FBT002",  # Boolean default positional argument in function definition
-    "INP001",  # INP001 File `samples/campaign_sample.py` is part of an implicit namespace package. Add an `__init__.py`.
-    "PD901",
-    "PD015",
-    # pep8-naming (N)
-    "N802",
-    "N806",
-    # TODO: PLE0604 Invalid object in `__all__`, must contain only strings
-    "PLE0604",
+    # TODO: Replace with http.HTTPStatus, see https://docs.python.org/3/library/http.html#http-status-codes
     "PLR2004",  # PLR2004 Magic value used in comparison, consider replacing `XXX` with a constant variable
     "PLR0913",  # PLR0913 Too many arguments in function definition (6 > 5)
     "PLR0917",  # PLR0917 Too many positional arguments
-    # TODO: "Remove Q000 it before the next release
-    "Q000",
     "Q003",   # Checks for avoidable escaped quotes ("\"" -> '"')
-    "RET504",   # RET504 Unnecessary assignment to `response` before `return` statement
-    "RUF012",
     # TODO:" PT009 Use a regular `assert` instead of unittest-style `assertTrue`
     "PT009",
     "S311",  # S311 Standard pseudo-random generators are not suitable for cryptographic purposes
+    # TODO: T201 Replace `print` with logging functions
     "T201",  # T201 `print` found
-    "UP031",  # pyupgrade (UP): Skip for logging: UP031 Use format specifiers instead of percent format
 ]
 
 
