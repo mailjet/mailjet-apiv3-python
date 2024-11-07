@@ -242,11 +242,36 @@ def test_prepare_url_headers_and_url() -> None:
 
 
 def test_post_with_no_param(client_mj30: Client) -> None:
+    """Tests a POST request with an empty data payload.
+
+    This test sends a POST request to the 'create' endpoint using an empty dictionary
+    as the data payload. It checks that the API responds with a 400 status code,
+    indicating a bad request due to missing required parameters.
+
+    Parameters:
+        client_mj30 (Client): An instance of the Mailjet API client.
+
+    Raises:
+        AssertionError: If "StatusCode" is not in the result or if its value
+        is not 400.
+    """
     result = client_mj30.sender.create(data={}).json()
     assert "StatusCode" in result and result["StatusCode"] == 400
 
 
 def test_get_no_param(client_mj30: Client) -> None:
+    """Tests a GET request to retrieve contact data without any parameters.
+
+    This test sends a GET request to the 'contact' endpoint without filters or
+    additional parameters. It verifies that the response includes both "Data"
+    and "Count" fields, confirming the endpoint returns a valid structure.
+
+    Parameters:
+        client_mj30 (Client): An instance of the Mailjet API client.
+
+    Raises:
+        AssertionError: If "Data" or "Count" are not present in the response.
+    """
     result: Any = client_mj30.contact.get().json()
     assert "Data" in result and "Count" in result
 
