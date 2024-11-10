@@ -276,7 +276,6 @@ ignore-overlong-task-comments = true
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-
 [tool.mypy]
 strict = true
 # Adapted from this StackOverflow post:

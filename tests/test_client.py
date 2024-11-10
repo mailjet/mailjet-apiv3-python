@@ -14,8 +14,7 @@ from mailjet_rest.client import prepare_url, Config
 
 @pytest.fixture
 def simple_data() -> tuple[dict[str, list[dict[str, str]]], str]:
-    """
-    This function provides a simple data structure and its encoding for testing purposes.
+    """This function provides a simple data structure and its encoding for testing purposes.
 
     Parameters:
     None
@@ -34,8 +33,7 @@ def simple_data() -> tuple[dict[str, list[dict[str, str]]], str]:
 
 @pytest.fixture
 def client_mj30() -> Client:
-    """
-    This function creates and returns a Mailjet API client instance for version 3.0.
+    """This function creates and returns a Mailjet API client instance for version 3.0.
 
     Parameters:
     None
@@ -52,9 +50,7 @@ def client_mj30() -> Client:
 
 @pytest.fixture
 def client_mj30_invalid_auth() -> Client:
-    """
-    This function creates and returns a Mailjet API client instance for version 3.0,
-    but with invalid authentication credentials.
+    """This function creates and returns a Mailjet API client instance for version 3.0, but with invalid authentication credentials.
 
     Parameters:
     None
@@ -73,8 +69,7 @@ def client_mj30_invalid_auth() -> Client:
 
 @pytest.fixture
 def client_mj31() -> Client:
-    """
-    This function creates and returns a Mailjet API client instance for version 3.1.
+    """This function creates and returns a Mailjet API client instance for version 3.1.
 
     Parameters:
     None
@@ -127,8 +122,8 @@ def test_json_data_str_or_bytes_with_ensure_ascii(
 def test_json_data_str_or_bytes_with_ensure_ascii_false(
     simple_data: tuple[dict[str, list[dict[str, str]]], str]
 ) -> None:
-    """
-    This function tests the conversion of structured data into JSON format with the specified encoding settings.
+    """This function tests the conversion of structured data into JSON format with the specified encoding settings.
+
     It specifically tests the case where the 'ensure_ascii' parameter is set to False.
 
     Parameters:

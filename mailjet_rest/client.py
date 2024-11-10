@@ -51,7 +51,7 @@ requests.packages.urllib3.disable_warnings()
 
 
 def prepare_url(key: Match[str]) -> str:
-    """Replaces capital letters in the input string with a dash prefix and converts them to lowercase.
+    """Replace capital letters in the input string with a dash prefix and converts them to lowercase.
 
     Parameters:
     key (Match[str]): A match object representing a substring from the input string. The substring should contain a single capital letter.
@@ -215,7 +215,7 @@ class Endpoint:
         action_id: str | None = None,
         **kwargs: Any,
     ) -> Response:
-        """Performs a GET request to retrieve multiple resources.
+        """Perform a GET request to retrieve multiple resources.
 
         Parameters:
         - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
@@ -234,7 +234,7 @@ class Endpoint:
         action_id: str | None = None,
         **kwargs: Any,
     ) -> Response:
-        """Performs a GET request to retrieve a specific resource.
+        """Perform a GET request to retrieve a specific resource.
 
         Parameters:
         - id (str | None): The ID of the specific resource to be retrieved.
@@ -257,7 +257,7 @@ class Endpoint:
         data_encoding: str = "utf-8",
         **kwargs: Any,
     ) -> Response:
-        """Performs a POST request to create a new resource.
+        """Perform a POST request to create a new resource.
 
         Parameters:
         - data (dict | None): The data to include in the request body.
@@ -299,7 +299,7 @@ class Endpoint:
         data_encoding: str = "utf-8",
         **kwargs: Any,
     ) -> Response:
-        """Performs a PUT request to update an existing resource.
+        """Perform a PUT request to update an existing resource.
 
         Parameters:
         - id (str | None): The ID of the specific resource to be updated.
@@ -332,7 +332,7 @@ class Endpoint:
         )
 
     def delete(self, id: str | None, **kwargs: Any) -> Response:
-        """Performs a DELETE request to delete a resource.
+        """Perform a DELETE request to delete a resource.
 
         Parameters:
         - id (str | None): The ID of the specific resource to be deleted.
@@ -436,7 +436,7 @@ def api_call(
     action_id: str | None = None,
     **kwargs: Any,
 ) -> Response | Any:
-    """This function is responsible for making an API call to a specified URL using the provided method, headers, and other parameters.
+    """Make an API call to a specified URL using the provided method, headers, and other parameters.
 
     Parameters:
     - auth (tuple[str, str] | None): A tuple containing the API key and secret for authentication.

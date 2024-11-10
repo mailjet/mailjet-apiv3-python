@@ -23,6 +23,7 @@ def test_get_version_is_none() -> None:
 
 def test_get_version() -> None:
     """Test that package version is string.
+
     Verify that if it's equal to tuple after splitting and mapped to tuple.
     """
     result: str | tuple[int, ...]
