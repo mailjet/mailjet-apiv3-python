@@ -552,7 +552,7 @@ def build_url(
     return url
 
 
-def logger_handler(
+def logging_handler(
     to_file: bool = False,
 ) -> logging.Logger:
     """Create and configure a logger for logging API requests.

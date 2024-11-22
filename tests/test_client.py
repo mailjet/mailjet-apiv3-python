@@ -14,7 +14,7 @@ from _pytest.logging import LogCaptureFixture
 
 from mailjet_rest.utils.version import get_version
 from mailjet_rest import Client
-from mailjet_rest.client import prepare_url, parse_response, logger_handler, Config
+from mailjet_rest.client import prepare_url, parse_response, logging_handler, Config
 
 
 def validate_datetime_format(date_text: str, datetime_format: str) -> None:
@@ -446,7 +446,7 @@ def test_debug_logging_to_stdout_has_all_debug_entries(
     caplog (LogCaptureFixture): A fixture for capturing log entries.
     """
     result = client_mj30.contact.get()
-    parse_response(result, lambda: logger_handler(to_file=False), debug=True)
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
     debug_entries = [
         "DEBUG",
         "REQUEST:",
@@ -473,8 +473,8 @@ def test_debug_logging_to_log_file(
     caplog (LogCaptureFixture): A fixture for capturing log entries.
     """
     result = client_mj30.contact.get()
-    parse_response(result, logger_handler, debug=True)
-    partial(logger_handler, to_file=True)
+    parse_response(result, logging_handler, debug=True)
+    partial(logging_handler, to_file=True)
     cwd = Path.cwd()
     log_files = glob.glob("*.log")
     for log_file in log_files:
