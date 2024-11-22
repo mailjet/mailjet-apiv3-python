@@ -1,15 +1,36 @@
 from __future__ import annotations
+from functools import partial
 
+import glob
 import json
 import os
 import re
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
+from _pytest.logging import LogCaptureFixture
 
 from mailjet_rest.utils.version import get_version
 from mailjet_rest import Client
-from mailjet_rest.client import prepare_url, Config
+from mailjet_rest.client import prepare_url, parse_response, logger_handler, Config
+
+
+def validate_datetime_format(date_text: str, datetime_format: str) -> None:
+    """Validates the format of a given date string against a specified datetime format.
+
+    Parameters:
+    date_text (str): The date string to be validated.
+    datetime_format (str): The datetime format to which the date string should be validated.
+
+    Raises:
+    ValueError: If the date string does not match the specified datetime format.
+    """
+    try:
+        datetime.strptime(date_text, datetime_format)
+    except ValueError:
+        raise ValueError("Incorrect data format, should be %Y%m%d_%H%M%S")
 
 
 @pytest.fixture
@@ -413,3 +434,54 @@ def test_prepare_url_mixed_case_input_bad() -> None:
         "Content-type": "application/json",
         "User-agent": f"mailjet-apiv3-python/v{get_version()}",
     }
+
+
+def test_debug_logging_to_stdout_has_all_debug_entries(
+    client_mj30: Client, caplog: LogCaptureFixture
+) -> None:
+    """This function tests the debug logging to stdout, ensuring that all debug entries are present.
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    result = client_mj30.contact.get()
+    parse_response(result, lambda: logger_handler(to_file=False), debug=True)
+    debug_entries = [
+        "DEBUG",
+        "REQUEST:",
+        "REQUEST_HEADERS:",
+        "REQUEST_CONTENT:",
+        "RESPONSE:",
+        "RESP_HEADERS:",
+        "RESP_CODE:",
+    ]
+    assert all(x in caplog.text for x in debug_entries)
+
+
+def test_debug_logging_to_log_file(
+    client_mj30: Client, caplog: LogCaptureFixture
+) -> None:
+    """This function tests the debug logging to a log file.
+
+    It sends a GET request to the 'contact' endpoint of the Mailjet API client, parses the response,
+    logs the debug information to a log file, validates that the log filename has the correct datetime format provided,
+    and then verifies the existence and removal of the log file.
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    result = client_mj30.contact.get()
+    parse_response(result, logger_handler, debug=True)
+    partial(logger_handler, to_file=True)
+    cwd = Path.cwd()
+    log_files = glob.glob("*.log")
+    for log_file in log_files:
+        log_file_name = Path(log_file).stem
+        validate_datetime_format(log_file_name, "%Y%m%d_%H%M%S")
+        log_file_path = os.path.join(cwd, log_file)
+        assert Path(log_file_path).exists()
+        print(f"Removing log file {log_file}...")
+        Path(log_file_path).unlink()
+        print(f"The log file {log_file} has been removed.")
