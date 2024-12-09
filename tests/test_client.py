@@ -456,6 +456,86 @@ def test_debug_logging_to_stdout_has_all_debug_entries(
         "RESP_HEADERS:",
         "RESP_CODE:",
     ]
+    assert result.status_code == 200
+    assert all(x in caplog.text for x in debug_entries)
+
+
+def test_debug_logging_to_stdout_has_all_debug_entries_when_unknown_or_not_found(
+    client_mj30: Client, caplog: LogCaptureFixture
+) -> None:
+    """This function tests the debug logging to stdout, ensuring that all debug entries are present.
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    # A wrong "cntact" endpoint to get 400 "Unknown resource" error message
+    result = client_mj30.cntact.get()
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
+    debug_entries = [
+        "DEBUG",
+        "REQUEST:",
+        "REQUEST_HEADERS:",
+        "REQUEST_CONTENT:",
+        "RESPONSE:",
+        "RESP_HEADERS:",
+        "RESP_CODE:",
+    ]
+    assert 400 <= result.status_code <= 404
+    assert all(x in caplog.text for x in debug_entries)
+
+
+def test_debug_logging_to_stdout_when_retrieve_message_with_id_type_mismatch(
+    client_mj30: Client, caplog: LogCaptureFixture
+) -> None:
+    """This function tests the debug logging to stdout by retrieving message if id type mismatch, ensuring that all debug entries are present.
+
+    GET https://api.mailjet.com/v3/REST/message/$MESSAGE_ID
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    _id = "*************"  # $MESSAGE_ID with all "*" will cause "Incorrect ID provided - ID type mismatch" (Error 400).
+    result = client_mj30.message.get(_id)
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
+    debug_entries = [
+        "DEBUG",
+        "REQUEST:",
+        "REQUEST_HEADERS:",
+        "REQUEST_CONTENT:",
+        "RESPONSE:",
+        "RESP_HEADERS:",
+        "RESP_CODE:",
+    ]
+    assert result.status_code == 400
+    assert all(x in caplog.text for x in debug_entries)
+
+
+def test_debug_logging_to_stdout_when_retrieve_message_with_object_not_found(
+    client_mj30: Client, caplog: LogCaptureFixture
+) -> None:
+    """This function tests the debug logging to stdout by retrieving message if object not found, ensuring that all debug entries are present.
+
+    GET https://api.mailjet.com/v3/REST/message/$MESSAGE_ID
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    _id = "0000000000000"  # $MESSAGE_ID with all zeros "0" will cause "Object not found" (Error 404).
+    result = client_mj30.message.get(_id)
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
+    debug_entries = [
+        "DEBUG",
+        "REQUEST:",
+        "REQUEST_HEADERS:",
+        "REQUEST_CONTENT:",
+        "RESPONSE:",
+        "RESP_HEADERS:",
+        "RESP_CODE:",
+    ]
+    assert result.status_code == 404
     assert all(x in caplog.text for x in debug_entries)
 
 
@@ -481,7 +561,10 @@ def test_debug_logging_to_log_file(
         log_file_name = Path(log_file).stem
         validate_datetime_format(log_file_name, "%Y%m%d_%H%M%S")
         log_file_path = os.path.join(cwd, log_file)
+
+        assert result.status_code == 200
         assert Path(log_file_path).exists()
+
         print(f"Removing log file {log_file}...")
         Path(log_file_path).unlink()
         print(f"The log file {log_file} has been removed.")

@@ -66,9 +66,15 @@ repos:
         args: [--write]
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.29.4
+    rev: 0.30.0
     hooks:
       - id: check-github-workflows
+
+  - repo: https://github.com/pre-commit/mirrors-autopep8
+    rev: v2.0.4
+    hooks:
+      - id: autopep8
+        exclude: ^docs/
 
   - repo: https://github.com/akaihola/darker
     rev: v2.1.1
@@ -85,12 +91,6 @@ repos:
           - --remove-unused-variable
           - --ignore-init-module-imports
 
-  - repo: https://github.com/pre-commit/mirrors-autopep8
-    rev: v2.0.4
-    hooks:
-      - id: autopep8
-        exclude: ^docs/
-
 #  - repo: https://github.com/pycqa/flake8
 #    rev: 7.1.1
 #    hooks:
@@ -103,7 +103,7 @@ repos:
 
 
   - repo: https://github.com/PyCQA/pylint
-    rev: v3.3.1
+    rev: v3.3.2
     hooks:
       - id: pylint
         args:
@@ -117,7 +117,7 @@ repos:
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.
-    rev: v0.7.4
+    rev: v0.8.2
     hooks:
       # Run the linter.
       - id: ruff
@@ -141,12 +141,12 @@ repos:
         exclude: ^samples/
 
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.389
+    rev: v1.1.390
     hooks:
     - id: pyright
 
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.10
+    rev: 1.8.0
     hooks:
       - id: bandit
         args: ["-c", "pyproject.toml", "-r", "."]
@@ -155,7 +155,7 @@ repos:
         additional_dependencies: [".[toml]"]
 
   - repo: https://github.com/crate-ci/typos
-    rev: typos-dict-v0.11.35
+    rev: typos-dict-v0.11.37
     hooks:
       - id: typos
 
