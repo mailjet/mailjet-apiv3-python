@@ -579,15 +579,11 @@ def logging_handler(
 
         log_file = f"{date_time}.log"
         file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(formatter)
-
         logger.addHandler(file_handler)
 
     stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setLevel(logging.DEBUG)
     stdout_handler.setFormatter(formatter)
-
     logger.addHandler(stdout_handler)
 
     return logger
@@ -619,6 +615,8 @@ def parse_response(
         lgr.debug("RESPONSE: %s", response.content)
         lgr.debug("RESP_HEADERS: %s", response.headers)
         lgr.debug("RESP_CODE: %s", response.status_code)
+        # Clear logger handlers to prevent making log duplications
+        logging.getLogger().handlers.clear()
 
     return data
 

@@ -17,6 +17,19 @@ from mailjet_rest import Client
 from mailjet_rest.client import prepare_url, parse_response, logging_handler, Config
 
 
+def debug_entries() -> tuple[str, str, str, str, str, str, str]:
+    entries = (
+        "DEBUG",
+        "REQUEST:",
+        "REQUEST_HEADERS:",
+        "REQUEST_CONTENT:",
+        "RESPONSE:",
+        "RESP_HEADERS:",
+        "RESP_CODE:",
+    )
+    return entries
+
+
 def validate_datetime_format(date_text: str, datetime_format: str) -> None:
     """Validates the format of a given date string against a specified datetime format.
 
@@ -437,7 +450,8 @@ def test_prepare_url_mixed_case_input_bad() -> None:
 
 
 def test_debug_logging_to_stdout_has_all_debug_entries(
-    client_mj30: Client, caplog: LogCaptureFixture
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
 ) -> None:
     """This function tests the debug logging to stdout, ensuring that all debug entries are present.
 
@@ -447,21 +461,15 @@ def test_debug_logging_to_stdout_has_all_debug_entries(
     """
     result = client_mj30.contact.get()
     parse_response(result, lambda: logging_handler(to_file=False), debug=True)
-    debug_entries = [
-        "DEBUG",
-        "REQUEST:",
-        "REQUEST_HEADERS:",
-        "REQUEST_CONTENT:",
-        "RESPONSE:",
-        "RESP_HEADERS:",
-        "RESP_CODE:",
-    ]
+
     assert result.status_code == 200
-    assert all(x in caplog.text for x in debug_entries)
+    assert len(caplog.records) == 6
+    assert all(x in caplog.text for x in debug_entries())
 
 
 def test_debug_logging_to_stdout_has_all_debug_entries_when_unknown_or_not_found(
-    client_mj30: Client, caplog: LogCaptureFixture
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
 ) -> None:
     """This function tests the debug logging to stdout, ensuring that all debug entries are present.
 
@@ -472,21 +480,15 @@ def test_debug_logging_to_stdout_has_all_debug_entries_when_unknown_or_not_found
     # A wrong "cntact" endpoint to get 400 "Unknown resource" error message
     result = client_mj30.cntact.get()
     parse_response(result, lambda: logging_handler(to_file=False), debug=True)
-    debug_entries = [
-        "DEBUG",
-        "REQUEST:",
-        "REQUEST_HEADERS:",
-        "REQUEST_CONTENT:",
-        "RESPONSE:",
-        "RESP_HEADERS:",
-        "RESP_CODE:",
-    ]
+
     assert 400 <= result.status_code <= 404
-    assert all(x in caplog.text for x in debug_entries)
+    assert len(caplog.records) == 8
+    assert all(x in caplog.text for x in debug_entries())
 
 
 def test_debug_logging_to_stdout_when_retrieve_message_with_id_type_mismatch(
-    client_mj30: Client, caplog: LogCaptureFixture
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
 ) -> None:
     """This function tests the debug logging to stdout by retrieving message if id type mismatch, ensuring that all debug entries are present.
 
@@ -499,21 +501,15 @@ def test_debug_logging_to_stdout_when_retrieve_message_with_id_type_mismatch(
     _id = "*************"  # $MESSAGE_ID with all "*" will cause "Incorrect ID provided - ID type mismatch" (Error 400).
     result = client_mj30.message.get(_id)
     parse_response(result, lambda: logging_handler(to_file=False), debug=True)
-    debug_entries = [
-        "DEBUG",
-        "REQUEST:",
-        "REQUEST_HEADERS:",
-        "REQUEST_CONTENT:",
-        "RESPONSE:",
-        "RESP_HEADERS:",
-        "RESP_CODE:",
-    ]
+
     assert result.status_code == 400
-    assert all(x in caplog.text for x in debug_entries)
+    assert len(caplog.records) == 8
+    assert all(x in caplog.text for x in debug_entries())
 
 
 def test_debug_logging_to_stdout_when_retrieve_message_with_object_not_found(
-    client_mj30: Client, caplog: LogCaptureFixture
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
 ) -> None:
     """This function tests the debug logging to stdout by retrieving message if object not found, ensuring that all debug entries are present.
 
@@ -526,17 +522,10 @@ def test_debug_logging_to_stdout_when_retrieve_message_with_object_not_found(
     _id = "0000000000000"  # $MESSAGE_ID with all zeros "0" will cause "Object not found" (Error 404).
     result = client_mj30.message.get(_id)
     parse_response(result, lambda: logging_handler(to_file=False), debug=True)
-    debug_entries = [
-        "DEBUG",
-        "REQUEST:",
-        "REQUEST_HEADERS:",
-        "REQUEST_CONTENT:",
-        "RESPONSE:",
-        "RESP_HEADERS:",
-        "RESP_CODE:",
-    ]
+
     assert result.status_code == 404
-    assert all(x in caplog.text for x in debug_entries)
+    assert len(caplog.records) == 8
+    assert all(x in caplog.text for x in debug_entries())
 
 
 def test_debug_logging_to_log_file(
