@@ -276,6 +276,17 @@ ignore-overlong-task-comments = true
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.flake8]
+exclude = ["samples/*"]
+# TODO: D100 - create docstrings for modules test_client.py and test_version.py
+ignore = ['E501', "D100"]
+extend-ignore = "W503"
+per-file-ignores = [
+    '__init__.py:F401',
+]
+max-line-length = 88
+count = true
+
 [tool.mypy]
 strict = true
 # Adapted from this StackOverflow post:

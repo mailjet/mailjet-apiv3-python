@@ -18,6 +18,14 @@ from mailjet_rest.client import prepare_url, parse_response, logging_handler, Co
 
 
 def debug_entries() -> tuple[str, str, str, str, str, str, str]:
+    """Provide a simple tuples with debug entries for testing purposes.
+
+    Parameters:
+    None
+
+    Returns:
+    tuple: A tuple containing seven debug entries
+    """
     entries = (
         "DEBUG",
         "REQUEST:",
@@ -31,7 +39,7 @@ def debug_entries() -> tuple[str, str, str, str, str, str, str]:
 
 
 def validate_datetime_format(date_text: str, datetime_format: str) -> None:
-    """Validates the format of a given date string against a specified datetime format.
+    """Validate the format of a given date string against a specified datetime format.
 
     Parameters:
     date_text (str): The date string to be validated.
@@ -48,7 +56,7 @@ def validate_datetime_format(date_text: str, datetime_format: str) -> None:
 
 @pytest.fixture
 def simple_data() -> tuple[dict[str, list[dict[str, str]]], str]:
-    """This function provides a simple data structure and its encoding for testing purposes.
+    """Provide a simple data structure and its encoding for testing purposes.
 
     Parameters:
     None
@@ -67,7 +75,7 @@ def simple_data() -> tuple[dict[str, list[dict[str, str]]], str]:
 
 @pytest.fixture
 def client_mj30() -> Client:
-    """This function creates and returns a Mailjet API client instance for version 3.0.
+    """Create and return a Mailjet API client instance for version 3.0.
 
     Parameters:
     None
@@ -84,7 +92,7 @@ def client_mj30() -> Client:
 
 @pytest.fixture
 def client_mj30_invalid_auth() -> Client:
-    """This function creates and returns a Mailjet API client instance for version 3.0, but with invalid authentication credentials.
+    """Create and return a Mailjet API client instance for version 3.0, but with invalid authentication credentials.
 
     Parameters:
     None
@@ -103,7 +111,7 @@ def client_mj30_invalid_auth() -> Client:
 
 @pytest.fixture
 def client_mj31() -> Client:
-    """This function creates and returns a Mailjet API client instance for version 3.1.
+    """Create and return a Mailjet API client instance for version 3.1.
 
     Parameters:
     None
