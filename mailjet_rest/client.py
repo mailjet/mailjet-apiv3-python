@@ -31,14 +31,18 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
+from datetime import datetime
+from datetime import timezone
 from re import Match
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Callable
 
 import requests  # type: ignore[import-untyped]
 from requests.compat import urljoin  # type: ignore[import-untyped]
 
-from .utils.version import get_version
+from mailjet_rest.utils.version import get_version
 
 
 if TYPE_CHECKING:
@@ -548,28 +552,71 @@ def build_url(
     return url
 
 
-def parse_response(response: Response, debug: bool = False) -> Any:
-    """Parse the response from an API request.
+def logging_handler(
+    to_file: bool = False,
+) -> logging.Logger:
+    """Create and configure a logger for logging API requests.
 
-    This function extracts the JSON data from the response and logs debug information if the `debug` flag is set to True.
+    This function creates a logger object and configures it to handle both
+    standard output (stdout) and a file if the `to_file` parameter is set to True.
+    The logger is set to log at the DEBUG level and uses a custom formatter to
+    include the log level and message.
 
     Parameters:
-    response (requests.models.Response): The response object from the API request.
-    debug (bool, optional): A flag indicating whether debug information should be logged. Defaults to False.
+    to_file (bool): A flag indicating whether to log to a file. If True, logs will be written to a file.
+                     Defaults to False.
 
     Returns:
-    Any: The JSON data extracted from the response.
+    logging.Logger: A configured logger object for logging API requests.
+    """
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(levelname)s | %(message)s")
+
+    if to_file:
+        now = datetime.now(tz=timezone.utc)
+        date_time = now.strftime("%Y%m%d_%H%M%S")
+
+        log_file = f"{date_time}.log"
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    logger.addHandler(stdout_handler)
+
+    return logger
+
+
+def parse_response(
+    response: Response,
+    log: Callable,
+    debug: bool = False,
+) -> Any:
+    """Parse the response from an API request and return the JSON data.
+
+    Parameters:
+    response (Response): The response object from the API request.
+    log (Callable): A function or method that logs debug information.
+    debug (bool): A flag indicating whether debug mode is enabled. Defaults to False.
+
+    Returns:
+    Any: The JSON data from the API response.
     """
     data = response.json()
 
     if debug:
-        logging.debug("REQUEST: %s", response.request.url)
-        logging.debug("REQUEST_HEADERS: %s", response.request.headers)
-        logging.debug("REQUEST_CONTENT: %s", response.request.body)
+        lgr = log()
+        lgr.debug("REQUEST: %s", response.request.url)
+        lgr.debug("REQUEST_HEADERS: %s", response.request.headers)
+        lgr.debug("REQUEST_CONTENT: %s", response.request.body)
 
-        logging.debug("RESPONSE: %s", response.content)
-        logging.debug("RESP_HEADERS: %s", response.headers)
-        logging.debug("RESP_CODE: %s", response.status_code)
+        lgr.debug("RESPONSE: %s", response.content)
+        lgr.debug("RESP_HEADERS: %s", response.headers)
+        lgr.debug("RESP_CODE: %s", response.status_code)
+        # Clear logger handlers to prevent making log duplications
+        logging.getLogger().handlers.clear()
 
     return data
 

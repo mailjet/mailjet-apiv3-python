@@ -1,20 +1,62 @@
 from __future__ import annotations
+from functools import partial
 
+import glob
 import json
 import os
 import re
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pytest
+from _pytest.logging import LogCaptureFixture
 
 from mailjet_rest.utils.version import get_version
 from mailjet_rest import Client
-from mailjet_rest.client import prepare_url, Config
+from mailjet_rest.client import prepare_url, parse_response, logging_handler, Config
+
+
+def debug_entries() -> tuple[str, str, str, str, str, str, str]:
+    """Provide a simple tuples with debug entries for testing purposes.
+
+    Parameters:
+    None
+
+    Returns:
+    tuple: A tuple containing seven debug entries
+    """
+    entries = (
+        "DEBUG",
+        "REQUEST:",
+        "REQUEST_HEADERS:",
+        "REQUEST_CONTENT:",
+        "RESPONSE:",
+        "RESP_HEADERS:",
+        "RESP_CODE:",
+    )
+    return entries
+
+
+def validate_datetime_format(date_text: str, datetime_format: str) -> None:
+    """Validate the format of a given date string against a specified datetime format.
+
+    Parameters:
+    date_text (str): The date string to be validated.
+    datetime_format (str): The datetime format to which the date string should be validated.
+
+    Raises:
+    ValueError: If the date string does not match the specified datetime format.
+    """
+    try:
+        datetime.strptime(date_text, datetime_format)
+    except ValueError:
+        raise ValueError("Incorrect data format, should be %Y%m%d_%H%M%S")
 
 
 @pytest.fixture
 def simple_data() -> tuple[dict[str, list[dict[str, str]]], str]:
-    """This function provides a simple data structure and its encoding for testing purposes.
+    """Provide a simple data structure and its encoding for testing purposes.
 
     Parameters:
     None
@@ -33,7 +75,7 @@ def simple_data() -> tuple[dict[str, list[dict[str, str]]], str]:
 
 @pytest.fixture
 def client_mj30() -> Client:
-    """This function creates and returns a Mailjet API client instance for version 3.0.
+    """Create and return a Mailjet API client instance for version 3.0.
 
     Parameters:
     None
@@ -50,7 +92,7 @@ def client_mj30() -> Client:
 
 @pytest.fixture
 def client_mj30_invalid_auth() -> Client:
-    """This function creates and returns a Mailjet API client instance for version 3.0, but with invalid authentication credentials.
+    """Create and return a Mailjet API client instance for version 3.0, but with invalid authentication credentials.
 
     Parameters:
     None
@@ -69,7 +111,7 @@ def client_mj30_invalid_auth() -> Client:
 
 @pytest.fixture
 def client_mj31() -> Client:
-    """This function creates and returns a Mailjet API client instance for version 3.1.
+    """Create and return a Mailjet API client instance for version 3.1.
 
     Parameters:
     None
@@ -413,3 +455,113 @@ def test_prepare_url_mixed_case_input_bad() -> None:
         "Content-type": "application/json",
         "User-agent": f"mailjet-apiv3-python/v{get_version()}",
     }
+
+
+def test_debug_logging_to_stdout_has_all_debug_entries(
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
+) -> None:
+    """This function tests the debug logging to stdout, ensuring that all debug entries are present.
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    result = client_mj30.contact.get()
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
+
+    assert result.status_code == 200
+    assert len(caplog.records) == 6
+    assert all(x in caplog.text for x in debug_entries())
+
+
+def test_debug_logging_to_stdout_has_all_debug_entries_when_unknown_or_not_found(
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
+) -> None:
+    """This function tests the debug logging to stdout, ensuring that all debug entries are present.
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    # A wrong "cntact" endpoint to get 400 "Unknown resource" error message
+    result = client_mj30.cntact.get()
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
+
+    assert 400 <= result.status_code <= 404
+    assert len(caplog.records) == 8
+    assert all(x in caplog.text for x in debug_entries())
+
+
+def test_debug_logging_to_stdout_when_retrieve_message_with_id_type_mismatch(
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
+) -> None:
+    """This function tests the debug logging to stdout by retrieving message if id type mismatch, ensuring that all debug entries are present.
+
+    GET https://api.mailjet.com/v3/REST/message/$MESSAGE_ID
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    _id = "*************"  # $MESSAGE_ID with all "*" will cause "Incorrect ID provided - ID type mismatch" (Error 400).
+    result = client_mj30.message.get(_id)
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
+
+    assert result.status_code == 400
+    assert len(caplog.records) == 8
+    assert all(x in caplog.text for x in debug_entries())
+
+
+def test_debug_logging_to_stdout_when_retrieve_message_with_object_not_found(
+    client_mj30: Client,
+    caplog: LogCaptureFixture,
+) -> None:
+    """This function tests the debug logging to stdout by retrieving message if object not found, ensuring that all debug entries are present.
+
+    GET https://api.mailjet.com/v3/REST/message/$MESSAGE_ID
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    _id = "0000000000000"  # $MESSAGE_ID with all zeros "0" will cause "Object not found" (Error 404).
+    result = client_mj30.message.get(_id)
+    parse_response(result, lambda: logging_handler(to_file=False), debug=True)
+
+    assert result.status_code == 404
+    assert len(caplog.records) == 8
+    assert all(x in caplog.text for x in debug_entries())
+
+
+def test_debug_logging_to_log_file(
+    client_mj30: Client, caplog: LogCaptureFixture
+) -> None:
+    """This function tests the debug logging to a log file.
+
+    It sends a GET request to the 'contact' endpoint of the Mailjet API client, parses the response,
+    logs the debug information to a log file, validates that the log filename has the correct datetime format provided,
+    and then verifies the existence and removal of the log file.
+
+    Parameters:
+    client_mj30 (Client): An instance of the Mailjet API client.
+    caplog (LogCaptureFixture): A fixture for capturing log entries.
+    """
+    result = client_mj30.contact.get()
+    parse_response(result, logging_handler, debug=True)
+    partial(logging_handler, to_file=True)
+    cwd = Path.cwd()
+    log_files = glob.glob("*.log")
+    for log_file in log_files:
+        log_file_name = Path(log_file).stem
+        validate_datetime_format(log_file_name, "%Y%m%d_%H%M%S")
+        log_file_path = os.path.join(cwd, log_file)
+
+        assert result.status_code == 200
+        assert Path(log_file_path).exists()
+
+        print(f"Removing log file {log_file}...")
+        Path(log_file_path).unlink()
+        print(f"The log file {log_file} has been removed.")
