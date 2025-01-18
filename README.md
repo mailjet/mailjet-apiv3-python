@@ -20,6 +20,9 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 ## Table of contents
 
 - [Compatibility](#compatibility)
+- [Requirements](#requirements)
+  - [Build backend](#build-backend)
+  - [Runtime](#runtime)
 - [Installation](#installation)
 - [Authentication](#authentication)
 - [Make your first call](#make-your-first-call)
@@ -42,18 +45,57 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 ## Compatibility
 
-This library officially supports the following Python versions:
+This library `mailjet_rest` officially supports the following Python versions:
 
- - v2.7
- - v3.5
- - v3.6+
+ - v3.9+
+
+It's tested up to 3.12 (including).
+
+## Requirements
+
+### Build backend
+
+To build the `mailjet_rest` package you need `setuptools` (as a build backend) and `wheel`.
+
+### Runtime
+
+At runtime the package requires only `requests`.
 
 ## Installation
 
 Use the below code to install the wrapper:
 
 ``` bash
-(sudo) pip install mailjet_rest
+git clone https://github.com/mailjet/mailjet-apiv3-python
+cd mailjet-apiv3-python
+```
+
+``` bash
+pip install .
+```
+
+or using `conda` and `make` on Unix platforms:
+
+``` bash
+make install
+```
+
+### For development
+
+on Linux or macOS:
+
+- A basic environment with a minimum number of dependencies:
+
+``` bash
+make dev
+conda activate mailjet
+```
+
+- A full dev environment:
+
+``` bash
+make dev-full
+conda activate mailjet-dev
 ```
 
 ## Authentication

@@ -1,5 +1,5 @@
 ---
-name: mailjet_dev
+name: mailjet-dev
 channels:
   - defaults
 dependencies:
