@@ -13,8 +13,33 @@ Functions:
 
 from __future__ import annotations
 
+import re
 
-VERSION: tuple[int, int, int] = (1, 3, 5)
+from mailjet_rest._version import __version__ as package_version
+
+
+def clean_version(version_str: str) -> tuple[int, ...]:
+    """Clean package version string into 3 item tuple.
+
+    Parameters:
+    version_str (str): A string of the package version.
+
+    Returns:
+    tuple: A tuple representing the version of the package.
+    """
+    if not version_str:
+        return 0, 0, 0
+    # Extract just the X.Y.Z part using regex
+    match = re.match(r"^(\d+\.\d+\.\d+)", version_str)
+    if match:
+        version_part = match.group(1)
+        return tuple(map(int, version_part.split(".")))
+
+    return 0, 0, 0  # type: ignore[unreachable]
+
+
+# VERSION is a tuple of integers (1, 3, 2).
+VERSION: tuple[int, ...] = clean_version(package_version)
 
 
 def get_version(version: tuple[int, ...] | None = None) -> str:

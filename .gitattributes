@@ -1,0 +1,14 @@
+# Automatically detect text files and perform LF normalization
+* text=auto
+
+# Source files should have Unix line endings
+*.py text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Exclude some files from exporting
+.gitattributes export-ignore
+.gitignore export-ignore
+.github export-ignore

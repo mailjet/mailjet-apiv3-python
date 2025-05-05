@@ -1,0 +1,47 @@
+name: Issue Triage
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled, reopened]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Initial triage
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            // Check if this is a bug report
+            if (issue.title.includes('[Bug]')) {
+              // Add priority labels based on content
+              if (issue.body.toLowerCase().includes('crash') ||
+                  issue.body.toLowerCase().includes('data loss')) {
+                github.rest.issues.addLabels({
+                  issue_number: issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  labels: ['priority: high']
+                });
+              }
+              // Assign to bug team
+              github.rest.issues.addAssignees({
+                issue_number: issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                assignees: ['']
+              });
+            }
+            // Check if this is a feature request
+            if (issue.title.includes('[Feature]')) {
+              github.rest.issues.addLabels({
+                issue_number: issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels: ['needs-review']
+              });
+            }

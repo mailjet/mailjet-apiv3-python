@@ -1,0 +1,28 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build package
+        run: |
+          pip install --upgrade build setuptools wheel setuptools-scm
+          python -m build
+
+      - name: Test installation
+        run: |
+          pip install dist/*.whl
+          python -c "from importlib.metadata import version; print(version('mailjet_rest'))"

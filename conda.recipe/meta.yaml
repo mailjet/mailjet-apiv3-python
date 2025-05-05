@@ -2,7 +2,19 @@
 {% set project = pyproject['project'] %}
 
 {% set name = project['name'] %}
-{% set version = project['version'] %}
+
+{% set version_file_path = '../' + name + '/_version.py' %}
+
+# Check if file exists before trying to read it
+{% set version = '' %}
+{% if os.path.exists(version_file_path) %}
+    {% set version_file_content = open(version_file_path, 'r').read() %}
+    {% set version = version_file_content.split('=')[1].strip().strip('"\'') %}
+{% else %}
+    # Fallback to git-based version
+    {% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0') %}
+{% endif %}
+
 
 package:
   name: {{ name|lower }}
@@ -25,11 +37,15 @@ requirements:
     {% endfor %}
   run:
     - python
-    - requests >=2.32.3
+    {% for dep in pyproject['project']['dependencies'] %}
+    - {{ dep.lower() }}
+    {% endfor %}
 
 test:
   imports:
     - mailjet_rest
+    - mailjet_rest.utils
+    - samples
   source_files:
     - tests/test_client.py
   requires:
@@ -49,5 +65,5 @@ about:
   # description: |
   #
   license: {{ project['license']['text'] }}
-  license_family: {{ project['license']['text'] }}
+  license_family: {{ project['license']['text'].split('-')[0] }}
   license_file: LICENSE

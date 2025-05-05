@@ -1,0 +1,32 @@
+name: Documentation
+description: Create a documentation-related issue.
+labels:
+  - type::documentation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > [!NOTE]
+        > Documentation requests that are incomplete or missing information may be closed as inactionable.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      description: Please confirm and check all of the following options.
+      options:
+        - label: I added a descriptive title
+          required: true
+        - label: I searched open reports and couldn't find a duplicate
+          required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Mention here any typos, broken links, or missing, incomplete, or outdated information that you have noticed in the docs.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Include any additional information (or screenshots) that you think would be valuable.

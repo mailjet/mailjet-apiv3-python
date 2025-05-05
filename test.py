@@ -213,7 +213,7 @@ class TestSuite(unittest.TestCase):
         None
         """
         self.client = Client(auth=self.auth, version="v3.1")
-        self.assertEqual(self.client.config.user_agent, "mailjet-apiv3-python/v1.3.5")
+        self.assertEqual(self.client.config.user_agent, "mailjet-apiv3-python/v1.4.0")
 
 
 if __name__ == "__main__":

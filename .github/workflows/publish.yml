@@ -1,0 +1,83 @@
+name: Publish Package
+
+on:
+  push:
+    tags: ['v*']  # Triggers on any tag push
+  release:
+    types: [published]  # Triggers when a GitHub release is published
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for trusted publishing
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools
+        run: pip install --upgrade build setuptools wheel setuptools-scm twine
+
+      - name: Extract version
+        id: get_version
+        run: |
+          # Get clean version from the tag or release
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            # For releases, get the version from the release tag
+            TAG_NAME="${{ github.event.release.tag_name }}"
+          else
+            # For tags, get version from the tag
+            TAG_NAME="${{ github.ref_name }}"
+          fi
+
+          # Remove 'v' prefix
+          VERSION=$(echo $TAG_NAME | sed 's/^v//')
+
+          # Check if this is a stable version (no rc, alpha, beta, dev, etc.)
+          if [[ $TAG_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "IS_STABLE=true" >> $GITHUB_ENV
+          else
+            echo "IS_STABLE=false" >> $GITHUB_ENV
+          fi
+
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build package
+        run: |
+          # Force clean version
+          export SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION
+          python -m build
+
+      - name: Check dist
+        run: |
+          ls -alh
+          twine check dist/*
+
+      # Always publish to TestPyPI for all tags and releases
+#      - name: Publish to TestPyPI
+#        uses: pypa/gh-action-pypi-publish@release/v1
+#        with:
+#          repository-url: https://test.pypi.org/legacy/
+#          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+#          skip-existing: true
+#          verbose: true
+
+      # Only publish to PyPI for stable GitHub releases (no RC/alpha/beta)
+      - name: Publish to PyPI
+        # TODO: Enable '&& env.IS_STABLE == 'true' only publish to PyPI for stable GitHub releases (no RC/alpha/beta)
+        if: github.event_name == 'release' #&& env.IS_STABLE == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          verbose: true

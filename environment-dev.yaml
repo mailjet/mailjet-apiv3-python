@@ -6,49 +6,57 @@ dependencies:
   - python >=3.9
   # build & host deps
   - pip
+  - setuptools-scm
+  - # PyPI publishing only
+  - python-build
   # runtime deps
   - requests >=2.32.3
   # tests
+  - conda-forge::pyfakefs
+  - coverage >=4.5.4
   - pytest
+  - pytest-benchmark
   - pytest-cov
   - pytest-xdist
-  - conda-forge::pyfakefs
-  - pytest-benchmark
-  - coverage >=4.5.4
   # linters & formatters
-  - pylint
   - autopep8
   - black
+  - flake8
   - isort
   - make
+  - conda-forge::monkeytype
+  - mypy
+  - pandas-stubs
+  - pep8-naming
   - pycodestyle
   - pydocstyle
-  - flake8
-  - pep8-naming
-  - yapf
-  - ruff
-  - mypy
-  - toml
-  - types-requests
-  - pandas-stubs
+  - pylint
   - pyright
   - radon
+  - ruff
+  - toml
+  - types-requests
+  - yapf
   # other
-  - pre-commit
   - conda
   - conda-build
   - jsonschema
-  - types-jsonschema
+  - pre-commit
   - python-dotenv >=0.19.2
+  - types-jsonschema
   - pip:
-      - pyupgrade
-      - bandit
       - autoflake8
-      - refurb
+      - bandit
+      - docconvert
       - monkeytype
       - pyment >=0.3.3
       - pytype
-      - vulture
+      - pyupgrade
+      # refurb doesn't support py39
+      #- refurb
       - scalene >=1.3.16
       - snakeviz
       - typos
+      - vulture
+      # PyPI publishing only
+      - twine
