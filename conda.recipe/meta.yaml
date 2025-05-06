@@ -2,19 +2,10 @@
 {% set project = pyproject['project'] %}
 
 {% set name = project['name'] %}
-
-{% set version_file_path = '../' + name + '/_version.py' %}
-
-# Check if file exists before trying to read it
-{% set version = '' %}
-{% if os.path.exists(version_file_path) %}
-    {% set version_file_content = open(version_file_path, 'r').read() %}
-    {% set version = version_file_content.split('=')[1].strip().strip('"\'') %}
-{% else %}
-    # Fallback to git-based version
-    {% set version = environ.get('GIT_DESCRIBE_TAG', '0.0.0') %}
-{% endif %}
-
+{% set version_match = load_file_regex(
+  load_file=name.replace('-', '_') + "/_version.py",
+  regex_pattern='__version__ = "(.+)"') %}
+{% set version = version_match[1] %}
 
 package:
   name: {{ name|lower }}
@@ -27,6 +18,8 @@ build:
   number: 0
   skip: True  # [py<39]
   script: {{ PYTHON }} -m pip install . --no-deps --no-build-isolation -vv
+  script_env:
+    - SETUPTOOLS_SCM_PRETEND_VERSION={{ version }}
 
 requirements:
   host:
@@ -54,7 +47,7 @@ test:
   commands:
     - pip check
     # TODO: Add environment variables for tests
-    #- pytest tests/test_client.py -vv
+    - pytest tests/test_client.py -vv
 
 about:
   home: {{ project['urls']['Homepage'] }}
