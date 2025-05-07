@@ -4,20 +4,31 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
-## [1.4.0] - 2025-XX-XX
+## [1.4.0] - 2025-05-07
 
 ### Added
 
 - Enabled debug logging
-- Support for Python >=3.9,\<3.13
-- CI Automation
+- Support for Python >=3.9,\<3.14
+- CI Automation (commit checks, issue-triage, PR validation, publish)
+- Issue templates for bug report, feature request, documentation
 - Type hinting
 - Docstrings
-- A conda recipe
+- A conda recipe (meta.yaml)
+- Package management stuff: pyproject.toml, .editorconfig, .gitattributes, .gitignore, .pre-commit-config.yaml, Makefile, environment-dev.yaml, environment.yaml
+- Linting: py.typed
+- New samples
+- New tests
 
 ### Changed
 
 - Update README.md
+- Improved tests
+
+### Removed
+
+- requirements.txt and setup.py are replaced by pyproject.toml
+- .travis.yml was obsolete
 
 ### Pull Requests Merged
 
@@ -30,6 +41,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 - [PR_114](https://github.com/mailjet/mailjet-apiv3-python/pull/114) - Update README
 - [PR_115](https://github.com/mailjet/mailjet-apiv3-python/pull/115) - Add a conda recipe
 - [PR_116](https://github.com/mailjet/mailjet-apiv3-python/pull/116) - Improve CI Automation and package management
+- [PR_117](https://github.com/mailjet/mailjet-apiv3-python/pull/117) - Release 1.4.0
 
 ## Version 1.3.4 (2020-10-20) - Public Release
 
