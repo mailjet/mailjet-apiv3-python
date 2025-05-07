@@ -15,7 +15,7 @@ write_to_template = '__version__ = "{version}"'
 py-modules = ["mailjet_rest._version"]
 
 [tool.setuptools.packages.find]
-include = ["mailjet_rest", "mailjet_rest.*", "tests", "test.py"]
+include = ["mailjet_rest", "mailjet_rest.*", "samples", "tests", "test.py"]
 
 [tool.setuptools.package-data]
 mailjet_rest = ["py.typed", "*.pyi"]

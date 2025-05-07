@@ -64,6 +64,7 @@ jobs:
           twine check dist/*
 
       # Always publish to TestPyPI for all tags and releases
+      # TODO: Enable it later.
 #      - name: Publish to TestPyPI
 #        uses: pypa/gh-action-pypi-publish@release/v1
 #        with:
@@ -79,5 +80,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
-          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          password: ${{ secrets.PYPI_API_TOKEN }}
           verbose: true
