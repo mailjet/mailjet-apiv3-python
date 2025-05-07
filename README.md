@@ -2,8 +2,7 @@
 
 # Official Mailjet Python Wrapper
 
-[![Build Status](https://travis-ci.org/mailjet/mailjet-apiv3-python.svg?branch=master)](https://travis-ci.org/mailjet/mailjet-apiv3-python)
-![Current Version](https://img.shields.io/badge/version-1.3.5-green.svg)
+![Current Version](https://img.shields.io/badge/version-1.4.0-green.svg)
 
 ## Overview
 
