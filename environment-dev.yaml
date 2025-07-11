@@ -3,14 +3,14 @@ name: mailjet-dev
 channels:
   - defaults
 dependencies:
-  - python >=3.9
+  - python >=3.10
   # build & host deps
   - pip
   - setuptools-scm
   - # PyPI publishing only
   - python-build
   # runtime deps
-  - requests >=2.32.3
+  - requests >=2.32.4
   # tests
   - conda-forge::pyfakefs
   - coverage >=4.5.4
@@ -52,8 +52,7 @@ dependencies:
       - pyment >=0.3.3
       - pytype
       - pyupgrade
-      # refurb doesn't support py39
-      #- refurb
+      - refurb
       - scalene >=1.3.16
       - snakeviz
       - typos

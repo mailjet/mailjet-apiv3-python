@@ -234,3 +234,5 @@ dev/
 # pytest cache
 .pytest_cache/
 pytestdebug.log
+
+*/_version.py

@@ -3,6 +3,8 @@
 #   pre-commit run --all-files
 # Update this file:
 #   pre-commit autoupdate
+default_language_version:
+  python: python3
 exclude: ^(.*/versioneer\.py|.*/_version\.py|.*/.*\.svg)
 
 ci:
@@ -111,7 +113,7 @@ repos:
     rev: v3.20.0
     hooks:
       - id: pyupgrade
-        args: [--py39-plus, --keep-runtime-typing]
+        args: [--py310-plus, --keep-runtime-typing]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.
@@ -123,6 +125,13 @@ repos:
       # Run the formatter.
       - id: ruff-format
 
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        args: [--select=D200,D213,D400,D415]
+        additional_dependencies: [tomli]
+
   -   repo: https://github.com/dosisod/refurb
       rev: v2.1.0
       hooks:
@@ -133,10 +142,9 @@ repos:
     rev: v1.16.1
     hooks:
     -   id: mypy
-        args:
-          [
-            --config-file=./pyproject.toml,
-          ]
+        args: [--config-file=./pyproject.toml]
+        additional_dependencies:
+          - types-requests
         exclude: ^samples/
 
   - repo: https://github.com/RobertCraigie/pyright-python

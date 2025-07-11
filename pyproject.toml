@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "setuptools-scm"]
+requires = ["setuptools>=77.0.0", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
@@ -15,7 +15,7 @@ write_to_template = '__version__ = "{version}"'
 py-modules = ["mailjet_rest._version"]
 
 [tool.setuptools.packages.find]
-include = ["mailjet_rest", "mailjet_rest.*", "samples", "tests", "test.py"]
+include = ["mailjet_rest", "mailjet_rest.*", "samples", "tests", "tests.*", "test.py"]
 
 [tool.setuptools.package-data]
 mailjet_rest = ["py.typed", "*.pyi"]
@@ -31,13 +31,12 @@ authors = [
 maintainers = [
   {name = "Serhii Kupriienko", email = "kupriienko.serhii@gmail.com"}
 ]
-license = {text = "MIT"}
-# TODO: Enable license-files when setuptools >=77.0.0 will be available
-#license-files = ["LICENSE"]
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
-dependencies = ["requests>=2.32.3"]
+dependencies = ["requests>=2.32.4"]
 
 keywords = [
         "Mailjet API v3 / v3.1 Python Wrapper",
@@ -54,7 +53,6 @@ classifiers = [
         "Natural Language :: English",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
@@ -66,10 +64,10 @@ classifiers = [
 ]
 
 [project.urls]
-"Issue Tracker" = "https://github.com/mailjet/mailjet-apiv3-python"
-"Repository" = "https://github.com/mailjet/mailjet-apiv3-python"
 "Homepage" = "https://dev.mailjet.com"
 "Documentation" = "https://dev.mailjet.com"
+"Repository" = "https://github.com/mailjet/mailjet-apiv3-python"
+"Issue Tracker" = "https://github.com/mailjet/mailjet-apiv3-python/issues"
 
 [project.optional-dependencies]
 linting = [
@@ -136,7 +134,7 @@ other = ["toml"]
 
 [tool.black]
 line-length = 88
-target-version = ["py39", "py310", "py311", "py312", "py313"]
+target-version = ["py310", "py311", "py312", "py313"]
 skip-string-normalization = false
 skip-magic-trailing-comma = false
 extend-exclude = '''
@@ -190,8 +188,8 @@ extend-exclude = ["tests", "test"]
 line-length = 88
 #indent-width = 4
 
-# Assume Python 3.9.
-target-version = "py39"
+# Assume Python 3.10.
+target-version = "py310"
 # Enumerate all fixed violations.
 show-fixes = true
 
@@ -334,7 +332,7 @@ ignore_patterns = [
 strict = true
 # Adapted from this StackOverflow post:
 # https://stackoverflow.com/questions/55944201/python-type-hinting-how-do-i-enforce-that-project-wide
-python_version = "3.9"
+python_version = "3.10"
 mypy_path = "type_stubs"
 namespace_packages = true
 # This flag enhances the user feedback for error messages

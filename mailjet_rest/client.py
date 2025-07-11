@@ -37,7 +37,6 @@ from datetime import timezone
 from re import Match
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Callable
 
 import requests  # type: ignore[import-untyped]
 from requests.compat import urljoin  # type: ignore[import-untyped]
@@ -46,12 +45,13 @@ from mailjet_rest.utils.version import get_version
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from collections.abc import Mapping
 
     from requests.models import Response  # type: ignore[import-untyped]
 
 
-requests.packages.urllib3.disable_warnings()
+requests.packages.urllib3.disable_warnings()  # type: ignore[attr-defined]
 
 
 def prepare_url(key: Match[str]) -> str:
