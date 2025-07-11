@@ -11,6 +11,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 - Add class `TestCsvImpor` with a test suite for testing CSV import functionality to `test.py`
 - Add `types-requests` to `mypy`'s `additional_dependencies` in `pre-commit` hooks
 - Add `pydocstyle` pre-commit's hook
+- Add `*/_version.py` to `.gitignore`
 
 ### Fixed
 
