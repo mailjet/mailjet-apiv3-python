@@ -253,7 +253,7 @@ class Endpoint:
 
     def create(
         self,
-        data: dict | None = None,
+        data: str | bytes | dict[Any, Any] | None = None,
         filters: Mapping[str, str | Any] | None = None,
         id: str | None = None,
         action_id: str | None = None,
@@ -264,7 +264,7 @@ class Endpoint:
         """Perform a POST request to create a new resource.
 
         Parameters:
-        - data (dict | None): The data to include in the request body.
+        - data (str | bytes | dict[Any, Any] | None): The data to include in the request body.
         - filters (Mapping[str, str | Any] | None): Filters to be applied in the request.
         - id (str | None): The ID of the specific resource to be created.
         - action_id (str | None): The specific action ID to be performed.
@@ -275,18 +275,20 @@ class Endpoint:
         Returns:
         - Response: The response object from the API call.
         """
-        json_data: str | bytes | None = None
         if self.headers.get("Content-type") == "application/json" and data is not None:
-            json_data = json.dumps(data, ensure_ascii=ensure_ascii)
+            data = json.dumps(
+                data,
+                ensure_ascii=ensure_ascii,
+            )
             if not ensure_ascii:
-                json_data = json_data.encode(data_encoding)
+                data = data.encode(data_encoding)
         return api_call(
             self._auth,
             "post",
             self._url,
             headers=self.headers,
             resource_id=id,
-            data=json_data,
+            data=data,  # type: ignore[arg-type]
             action=self.action,
             action_id=action_id,
             filters=filters,
@@ -406,7 +408,7 @@ class Client:
         - Endpoint: An instance of the `Endpoint` class, initialized with the constructed URL, headers, action, and authentication details.
         """
         name_regex: str = re.sub(r"[A-Z]", prepare_url, name)
-        split: list[str] = name_regex.split("_")  # noqa: RUF100, FURB184
+        split: list[str] = name_regex.split("_")  # noqa: RUF100
         # identify the resource
         fname: str = split[0]
         action: str | None = None

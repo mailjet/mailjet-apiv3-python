@@ -4,7 +4,9 @@ import os
 import random
 import string
 import unittest
+from pathlib import Path
 from typing import Any
+from typing import ClassVar
 
 from mailjet_rest import Client
 
@@ -214,6 +216,107 @@ class TestSuite(unittest.TestCase):
         """
         self.client = Client(auth=self.auth, version="v3.1")
         self.assertEqual(self.client.config.user_agent, "mailjet-apiv3-python/v1.4.0")
+
+
+class TestCsvImport(unittest.TestCase):
+    """Tests for Mailjet API csv import functionality.
+
+    This class provides setup and teardown functionality for tests involving the
+    csv import functionality, with authentication and client initialization handled
+    in `setUp`. Each test in this suite operates with the configured Mailjet client
+    instance to simulate API interactions.
+
+    Attributes:
+    - _shared_state (dict[str, str]): A dictionary containing values taken from tests to share them in other tests.
+    """
+
+    _shared_state: ClassVar[dict[str, Any]] = {}
+
+    @classmethod
+    def get_shared(cls, key: str) -> Any:
+        """Retrieve a value from shared test state.
+
+        Parameters:
+        - key (str): The key to look up in shared state.
+
+        Returns:
+        - Any: The stored value, or None if key doesn't exist.
+        """
+        return cls._shared_state.get(key)
+
+    @classmethod
+    def set_shared(cls, key: str, value: Any) -> None:
+        """Store a value in shared test state.
+
+        Parameters:
+        - key (str): The key to store the value under.
+        - value (Any): The value to store.
+        """
+        cls._shared_state[key] = value
+
+    def setUp(self) -> None:
+        """Set up the test environment by initializing authentication credentials and the Mailjet client.
+
+        This method is called before each test to ensure a consistent testing
+        environment. It retrieves the API keys and ID_CONTACTSLIST from environment variables and
+        uses them to create an instance of the Mailjet `Client` for authenticated
+        API interactions.
+
+        Attributes:
+        - self.auth (tuple[str, str]): A tuple containing the public and private API keys obtained from the environment variables 'MJ_APIKEY_PUBLIC' and 'MJ_APIKEY_PRIVATE' respectively.
+        - self.client (Client): An instance of the Mailjet Client class, initialized with the provided authentication credentials.
+        - self.id_contactslist (str): A string of the contacts list ID from https://app.mailjet.com/contacts
+        """
+        self.auth: tuple[str, str] = (
+            os.environ["MJ_APIKEY_PUBLIC"],
+            os.environ["MJ_APIKEY_PRIVATE"],
+        )
+        self.client: Client = Client(auth=self.auth)
+        self.id_contactslist: str = os.environ["ID_CONTACTSLIST"]
+
+    def test_01_upload_the_csv(self) -> None:
+        """Test uploading a csv file.
+
+        POST https://api.mailjet.com/v3/DATA/contactslist
+        /$ID_CONTACTLIST/CSVData/text:plain
+        """
+        result = self.client.contactslist_csvdata.create(
+            id=self.id_contactslist,
+            data=Path("tests/doc_tests/files/data.csv").read_text(encoding="utf-8"),
+        )
+        self.assertEqual(result.status_code, 200)
+
+        self.set_shared("data_id", result.json().get("ID"))
+        data_id = self.get_shared("data_id")
+        self.assertIsNotNone(data_id)
+
+    def test_02_import_csv_content_to_a_list(self) -> None:
+        """Test importing a csv content to a list.
+
+        POST https://api.mailjet.com/v3/REST/csvimport
+        """
+        data_id = self.get_shared("data_id")
+        self.assertIsNotNone(data_id)
+        data = {
+            "Method": "addnoforce",
+            "ContactsListID": self.id_contactslist,
+            "DataID": data_id,
+        }
+        result = self.client.csvimport.create(data=data)
+        self.assertEqual(result.status_code, 201)
+        self.assertIn("ID", result.json()["Data"][0])
+
+        self.set_shared("id_value", result.json()["Data"][0]["ID"])
+
+    def test_03_monitor_the_import_progress(self) -> None:
+        """Test getting a csv content import.
+
+        GET https://api.mailjet.com/v3/REST/csvimport/$importjob_ID
+        """
+        result = self.client.csvimport.get(id=self.get_shared("id_value"))
+        self.assertEqual(result.status_code, 200)
+        self.assertIn("ID", result.json()["Data"][0])
+        self.assertEqual(0, result.json()["Data"][0]["Errcount"])
 
 
 if __name__ == "__main__":
