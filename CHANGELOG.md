@@ -4,34 +4,35 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
-## [1.5.0] - 2025-07-XX
+## [1.5.0] - 2025-07-11
 
 ### Added
 
-- Add class `TestCsvImpor` with a test suite for testing CSV import functionality to `test.py`.
+- Add class `TestCsvImpor` with a test suite for testing CSV import functionality to `test.py`
 - Add `types-requests` to `mypy`'s `additional_dependencies` in `pre-commit` hooks
 - Add `pydocstyle` pre-commit's hook
-- style: Import Callable from collections.abc
 
 ### Fixed
 
-- Fix a csvimport error 'List index (0) out of bounds': renamed `json_data` back to `data`. Corrected behavior broken since v1.4.0.
+- Fix a csvimport error 'List index (0) out of bounds': renamed `json_data` back to `data`. Corrected behavior broken since v1.4.0
 
 ### Changed
 
 - Update pre-commit hooks to the latest versions
 - Breaking changes: drop support for Python 3.9
+- Import Callable from collections.abc
 
 ### Security
 
-- docs: Add the Security Policy file `SECURITY.md`
-- ci: Use `permissions: contents: read` in all CI workflow files explicitly
-- ci: Use commit hashes to ensure reproducible builds
-- build: Update dependency pinning: `requests >=2.32.4`
+- Add the Security Policy file `SECURITY.md`
+- Use `permissions: contents: read` in all CI workflow files explicitly
+- Use commit hashes to ensure reproducible builds
+- Update pinning for runtime dependency `requests >=2.32.4`
 
 ### Pull Requests Merged
 
 - [PR_120](https://github.com/mailjet/mailjet-apiv3-python/pull/120) - Fix a csvimport error 'List index (0) out of bounds'
+- [PR_123](https://github.com/mailjet/mailjet-apiv3-python/pull/123) - Release 1.5.0
 
 ## [1.4.0] - 2025-05-07
 

@@ -41,6 +41,8 @@ test:
     - samples
   source_files:
     - tests/test_client.py
+    - test.py
+    - tests/doc_tests/files/data.csv
   requires:
     - pip
     - pytest
@@ -48,15 +50,14 @@ test:
     - pip check
     # TODO: Add environment variables for tests
     - pytest tests/test_client.py -vv
+    - pytest test.py -vv
 
 about:
   home: {{ project['urls']['Homepage'] }}
   dev_url: {{ project['urls']['Repository'] }}
   doc_url: {{ project['urls']['Documentation'] }}
   summary: {{ project['description'] }}
-  # TODO: Add the description
-  # description: |
-  #
-  license: {{ project['license']['text'] }}
-  license_family: {{ project['license']['text'].split('-')[0] }}
+  description: {{ project['description'] }}
+  license: {{ project['license'] }}
+  license_family: {{ project['license'].split('-')[0] }}
   license_file: LICENSE
