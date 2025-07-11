@@ -236,6 +236,8 @@ ignore = [
     "S311",  # S311 Standard pseudo-random generators are not suitable for cryptographic purposes
     # TODO: T201 Replace `print` with logging functions
     "T201",  # T201 `print` found
+    "PLC0207",  # PLC0207 Accessing only the first or last element of `str.split()` without setting `maxsplit=1`
+
 ]
 
 
