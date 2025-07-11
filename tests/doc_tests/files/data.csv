@@ -1,0 +1,5 @@
+address,name,subscribed,vars
+bob@mywebsite.com,Bob3,TRUE,34
+jane@example.com,Janen,TRUE,21
+pete@example.com,Pete,TRUE,44
+foo@example.com,Foo,TRUE,20
