@@ -21,6 +21,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 - Update pre-commit hooks to the latest versions
 - Breaking changes: drop support for Python 3.9
 - Import Callable from collections.abc
+- Improve a conda recipe
 
 ### Security
 
