@@ -70,7 +70,7 @@ To build the `mailjet_rest` package from the sources you need `setuptools` (as a
 
 ### Runtime dependencies
 
-At runtime the package requires only `requests >=2.32.3`.
+At runtime the package requires only `requests >=2.32.4`.
 
 ### Test dependencies
 
@@ -443,5 +443,5 @@ If you have suggestions on how to improve the guides, please submit an issue in 
 - [@skupriienko](https://github.com/skupriienko)
 
 [api_credential]: https://app.mailjet.com/account/apikeys
-[doc]: http://dev.mailjet.com/guides/?python#
-[mailjet]: (http://www.mailjet.com/)
+[doc]: https://dev.mailjet.com/email/guides/?python#
+[mailjet]: (https://www.mailjet.com)
