@@ -15,7 +15,7 @@ write_to_template = '__version__ = "{version}"'
 py-modules = ["mailjet_rest._version"]
 
 [tool.setuptools.packages.find]
-include = ["mailjet_rest", "mailjet_rest.*", "samples", "tests", "test.py"]
+include = ["mailjet_rest", "mailjet_rest.*", "samples", "tests", "tests.*", "test.py"]
 
 [tool.setuptools.package-data]
 mailjet_rest = ["py.typed", "*.pyi"]
@@ -31,9 +31,8 @@ authors = [
 maintainers = [
   {name = "Serhii Kupriienko", email = "kupriienko.serhii@gmail.com"}
 ]
-license = {text = "MIT"}
-# TODO: Enable license-files when setuptools >=77.0.0 will be available
-#license-files = ["LICENSE"]
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.10"
 
