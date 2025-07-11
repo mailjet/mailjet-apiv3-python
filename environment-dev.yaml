@@ -10,7 +10,7 @@ dependencies:
   - # PyPI publishing only
   - python-build
   # runtime deps
-  - requests >=2.32.3
+  - requests >=2.32.4
   # tests
   - conda-forge::pyfakefs
   - coverage >=4.5.4

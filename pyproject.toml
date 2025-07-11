@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "setuptools-scm"]
+requires = ["setuptools>=77.0.0", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
@@ -37,7 +37,7 @@ license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.10"
 
-dependencies = ["requests>=2.32.3"]
+dependencies = ["requests>=2.32.4"]
 
 keywords = [
         "Mailjet API v3 / v3.1 Python Wrapper",
@@ -65,10 +65,10 @@ classifiers = [
 ]
 
 [project.urls]
-"Issue Tracker" = "https://github.com/mailjet/mailjet-apiv3-python"
-"Repository" = "https://github.com/mailjet/mailjet-apiv3-python"
 "Homepage" = "https://dev.mailjet.com"
 "Documentation" = "https://dev.mailjet.com"
+"Repository" = "https://github.com/mailjet/mailjet-apiv3-python"
+"Issue Tracker" = "https://github.com/mailjet/mailjet-apiv3-python/issues"
 
 [project.optional-dependencies]
 linting = [

@@ -7,7 +7,7 @@ dependencies:
   # build & host deps
   - pip
   # runtime deps
-  - requests >=2.32.3
+  - requests >=2.32.4
   # tests
   - pytest >=7.0.0
   # other
