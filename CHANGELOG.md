@@ -22,6 +22,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 - Breaking changes: drop support for Python 3.9
 - Import Callable from collections.abc
 - Improve a conda recipe
+- Update `README.md`
 
 ### Security
 
