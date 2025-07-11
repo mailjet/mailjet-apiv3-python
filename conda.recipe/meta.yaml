@@ -16,7 +16,7 @@ source:
 
 build:
   number: 0
-  skip: True  # [py<39]
+  skip: True  # [py<310]
   script: {{ PYTHON }} -m pip install . --no-deps --no-build-isolation -vv
   script_env:
     - SETUPTOOLS_SCM_PRETEND_VERSION={{ version }}

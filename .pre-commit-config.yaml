@@ -111,7 +111,7 @@ repos:
     rev: v3.20.0
     hooks:
       - id: pyupgrade
-        args: [--py39-plus, --keep-runtime-typing]
+        args: [--py310-plus, --keep-runtime-typing]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     # Ruff version.

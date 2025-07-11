@@ -35,7 +35,7 @@ license = {text = "MIT"}
 # TODO: Enable license-files when setuptools >=77.0.0 will be available
 #license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 
 dependencies = ["requests>=2.32.3"]
 
@@ -54,7 +54,6 @@ classifiers = [
         "Natural Language :: English",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
@@ -136,7 +135,7 @@ other = ["toml"]
 
 [tool.black]
 line-length = 88
-target-version = ["py39", "py310", "py311", "py312", "py313"]
+target-version = ["py310", "py311", "py312", "py313"]
 skip-string-normalization = false
 skip-magic-trailing-comma = false
 extend-exclude = '''
@@ -190,8 +189,8 @@ extend-exclude = ["tests", "test"]
 line-length = 88
 #indent-width = 4
 
-# Assume Python 3.9.
-target-version = "py39"
+# Assume Python 3.10.
+target-version = "py310"
 # Enumerate all fixed violations.
 show-fixes = true
 
@@ -334,7 +333,7 @@ ignore_patterns = [
 strict = true
 # Adapted from this StackOverflow post:
 # https://stackoverflow.com/questions/55944201/python-type-hinting-how-do-i-enforce-that-project-wide
-python_version = "3.9"
+python_version = "3.10"
 mypy_path = "type_stubs"
 namespace_packages = true
 # This flag enhances the user feedback for error messages

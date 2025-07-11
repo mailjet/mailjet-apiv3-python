@@ -58,7 +58,7 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 This library `mailjet_rest` officially supports the following Python versions:
 
-- Python >=3.9,\<3.14
+- Python >=3.10,\<3.14
 
 It's tested up to 3.13 (including).
 
