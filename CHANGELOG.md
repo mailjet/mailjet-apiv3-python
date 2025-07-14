@@ -4,11 +4,15 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
-## [1.5.1] - 2025-07-15
+## [1.5.1] - 2025-07-14
 
 ### Removed
 
 - Remove `*/_version.py` from `.gitignore`
+
+### Pull Requests Merged
+
+- [PR_124](https://github.com/mailjet/mailjet-apiv3-python/pull/124) - Release 1.5.1
 
 ## [1.5.0] - 2025-07-11
 
