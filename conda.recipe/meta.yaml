@@ -41,6 +41,7 @@ test:
     - samples
   source_files:
     - tests/test_client.py
+    - tests/test_version.py
     - test.py
     - tests/doc_tests/files/data.csv
   requires:
@@ -50,6 +51,7 @@ test:
     - pip check
     # TODO: Add environment variables for tests
     - pytest tests/test_client.py -vv
+    - pytest tests/test_version.py -vv
     - pytest test.py -vv
 
 about:
