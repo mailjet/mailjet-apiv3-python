@@ -4,6 +4,12 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
+## [1.5.1] - 2025-07-15
+
+### Removed
+
+- Remove `*/_version.py` from `.gitignore`
+
 ## [1.5.0] - 2025-07-11
 
 ### Added
@@ -175,4 +181,5 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 [1.4.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.4.0
 [1.5.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.0
-[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.0...HEAD
+[1.5.1]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1
+[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1...HEAD
