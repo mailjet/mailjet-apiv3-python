@@ -10,6 +10,10 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 - Remove `*/_version.py` from `.gitignore`
 
+### Changed
+
+- Improve a conda recipe
+
 ### Pull Requests Merged
 
 - [PR_124](https://github.com/mailjet/mailjet-apiv3-python/pull/124) - Release 1.5.1
