@@ -58,9 +58,9 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 This library `mailjet_rest` officially supports the following Python versions:
 
-- Python >=3.10,\<3.14
+- Python >=3.10,\<3.15
 
-It's tested up to 3.13 (including).
+It's tested up to 3.14 (including).
 
 ## Requirements
 
@@ -81,7 +81,14 @@ Make sure to provide the environment variables from [Authentication](#authentica
 
 ### pip install
 
-Use the below code to install the the wrapper:
+First, create a virtual environment:
+
+```bash
+virtualenv -p python3 venv
+source venv/bin/activate
+```
+
+Then, install the wrapper:
 
 ```bash
 pip install mailjet-rest
@@ -137,6 +144,9 @@ export MJ_APIKEY_PUBLIC='your api key'  # pragma: allowlist secret
 export MJ_APIKEY_PRIVATE='your api secret'  # pragma: allowlist secret
 ```
 
+> **Note**
+> For the SMS API the authorization credentials are your API Token.
+
 Initialize your [Mailjet] client:
 
 ```python
@@ -175,7 +185,70 @@ print(result.status_code)
 print(result.json())
 ```
 
+## Error Handling
+
+The client safely wraps network-level exceptions to prevent leaking requests dependencies. You can catch these custom exceptions to handle network drops or timeouts gracefully:
+from mailjet_rest import Client, TimeoutError, CriticalApiError
+
+```python
+import os
+from mailjet_rest import Client, CriticalApiError, TimeoutError
+
+api_key = os.environ["MJ_APIKEY_PUBLIC"]
+api_secret = os.environ["MJ_APIKEY_PRIVATE"]
+mailjet = Client(auth=(api_key, api_secret))
+
+try:
+    result = mailjet.contact.get()
+    # Note: HTTP errors (like 404 or 401) do not raise exceptions by default.
+    # You should check the status_code:
+    if result.status_code != 200:
+        print(f"API Error: {result.status_code}")
+except TimeoutError:
+    print("The request to the Mailjet API timed out.")
+except CriticalApiError as e:
+    print(f"Network connection failed: {e}")
+```
+
+## Logging & Debugging
+
+The Mailjet SDK includes built-in logging to help you troubleshoot API requests, inspect generated URLs, and read server error messages (like 400 Bad Request or 401 Unauthorized).
+The SDK uses the standard Python logging module under the namespace mailjet_rest.client.
+
+To enable detailed logging in your application, configure the logger before making requests:
+
+```python
+import logging
+from mailjet_rest import Client
+
+# Enable DEBUG level for the Mailjet SDK logger
+logging.getLogger("mailjet_rest.client").setLevel(logging.DEBUG)
+
+# Configure the basic console output (if not already configured in your app)
+logging.basicConfig(format="%(levelname)s - %(name)s - %(message)s")
+
+# Now, any API requests or errors will be printed to your console
+mailjet = Client(auth=("api_key", "api_secret"))
+mailjet.contact.get()
+```
+
 ## Client / Call Configuration Specifics
+
+### Client / Call configuration override
+
+You can pass a dictionary to the client or to the call to establish a configuration.
+
+#### Client
+
+```python
+mailjet = Client(auth=(api_key, api_secret), timeout=30)
+```
+
+#### Call
+
+```python
+result = mailjet.send.create(data=data, timeout=30)
+```
 
 ### API Versioning
 
@@ -183,7 +256,7 @@ The Mailjet API is spread among three distinct versions:
 
 - `v3` - The Email API
 - `v3.1` - Email Send API v3.1, which is the latest version of our Send API
-- `v4` - SMS API (not supported in Python)
+- `v4` - SMS API
 
 Since most Email API endpoints are located under `v3`, it is set as the default one and does not need to be specified when making your request. For the others you need to specify the version using `version`. For example, if using Send API `v3.1`:
 

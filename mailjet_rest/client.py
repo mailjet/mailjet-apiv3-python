@@ -21,8 +21,27 @@ from dataclasses import dataclass
 from typing import Any
 
 import requests  # pyright: ignore[reportMissingModuleSource]
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import RequestException
+from requests.exceptions import Timeout as RequestsTimeout
 
 from mailjet_rest._version import __version__
+
+__all__ = [
+    "ActionDeniedError",
+    "ApiError",
+    "ApiRateLimitError",
+    "AuthorizationError",
+    "Client",
+    "Config",
+    "CriticalApiError",
+    "DoesNotExistError",
+    "Endpoint",
+    "TimeoutError",
+    "ValidationError",
+]
+
+logger = logging.getLogger(__name__)
 
 
 def logging_handler(to_file: bool = False) -> logging.Handler:
@@ -66,8 +85,8 @@ def parse_response(
     - requests.Response: The unmodified API response object.
     """
     if debug:
-        logger = logging.getLogger("mailjet_rest")
-        logger.setLevel(logging.DEBUG)
+        legacy_logger = logging.getLogger("mailjet_rest")
+        legacy_logger.setLevel(logging.DEBUG)
 
         if handler:
             with suppress(Exception):
@@ -76,12 +95,13 @@ def parse_response(
                 # Type Narrowing for pyright: Ensure h is actually a logging.Handler
                 if isinstance(h, logging.Handler):
                     if not any(
-                        isinstance(existing, type(h)) for existing in logger.handlers
+                        isinstance(existing, type(h))
+                        for existing in legacy_logger.handlers
                     ):
-                        logger.addHandler(h)
+                        legacy_logger.addHandler(h)
 
-        logger.debug(f"Response status: {response.status_code}")
-        logger.debug(f"Response text: {response.text}")
+        legacy_logger.debug(f"Response status: {response.status_code}")
+        legacy_logger.debug(f"Response text: {response.text}")
 
     return response
 
@@ -465,6 +485,10 @@ class Client:
     ) -> requests.Response:
         """Perform the actual network request using the persistent session.
 
+        This method catches specific network-level exceptions raised by the
+        underlying HTTP client and re-raises them as custom API errors to
+        decouple the SDK from external library implementations.
+
         Parameters:
         - method (str): The HTTP method to use.
         - url (str): The fully constructed URL.
@@ -476,6 +500,11 @@ class Client:
 
         Returns:
         - requests.Response: The response object from the HTTP request.
+
+        Raises:
+        - TimeoutError: If the API request times out.
+        - CriticalApiError: If there is a connection failure to the API.
+        - ApiError: For other unhandled underlying request exceptions.
         """
         payload = data
         if isinstance(data, (dict, list)):
@@ -484,14 +513,51 @@ class Client:
         if timeout is None:
             timeout = self.config.timeout
 
-        response = self.session.request(
-            method=method,
-            url=url,
-            params=filters,
-            data=payload,
-            headers=headers,
-            timeout=timeout,
-            **kwargs,
-        )
+        logger.debug("Sending Request: %s %s", method.upper(), url)
+
+        try:
+            response = self.session.request(
+                method=method,
+                url=url,
+                params=filters,
+                data=payload,
+                headers=headers,
+                timeout=timeout,
+                **kwargs,
+            )
+        except RequestsTimeout as error:
+            logger.error("Timeout Error: %s %s", method.upper(), url)
+            raise TimeoutError(f"Request to Mailjet API timed out: {error}") from error
+        except RequestsConnectionError as error:
+            logger.critical("Connection Error: %s | URL: %s", error, url)
+            raise CriticalApiError(
+                f"Connection to Mailjet API failed: {error}"
+            ) from error
+        except RequestException as error:
+            logger.critical("Request Exception: %s | URL: %s", error, url)
+            raise ApiError(
+                f"An unexpected Mailjet API network error occurred: {error}"
+            ) from error
+
+        try:
+            is_error = response.status_code >= 400
+        except TypeError:
+            is_error = False
+
+        if is_error:
+            logger.error(
+                "API Error %s | %s %s | Response: %s",
+                response.status_code,
+                method.upper(),
+                url,
+                getattr(response, "text", ""),
+            )
+        else:
+            logger.debug(
+                "API Success %s | %s %s",
+                getattr(response, "status_code", 200),
+                method.upper(),
+                url,
+            )
 
         return response

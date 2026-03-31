@@ -9,11 +9,17 @@ from typing import Any
 import pytest
 import requests  # pyright: ignore[reportMissingModuleSource]
 from pytest import LogCaptureFixture
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import RequestException
+from requests.exceptions import Timeout as RequestsTimeout
 
 from mailjet_rest._version import __version__
 from mailjet_rest.client import (
+    ApiError,
     Client,
     Config,
+    CriticalApiError,
+    TimeoutError,
     logging_handler,
     parse_response,
     prepare_url,
@@ -31,7 +37,6 @@ def client_offline() -> Client:
 
 
 # --- Dynamic API Versioning Tests ---
-
 
 @pytest.mark.parametrize("api_version", ["v1", "v3", "v3.1", "v4", "v99_future"])
 def test_dynamic_versions_standard_rest(api_version: str) -> None:
@@ -110,7 +115,6 @@ def test_http_methods_and_timeout(
     - client_offline (Client): Offline test fixture.
     - monkeypatch (pytest.MonkeyPatch): Pytest monkeypatch utility.
     """
-
     def mock_request(*args: Any, **kwargs: Any) -> requests.Response:
         resp = requests.Response()
         resp.status_code = 200
@@ -138,10 +142,10 @@ def test_client_coverage_edge_cases(
     - client_offline (Client): Offline test fixture.
     - monkeypatch (pytest.MonkeyPatch): Pytest monkeypatch utility.
     """
-
     def mock_request(*args: Any, **kwargs: Any) -> requests.Response:
-        return requests.Response()
-
+        resp = requests.Response()
+        resp.status_code = 200
+        return resp
     monkeypatch.setattr(client_offline.session, "request", mock_request)
 
     assert (
@@ -163,11 +167,82 @@ def test_client_coverage_edge_cases(
     headers = client_offline.contact._build_headers(custom_headers={"X-Test": "1"})
     assert headers["X-Test"] == "1"
 
+    # Hits the `elif "filter" in kwargs` branch
     client_offline.contact.get(filters={"limit": 1}, filter={"ignored": "legacy"})
 
 
-# --- Config & Initialization Tests ---
+def test_api_call_exceptions_and_logging(
+    client_offline: Client, monkeypatch: pytest.MonkeyPatch, caplog: LogCaptureFixture
+) -> None:
+    """Verify that network exceptions are mapped correctly and HTTP states are logged."""
 
+    caplog.set_level(logging.DEBUG, logger="mailjet_rest.client")
+
+    # 1. Test TimeoutError mapping
+    def mock_timeout(*args: Any, **kwargs: Any) -> None:
+        raise RequestsTimeout("Mocked timeout")
+
+    monkeypatch.setattr(client_offline.session, "request", mock_timeout)
+    with pytest.raises(TimeoutError, match="Request to Mailjet API timed out"):
+        client_offline.contact.get()
+    assert "Timeout Error" in caplog.text
+
+    # 2. Test CriticalApiError mapping (Connection Error)
+    def mock_connection_error(*args: Any, **kwargs: Any) -> None:
+        raise RequestsConnectionError("Mocked connection")
+
+    monkeypatch.setattr(client_offline.session, "request", mock_connection_error)
+    with pytest.raises(CriticalApiError, match="Connection to Mailjet API failed"):
+        client_offline.contact.get()
+    assert "Connection Error" in caplog.text
+
+    # 3. Test generic ApiError mapping
+    def mock_request_exception(*args: Any, **kwargs: Any) -> None:
+        raise RequestException("Mocked general error")
+
+    monkeypatch.setattr(client_offline.session, "request", mock_request_exception)
+    with pytest.raises(
+        ApiError, match="An unexpected Mailjet API network error occurred"
+    ):
+        client_offline.contact.get()
+    assert "Request Exception" in caplog.text
+
+    # 4. Success log
+    def mock_success(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 200
+        return resp
+
+    monkeypatch.setattr(client_offline.session, "request", mock_success)
+    caplog.clear()
+    client_offline.contact.get()
+    assert "API Success 200" in caplog.text
+
+    # 5. Error log
+    def mock_error_response(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 400
+        resp._content = b"Bad Request"
+        return resp
+
+    monkeypatch.setattr(client_offline.session, "request", mock_error_response)
+    caplog.clear()
+    client_offline.contact.get()
+    assert "API Error 400" in caplog.text
+
+    # 6. TypeError fallback branch for status_code
+    def mock_type_error(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = None  # type: ignore[assignment]
+        return resp
+
+    monkeypatch.setattr(client_offline.session, "request", mock_type_error)
+    caplog.clear()
+    client_offline.contact.get()
+    assert "API Success None" in caplog.text
+
+
+# --- Config & Initialization Tests ---
 
 def test_client_custom_version() -> None:
     """Verify that setting a custom version accurately overrides defaults."""
@@ -202,7 +277,6 @@ def test_config_getitem_all_branches() -> None:
 
 
 # --- Legacy Functionality Coverage Tests ---
-
 
 def test_legacy_action_id_fallback(client_offline: Client) -> None:
     """Test backward compatibility of the action_id parameter alias.
@@ -258,7 +332,6 @@ def test_prepare_url_leading_trailing_underscores_input_bad() -> None:
 
 # --- Legacy Logging Coverage Tests ---
 
-
 @pytest.fixture
 def mock_response() -> requests.Response:
     """Provide a mock Response object for offline logging testing."""
@@ -277,8 +350,8 @@ def test_debug_logging_to_stdout(
     - mock_response (requests.Response): Mock API response.
     - caplog (LogCaptureFixture): Pytest logger capture.
     """
-    with caplog.at_level(logging.DEBUG, logger="mailjet_rest"):
-        parse_response(mock_response, handler=logging_handler(), debug=True)
+    caplog.set_level(logging.DEBUG)
+    parse_response(mock_response, handler=logging_handler(), debug=True)
     assert "Response status: 404" in caplog.text
 
 
@@ -291,9 +364,9 @@ def test_debug_logging_to_log_file(
     - mock_response (requests.Response): Mock API response.
     - caplog (LogCaptureFixture): Pytest logger capture.
     """
+    caplog.set_level(logging.DEBUG)
     handler_factory = lambda: logging_handler(to_file=True)
-    with caplog.at_level(logging.DEBUG, logger="mailjet_rest"):
-        parse_response(mock_response, handler=handler_factory, debug=True)
+    parse_response(mock_response, handler=handler_factory, debug=True)
     assert "Response status: 404" in caplog.text
 
 
@@ -307,13 +380,13 @@ def test_parse_response_branches(mock_response: requests.Response) -> None:
     parse_response(mock_response, debug=True)
 
     # 2. Missing branch: handler is already attached to logger
-    logger = logging.getLogger("mailjet_rest")
+    legacy_logger = logging.getLogger("mailjet_rest")
     dummy_handler = logging.StreamHandler()
-    logger.addHandler(dummy_handler)
+    legacy_logger.addHandler(dummy_handler)
     try:
         parse_response(mock_response, handler=dummy_handler, debug=True)
     finally:
-        logger.removeHandler(dummy_handler)
+        legacy_logger.removeHandler(dummy_handler)
 
 
 def test_parse_response_exception_handling(mock_response: requests.Response) -> None:

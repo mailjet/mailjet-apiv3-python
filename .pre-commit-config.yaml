@@ -283,6 +283,7 @@ repos:
     hooks:
       - id: mdformat
         name: "📝 markdown · Format files"
+
         additional_dependencies:
           - mdformat-gfm
           - mdformat-black

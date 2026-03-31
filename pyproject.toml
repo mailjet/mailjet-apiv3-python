@@ -218,6 +218,7 @@ ignore = [
     "ANN401",  # ANN401 Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
     "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None`
     # pycodestyle (E, W)
+    "COM812",
     "CPY001",   # Missing copyright notice at top of file
     "DOC501",  # DOC501 Raised exception `TimeoutError` and `ApiError` missing from docstring
     "E501",

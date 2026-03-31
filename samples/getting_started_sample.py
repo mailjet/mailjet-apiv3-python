@@ -1,15 +1,25 @@
 import json
+import logging
 import os
 
-from mailjet_rest import Client
+from mailjet_rest.client import ApiError, Client, CriticalApiError, TimeoutError
 
+# Optional: Enable built-in SDK logging to see request/response details
+logging.getLogger("mailjet_rest.client").setLevel(logging.DEBUG)
+logging.basicConfig(format="%(levelname)s - %(name)s - %(message)s")
 
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(
+        os.environ.get("MJ_APIKEY_PUBLIC", ""),
+        os.environ.get("MJ_APIKEY_PRIVATE", ""),
+    ),
 )
 
 mailjet31 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(
+        os.environ.get("MJ_APIKEY_PUBLIC", ""),
+        os.environ.get("MJ_APIKEY_PRIVATE", ""),
+    ),
     version="v3.1",
 )
 
@@ -47,13 +57,13 @@ def retrieve_messages_from_campaign():
 def retrieve_message():
     """GET https://api.mailjet.com/v3/REST/message/$MESSAGE_ID"""
     _id = "*****************"  # Put real ID to make it work.
-    return mailjet30.message.get(_id)
+    return mailjet30.message.get(id=_id)
 
 
 def view_message_history():
     """GET https://api.mailjet.com/v3/REST/messagehistory/$MESSAGE_ID"""
     _id = "*****************"  # Put real ID to make it work.
-    return mailjet30.messagehistory.get(_id)
+    return mailjet30.messagehistory.get(id=_id)
 
 
 def retrieve_statistic():
@@ -69,9 +79,20 @@ def retrieve_statistic():
 
 
 if __name__ == "__main__":
-    result = retrieve_statistic()
-    print(result.status_code)
     try:
-        print(json.dumps(result.json(), indent=4))
-    except json.decoder.JSONDecodeError:
-        print(result.text)
+        # We use send_messages() here as a safe, SandboxMode-enabled test
+        result = send_messages()
+        print(f"Status Code: {result.status_code}")
+
+        try:
+            print(json.dumps(result.json(), indent=4))
+        except ValueError:  # Covers JSONDecodeError safely across Python versions
+            print(result.text)
+
+    # Demonstrate the new network exception handling
+    except TimeoutError:
+        print("The request to the Mailjet API timed out.")
+    except CriticalApiError as e:
+        print(f"Network connection failed: {e}")
+    except ApiError as e:
+        print(f"An unexpected Mailjet API error occurred: {e}")
