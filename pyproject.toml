@@ -15,7 +15,7 @@ write_to_template = '__version__ = "{version}"'
 py-modules = ["mailjet_rest._version"]
 
 [tool.setuptools.packages.find]
-include = ["mailjet_rest", "mailjet_rest.*", "samples", "tests", "tests.*", "test.py"]
+include = ["mailjet_rest", "mailjet_rest.*", "samples", "tests", "tests.*"]
 
 [tool.setuptools.package-data]
 mailjet_rest = ["py.typed", "*.pyi"]
@@ -81,7 +81,6 @@ linting = [
     "flake8>=3.7.8",
     "pep8-naming",
     "isort",
-    "yapf",
     "pycodestyle",
     "pydocstyle",
     "pyupgrade",
@@ -317,17 +316,6 @@ per-file-ignores = [
 max-line-length = 88
 count = true
 
-[tool.yapf]
-based_on_style = "facebook"
-SPLIT_BEFORE_BITWISE_OPERATOR = true
-SPLIT_BEFORE_ARITHMETIC_OPERATOR = true
-SPLIT_BEFORE_LOGICAL_OPERATOR = true
-SPLIT_BEFORE_DOT = true
-
-[tool.yapfignore]
-ignore_patterns = [
-]
-
 [tool.mypy]
 strict = true
 # Adapted from this StackOverflow post:
@@ -389,7 +377,7 @@ reportMissingImports = false
 
 [tool.bandit]
 # usage: bandit -c pyproject.toml -r .
-exclude_dirs = ["tests", "test.py"]
+exclude_dirs = ["tests"]
 tests = ["B201", "B301"]
 skips = ["B101", "B601"]
 

@@ -4,6 +4,24 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
+### Added
+
+Comprehensive `pre-commit` hooks for formatting, typing, and security.
+100% test coverage using `pytest` and mocked HTTP sessions.
+Adaptive routing for SMS API (`v4`), supporting dynamic versioning overrides.
+Segregated tests into `tests/unit/` (offline) and `tests/integration/` (live network).
+
+### Changed
+
+Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for connection pooling.
+Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures.
+Enforced absolute imports and strict type narrowing across the codebase.
+
+### Removed
+
+Root `test.py` monolith (replaced by a modular test directory structure).
+Redundant class constants (`API_REF`, `DEFAULT_API_URL`).
+
 ## [1.5.1] - 2025-07-14
 
 ### Removed

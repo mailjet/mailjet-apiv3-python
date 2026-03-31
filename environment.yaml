@@ -8,8 +8,3 @@ dependencies:
   - pip
   # runtime deps
   - requests >=2.32.4
-  # tests
-  - pytest >=7.0.0
-  # other
-  - pre-commit
-  - toml

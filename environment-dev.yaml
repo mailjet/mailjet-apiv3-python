@@ -36,7 +36,6 @@ dependencies:
   - ruff
   - toml
   - types-requests
-  - yapf
   # other
   - conda
   - conda-build

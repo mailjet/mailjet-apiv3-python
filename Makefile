@@ -113,11 +113,17 @@ dev-full: clean		## install the package's development version to a fresh environ
 pre-commit:     ## runs pre-commit against files. NOTE: older files are disabled in the pre-commit config.
 	pre-commit run --all-files
 
-test:			## runs test cases
-	$(PYTHON3) -m pytest -n auto --capture=no $(TEST_DIR) test.py
+test:			## runs all test cases
+	$(PYTHON3) -m pytest -n auto --capture=no $(TEST_DIR)
+
+test-unit:		## runs pure offline unit tests
+	$(PYTHON3) -m pytest -n auto --capture=no $(TEST_DIR)/unit
+
+test-integration:	## runs live network integration tests
+	$(PYTHON3) -m pytest -n auto --capture=no $(TEST_DIR)/integration
 
 test-debug:		## runs test cases with debugging info enabled
-	$(PYTHON3) -m pytest -n auto -vv --capture=no $(TEST_DIR) test.py
+	$(PYTHON3) -m pytest -n auto -vv --capture=no $(TEST_DIR)
 
 test-cov:		## checks test coverage requirements
 	$(PYTHON3) -m pytest -n auto --cov-config=.coveragerc --cov=$(SRC_DIR) \
