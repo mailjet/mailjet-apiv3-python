@@ -36,7 +36,7 @@ license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.10"
 
-dependencies = ["requests>=2.32.4"]
+dependencies = ["requests>=2.32.5"]
 
 keywords = [
         "Mailjet API v3 / v3.1 Python Wrapper",

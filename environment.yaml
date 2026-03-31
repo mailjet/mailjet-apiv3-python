@@ -7,4 +7,4 @@ dependencies:
   # build & host deps
   - pip
   # runtime deps
-  - requests >=2.32.4
+  - requests >=2.32.5
