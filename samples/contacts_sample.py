@@ -56,9 +56,9 @@ def add_a_contact_to_a_contact_list():
     data = {
         "IsUnsubscribed": "true",
         "ContactID": "987654321",
-        "ContactAlt": "passenger@mailjet.com",
+        "ContactAlt": "passenger@mailjet.com",  # pragma: allowlist secret
         "ListID": "123456",
-        "ListAlt": "abcdef123",
+        "ListAlt": "abcdef123",  # pragma: allowlist secret
     }
     return mailjet30.listrecipient.create(data=data)
 

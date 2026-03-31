@@ -371,7 +371,7 @@ strict_equality = true
 #    (^|/)test[^/]*\.py$    # files named "test*.py"
 #  )'''
 exclude = [
-    "samples",
+    "mailjet_rest/samples",
 ]
 
 # Configuring error messages

@@ -24,7 +24,7 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 - [Compatibility](#compatibility)
 - [Requirements](#requirements)
   - [Build backend dependencies](#build-backend-dependencies)
-  - [Runtime dependnecies](#runtime-dependencies)
+  - [Runtime dependencies](#runtime-dependencies)
   - [Test dependencies](#test-dependencies)
 - [Installation](#installation)
   - [pip install](#pip-install)
@@ -133,8 +133,8 @@ conda activate mailjet-dev
 The Mailjet Email API uses your API and Secret keys for authentication. [Grab][api_credential] and save your Mailjet API credentials.
 
 ```bash
-export MJ_APIKEY_PUBLIC='your api key'
-export MJ_APIKEY_PRIVATE='your api secret'
+export MJ_APIKEY_PUBLIC='your api key'  # pragma: allowlist secret
+export MJ_APIKEY_PRIVATE='your api secret'  # pragma: allowlist secret
 ```
 
 Initialize your [Mailjet] client:
