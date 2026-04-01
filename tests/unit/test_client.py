@@ -194,6 +194,43 @@ def test_client_coverage_edge_cases(
     client_offline.contact.get(filters={"limit": 1}, filter={"ignored": "legacy"})
 
 
+def test_send_api_v3_1_template_language_variables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify TemplateLanguage and Variables serialization (Issue #97).
+
+    Ensures that the Python SDK correctly serializes the boolean and dictionary
+    types for Mailjet's templating engine before dispatching the HTTP request.
+    """
+    client_v31 = Client(auth=("a", "b"), version="v3.1")
+
+    def mock_request(
+        method: str, url: str, data: str | bytes | None = None, **kwargs: Any
+    ) -> requests.Response:
+        assert data is not None
+        assert isinstance(data, str)
+        # Check that Python True became JSON true, and the dict serialized properly
+        assert '"TemplateLanguage": true' in data
+        assert '"Variables": {"name": "John Doe"}' in data
+
+        resp = requests.Response()
+        resp.status_code = 200
+        return resp
+
+    monkeypatch.setattr(client_v31.session, "request", mock_request)
+
+    payload = {
+        "Messages": [
+            {
+                "TemplateLanguage": True,
+                "Variables": {"name": "John Doe"},
+            }
+        ]
+    }
+    result = client_v31.send.create(data=payload)
+    assert result.status_code == 200
+
+
 def test_api_call_exceptions_and_logging(
     client_offline: Client, monkeypatch: pytest.MonkeyPatch, caplog: LogCaptureFixture
 ) -> None:
