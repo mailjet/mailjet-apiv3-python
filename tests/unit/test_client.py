@@ -142,15 +142,23 @@ def test_http_methods_and_timeout(
 
     monkeypatch.setattr(client_offline.session, "request", mock_request)
 
-    assert client_offline.contact.get(id=1, filters={"limit": 1}).status_code == 200
-    assert client_offline.contact.create(data={"Name": "Test"}, id=1).status_code == 200
-    assert (
-        client_offline.contact.update(id=1, data={"Name": "Update"}).status_code == 200
-    )
-    assert client_offline.contact.delete(id=1).status_code == 200
+    # AAA Pattern: Act then Assert to avoid side-effects in asserts
+    resp_get = client_offline.contact.get(id=1, filters={"limit": 1})
+    assert resp_get.status_code == 200
 
-    resp = client_offline.contact(method="GET", headers={"X-Custom": "1"}, timeout=None)
-    assert resp.status_code == 200
+    resp_create = client_offline.contact.create(data={"Name": "Test"}, id=1)
+    assert resp_create.status_code == 200
+
+    resp_update = client_offline.contact.update(id=1, data={"Name": "Update"})
+    assert resp_update.status_code == 200
+
+    resp_delete = client_offline.contact.delete(id=1)
+    assert resp_delete.status_code == 200
+
+    resp_direct = client_offline.contact(
+        method="GET", headers={"X-Custom": "1"}, timeout=None
+    )
+    assert resp_direct.status_code == 200
 
 
 def test_client_coverage_edge_cases(
