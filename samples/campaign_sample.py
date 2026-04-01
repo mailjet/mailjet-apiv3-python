@@ -3,13 +3,12 @@ import os
 
 from mailjet_rest import Client
 
-
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
 )
 
 mailjet31 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
     version="v3.1",
 )
 
@@ -39,14 +38,7 @@ def by_adding_custom_content():
     return mailjet30.campaigndraft_detailcontent.create(id=_id, data=data)
 
 
-def test_your_campaign():
-    """POST https://api.mailjet.com/v3/REST/campaigndraft/$draft_ID/test"""
-    _id = "$draft_ID"
-    data = {"Recipients": [{"Email": "passenger@mailjet.com", "Name": "Passenger 1"}]}
-    return mailjet30.campaigndraft_test.create(id=_id, data=data)
-
-
-def schedule_the_sending():
+def schedule_the_campaign():
     """POST https://api.mailjet.com/v3/REST/campaigndraft/$draft_ID/schedule"""
     _id = "$draft_ID"
     data = {"Date": "2018-01-01T00:00:00"}
@@ -85,8 +77,8 @@ def api_call_requirements():
 
 if __name__ == "__main__":
     result = create_a_campaign_draft()
-    print(result.status_code)
+    print(f"Status Code: {result.status_code}")
     try:
         print(json.dumps(result.json(), indent=4))
-    except json.decoder.JSONDecodeError:
+    except ValueError:
         print(result.text)

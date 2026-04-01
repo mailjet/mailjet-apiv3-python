@@ -3,14 +3,8 @@ import os
 
 from mailjet_rest import Client
 
-
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
-)
-
-mailjet31 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
-    version="v3.1",
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
 )
 
 
@@ -40,8 +34,8 @@ def create_a_campaign_with_a_segmentation_filter():
 
 if __name__ == "__main__":
     result = create_your_segment()
-    print(result.status_code)
+    print(f"Status Code: {result.status_code}")
     try:
         print(json.dumps(result.json(), indent=4))
-    except json.decoder.JSONDecodeError:
+    except ValueError:
         print(result.text)
