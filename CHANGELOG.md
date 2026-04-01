@@ -6,7 +6,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Added
 
-- Adaptive routing for SMS API (`v4`), supporting dynamic versioning overrides.
+- Validated and added explicit test coverage for Issue #97, proving `TemplateLanguage` and `Variables` are correctly serialized by the SDK.
 - Safe encapsulation of network errors: exceptions are now wrapped in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`, `ApiError`).
 - Centralized HTTP status logging in `api_call` using standard Python `logging`.
 - Defined explicit public module interfaces using `__all__` to prevent namespace pollution.
@@ -18,9 +18,11 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 - [BREAKING] Bumping to v2.0.0 due to cleanup of legacy methods, unused parameters, and unused exceptions to conform to modern Python developer experience standards. Developer workflows utilizing standard CRUD methods (create, get, update, delete) and returning standard HTTP Responses are **unaffected**.
 - Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for connection pooling to drastically improve performance on multiple sequential requests.
-- Enforced absolute imports and strict type narrowing across the codebase.
-- Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures, achieving 94% core test coverage.
+- Enforced absolute imports, strict type narrowing, and strict Google Style docstring validation across the codebase.
+- Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures, refactoring assertions to the AAA (Arrange, Act, Assert) pattern, and achieving 94% core test coverage.
+- Cleaned up local development environments (environment-dev.yaml) and pinned sub-dependencies for stable CI pipelines.
 - Updated `pyproject.toml` and `Makefile` to reflect the new test directory structure.
+- Updated `SECURITY.md` policy to reflect support exclusively for the `>= 2.0.x` active branch.
 
 ### Removed
 

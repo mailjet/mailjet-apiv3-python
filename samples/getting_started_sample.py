@@ -33,8 +33,7 @@ def send_messages():
                 "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
                 "To": [{"Email": "passenger1@mailjet.com", "Name": "passenger 1"}],
                 "Subject": "Your email flight plan!",
-                "TextPart": "Dear passenger 1, welcome to Mailjet! May the "
-                "delivery force be with you!",
+                "TextPart": "Dear passenger 1, welcome to Mailjet! May the delivery force be with you!",
                 "HTMLPart": '<h3>Dear passenger 1, welcome to <a href="https'
                 '://www.mailjet.com/">Mailjet</a>!<br />May the '
                 "delivery force be with you!",
@@ -76,6 +75,32 @@ def retrieve_statistic():
         "CounterResolution": "Lifetime",
     }
     return mailjet30.statcounters.get(filters=filters)
+
+
+def setup_webhook():
+    """POST https://api.mailjet.com/v3/REST/eventcallbackurl"""
+    data = {
+        "EventType": "open",
+        "Url": "https://www.mydomain.com/webhook",
+        "Status": "alive",
+    }
+    return mailjet30.eventcallbackurl.create(data=data)
+
+
+def setup_parse_api():
+    """POST https://api.mailjet.com/v3/REST/parseroute"""
+    data = {"Url": "https://www.mydomain.com/mj_parse.php"}
+    return mailjet30.parseroute.create(data=data)
+
+
+def create_segmentation_filter():
+    """POST https://api.mailjet.com/v3/REST/contactfilter"""
+    data = {
+        "Description": "Will send only to contacts under 35 years of age.",
+        "Expression": "(age<35)",
+        "Name": "Customers under 35",
+    }
+    return mailjet30.contactfilter.create(data=data)
 
 
 if __name__ == "__main__":

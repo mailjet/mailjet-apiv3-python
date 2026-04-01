@@ -132,7 +132,7 @@ other = ["toml"]
 
 
 [tool.black]
-line-length = 88
+line-length = 120
 target-version = ["py310", "py311", "py312", "py313"]
 skip-string-normalization = false
 skip-magic-trailing-comma = false
@@ -145,7 +145,7 @@ extend-exclude = '''
 '''
 
 [tool.autopep8]
-max_line_length = 88
+max_line_length = 120
 ignore = ""  # or ["E501", "W6"]
 in-place = true
 recursive = true
@@ -184,7 +184,7 @@ exclude = [
 extend-exclude = ["tests", "test"]
 
 # Same as Black.
-line-length = 88
+line-length = 120
 #indent-width = 4
 
 # Assume Python 3.10.
@@ -314,7 +314,7 @@ extend-ignore = "W503"
 per-file-ignores = [
     '__init__.py:F401',
 ]
-max-line-length = 88
+max-line-length = 120
 count = true
 
 [tool.mypy]

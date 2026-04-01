@@ -4,7 +4,7 @@
 
 [![PyPI Version](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
 [![GitHub Release](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
-[![Python Versions](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/mailjet/mailjet-apiv3-python)
+[![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/mailjet/mailjet-apiv3-python)
 [![License](https://img.shields.io/github/license/mailjet/mailjet-apiv3-python)](https://github.com/mailjet/mailjet-apiv3-python/blob/main/LICENSE)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/mailjet-rest)](https://img.shields.io/pypi/dm/mailjet-rest)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/mailjet/mailjet-apiv3-python/commit_checks.yaml)](https://github.com/mailjet/mailjet-apiv3-python/actions)
@@ -58,9 +58,9 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 This library `mailjet_rest` officially supports the following Python versions:
 
-- Python >=3.10,\<3.15
+- Python >=3.10,\<3.14
 
-It's tested up to 3.14 (including).
+It's tested up to 3.13 (including).
 
 ## Requirements
 
@@ -70,7 +70,7 @@ To build the `mailjet_rest` package from the sources you need `setuptools` (as a
 
 ### Runtime dependencies
 
-At runtime the package requires only `requests >=2.32.4`.
+At runtime the package requires only `requests >=2.32.5`.
 
 ### Test dependencies
 
@@ -192,27 +192,29 @@ from mailjet_rest import Client, TimeoutError, CriticalApiError
 
 ```python
 import os
-from mailjet_rest import Client, CriticalApiError, TimeoutError
+from mailjet_rest.client import Client, CriticalApiError, TimeoutError, ApiError
 
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
 mailjet = Client(auth=(api_key, api_secret))
 
 try:
     result = mailjet.contact.get()
     # Note: HTTP errors (like 404 or 401) do not raise exceptions by default.
-    # You should check the status_code:
+    # You should always check the status_code:
     if result.status_code != 200:
         print(f"API Error: {result.status_code}")
 except TimeoutError:
     print("The request to the Mailjet API timed out.")
 except CriticalApiError as e:
     print(f"Network connection failed: {e}")
+except ApiError as e:
+    print(f"An unexpected Mailjet API error occurred: {e}")
 ```
 
 ## Logging & Debugging
 
-The Mailjet SDK includes built-in logging to help you troubleshoot API requests, inspect generated URLs, and read server error messages (like 400 Bad Request or 401 Unauthorized).
+The Mailjet SDK includes built-in logging to help you troubleshoot API requests, inspect generated URLs, and read server error messages (like `400 Bad Request` or `401 Unauthorized`).
 The SDK uses the standard Python logging module under the namespace mailjet_rest.client.
 
 To enable detailed logging in your application, configure the logger before making requests:
@@ -252,11 +254,11 @@ result = mailjet.send.create(data=data, timeout=30)
 
 ### API Versioning
 
-The Mailjet API is spread among three distinct versions:
+The Mailjet API is spread among distinct versions:
 
 - `v3` - The Email API
 - `v3.1` - Email Send API v3.1, which is the latest version of our Send API
-- `v4` - SMS API
+- `v1` - Content API (Templates, Blocks, Images)
 
 Since most Email API endpoints are located under `v3`, it is set as the default one and does not need to be specified when making your request. For the others you need to specify the version using `version`. For example, if using Send API `v3.1`:
 
@@ -298,12 +300,75 @@ print(result.status_code)
 print(result.json())
 ```
 
+For the **Content API (v1)**, sub-actions will be correctly routed using slashes (e.g. contents/lock). Additionally, the SDK maps the `data_images` resource specifically to `/v1/data/images` to support media uploads.
+
+```python
+# GET '/v1/data/images'
+mailjet = Client(auth=(api_key, api_secret), version="v1")
+result = mailjet.data_images.get()
+```
+
 ## Request examples
 
 ### Full list of supported endpoints
 
 > [!IMPORTANT]\
 > This is a full list of supported endpoints this wrapper provides [samples](samples)
+
+### Send API (v3.1)
+
+#### Send a basic email
+
+```python
+from mailjet_rest import Client
+import os
+
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+mailjet = Client(auth=(api_key, api_secret), version="v3.1")
+
+data = {
+    "Messages": [
+        {
+            "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
+            "To": [{"Email": "passenger1@mailjet.com", "Name": "Passenger 1"}],
+            "Subject": "Your email flight plan!",
+            "TextPart": "Dear passenger 1, welcome to Mailjet!",
+            "HTMLPart": "<h3>Dear passenger 1, welcome to Mailjet!</h3>",
+        }
+    ]
+}
+result = mailjet.send.create(data=data)
+print(result.status_code)
+print(result.json())
+```
+
+### Send an email using a Mailjet Template
+
+When using `TemplateLanguage`, ensure that you pass a standard Python dictionary to the `Variables` parameter.
+
+```python
+from mailjet_rest import Client
+import os
+
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+mailjet = Client(auth=(api_key, api_secret), version="v3.1")
+
+data = {
+    "Messages": [
+        {
+            "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
+            "To": [{"Email": "passenger1@mailjet.com", "Name": "passenger 1"}],
+            "TemplateID": 1234567,  # Put your actual Template ID here
+            "TemplateLanguage": True,
+            "Subject": "Your email flight plan!",
+            "Variables": {"name": "John Doe", "custom_data": "Welcome aboard!"},
+        }
+    ]
+}
+result = mailjet.send.create(data=data)
+```
 
 ### POST request
 
@@ -339,14 +404,14 @@ import os
 api_key = os.environ["MJ_APIKEY_PUBLIC"]
 api_secret = os.environ["MJ_APIKEY_PRIVATE"]
 mailjet = Client(auth=(api_key, api_secret))
-id = "$ID"
+id_ = "$ID"
 data = {
     "ContactsLists": [
         {"ListID": "$ListID_1", "Action": "addnoforce"},
         {"ListID": "$ListID_2", "Action": "addforce"},
     ]
 }
-result = mailjet.contact_managecontactslists.create(id=id, data=data)
+result = mailjet.contact_managecontactslists.create(id=id_, data=data)
 print(result.status_code)
 print(result.json())
 ```
@@ -487,6 +552,165 @@ id_ = "Template_ID"
 result = mailjet.template.delete(id=id_)
 print(result.status_code)
 print(result.json())
+```
+
+### Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)
+
+#### Webhooks: Real-time Event Tracking
+
+You can subscribe to real-time events (open, click, bounce, etc.) by configuring a webhook URL using the `eventcallbackurl` resource.
+
+```python
+from mailjet_rest import Client
+import os
+
+client = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
+
+data = {
+    "EventType": "open",
+    "Url": "[https://www.mydomain.com/webhook](https://www.mydomain.com/webhook)",
+    "Status": "alive",
+}
+result = client.eventcallbackurl.create(data=data)
+print(result.status_code)
+```
+
+#### Parse API: Receive Inbound Emails
+
+The Parse API routes incoming emails sent to a specific domain to your custom webhook.
+
+```python
+from mailjet_rest import Client
+import os
+
+client = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
+
+data = {"Url": "https://www.mydomain.com/mj_parse.php"}
+result = client.parseroute.create(data=data)
+print(result.status_code)
+```
+
+#### Segmentation: Contact Filters
+
+Create expressions to dynamically filter your contacts (e.g., customers under 35) using `contactfilter`.
+
+```python
+from mailjet_rest import Client
+import os
+
+client = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
+
+data = {
+    "Description": "Will send only to contacts under 35 years of age.",
+    "Expression": "(age<35)",
+    "Name": "Customers under 35",
+}
+result = client.contactfilter.create(data=data)
+print(result.status_code)
+```
+
+#### Retrieve Campaign Statistics
+
+Retrieve performance counters using `statcounters` or location-based statistics via `geostatistics`.
+
+```python
+from mailjet_rest import Client
+import os
+
+mailjet = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
+
+filters = {"CounterSource": "APIKey", "CounterTiming": "Message", "CounterResolution": "Lifetime"}
+
+# Getting general statistics
+result = mailjet.statcounters.get(filters=filters)
+print(result.status_code)
+print(result.json())
+```
+
+### Content API
+
+The Content API (`v1`) allows managing templates, generating API tokens, and uploading images. The SDK handles the required `/REST/` prefix for most resources automatically, while appropriately mapping `data_images` to `/data/`.
+
+#### Generating a Token
+
+```python
+from mailjet_rest import Client
+import os
+
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+
+# Tokens endpoint requires Basic Auth initially
+client = Client(auth=(api_key, api_secret), version="v1")
+data = {"Name": "My Access Token", "Permissions": ["read_template", "create_template"]}
+
+result = client.token.create(data=data)
+print(result.json())
+```
+
+#### Uploading an Image
+
+Use the `data_images` resource to map the request to `/v1/data/images`.
+
+```python
+from mailjet_rest import Client
+import os
+
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+
+client = Client(auth=(api_key, api_secret), version="v1")
+
+# Base64 encoded image data
+data = {
+    "name": "logo.png",
+    # 1x1 PNG pixel
+    "image_data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+}
+
+result = client.data_images.create(data=data)
+print(result.status_code)
+```
+
+#### Locking a Template Content
+
+Sub-actions are safely handled using slashes (`contents/lock` instead of `contents-lock`).
+
+```python
+from mailjet_rest import Client
+import os
+
+client = Client(auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]), version="v1")
+
+template_id = 1234567
+
+# This routes to POST /v1/REST/template/1234567/contents/lock
+result = client.template_contents_lock.create(id=template_id)
+print(result.status_code)
+```
+
+#### Update Template Content
+
+Use the specific \_detailcontent resource route to update the HTML or Text parts of an existing template.
+
+```python
+from mailjet_rest import Client
+import os
+
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+mailjet = Client(auth=(api_key, api_secret))
+
+template_id = 1234567
+
+data = {
+    "Html-part": "<html><body><h1>Updated Content from Python SDK</h1></body></html>",
+    "Text-part": "Updated Content from Python SDK",
+    "Headers": {"Subject": "New Subject from API"},
+}
+
+result = mailjet.template_detailcontent.create(id=template_id, data=data)
+print(result.status_code)
 ```
 
 ## License

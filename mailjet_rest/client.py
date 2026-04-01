@@ -108,14 +108,13 @@ class Config:
         action = key.split("_")[0]
         name_lower = key.lower()
 
-        # Replicate adaptive routing logic for legacy dictionary accesses
-        if name_lower == "sms_send":
-            sms_version = "v4" if self.version in {"v3", "v3.1"} else self.version
-            url = f"{self.api_url}{sms_version}/sms-send"
-        elif name_lower == "send":
+        if name_lower == "send":
             url = f"{self.api_url}{self.version}/send"
         elif name_lower.endswith(("_csvdata", "_csverror")):
             url = f"{self.api_url}{self.version}/DATA/{action}"
+        elif key.lower().startswith("data_"):
+            action_path = key.replace("_", "/")
+            url = f"{self.api_url}{self.version}/{action_path}"
         else:
             url = f"{self.api_url}{self.version}/REST/{action}"
 
@@ -161,47 +160,37 @@ class Endpoint:
         version = self.client.config.version
         name_lower = self.name.lower()
 
-        # 1. SMS API (Mailjet SMS API is primarily v4. Auto-promote v3/v3.1 to v4)
-        if name_lower == "sms_send":
-            sms_version = "v4" if version in {"v3", "v3.1"} else version
-            return f"{base_url}/{sms_version}/sms-send"
-
-        # 2. Send API (no REST prefix)
         if name_lower == "send":
             return f"{base_url}/{version}/send"
 
-        # 3. DATA API for CSV imports
-        if name_lower.endswith("_csvdata"):
-            resource = self.name.split("_")[0]
-            url = f"{base_url}/{version}/DATA/{resource}"
-            if id is not None:
-                url += f"/{id}/CSVData/text:plain"
-            return url
-
-        if name_lower.endswith("_csverror"):
-            resource = self.name.split("_")[0]
-            url = f"{base_url}/{version}/DATA/{resource}"
-            if id is not None:
-                url += f"/{id}/CSVError/text:csv"
-            return url
-
-        # 4. Standard REST API (e.g., contact_managecontactslists)
         action_parts = self.name.split("_")
         resource = action_parts[0]
-        url = f"{base_url}/{version}/REST/{resource}"
+
+        if name_lower.endswith(("_csvdata", "_csverror")):
+            url = f"{base_url}/{version}/DATA/{resource}"
+            if id is not None:
+                suffix = "CSVData/text:plain" if name_lower.endswith("_csvdata") else "CSVError/text:csv"
+                url += f"/{id}/{suffix}"
+            return url
+
+        if resource.lower() == "data":
+            # Content API Data Endpoints (e.g. data_images -> /v1/data/images)
+            action_path = "/".join(action_parts)
+            url = f"{base_url}/{version}/{action_path}"
+        else:
+            # Standard REST API (v1 and v3)
+            url = f"{base_url}/{version}/REST/{resource}"
 
         if id is not None:
             url += f"/{id}"
 
-        if len(action_parts) > 1:
-            sub_action = "-".join(action_parts[1:])
+        if len(action_parts) > 1 and resource.lower() != "data":
+            sub_action = "/".join(action_parts[1:]) if version == "v1" else "-".join(action_parts[1:])
             url += f"/{sub_action}"
 
         return url
 
-    def _build_headers(
-        self, custom_headers: dict[str, str] | None = None
-    ) -> dict[str, str]:
+    def _build_headers(self, custom_headers: dict[str, str] | None = None) -> dict[str, str]:
         """Build headers based on the endpoint requirements.
 
         Args:
@@ -223,8 +212,8 @@ class Endpoint:
     def __call__(
         self,
         method: str = "GET",
-        filters: dict | None = None,
-        data: dict | list | str | None = None,
+        filters: dict[str, Any] | None = None,
+        data: dict[str, Any] | list[Any] | str | None = None,
         headers: dict[str, str] | None = None,
         id: int | str | None = None,
         action_id: int | str | None = None,
@@ -235,8 +224,8 @@ class Endpoint:
 
         Args:
             method (str): The HTTP method to use (e.g., 'GET', 'POST').
-            filters (dict | None): Query parameters to include in the request.
-            data (dict | list | str | None): The payload to send in the request body.
+            filters (dict[str, Any] | None): Query parameters to include in the request.
+            data (dict[str, Any] | list[Any] | str | None): The payload to send in the request body.
             headers (dict[str, str] | None): Custom HTTP headers.
             id (int | str | None): The ID of the resource to access.
             action_id (int | str | None): Legacy parameter, acts as an alias for id.
@@ -246,11 +235,9 @@ class Endpoint:
         Returns:
             requests.Response: The HTTP response from the Mailjet API.
         """
-        # Maintain backward compatibility for users using legacy `action_id` parameter
         if id is None and action_id is not None:
             id = action_id
 
-        # Maintain backward compatibility for users using `filter` instead of `filters`
         if filters is None and "filter" in kwargs:
             filters = kwargs.pop("filter")
         elif "filter" in kwargs:
@@ -267,13 +254,13 @@ class Endpoint:
         )
 
     def get(
-        self, id: int | str | None = None, filters: dict | None = None, **kwargs: Any
+        self, id: int | str | None = None, filters: dict[str, Any] | None = None, **kwargs: Any
     ) -> requests.Response:
         """Perform a GET request to retrieve one or multiple resources.
 
         Args:
             id (int | str | None): The ID of the specific resource to retrieve.
-            filters (dict | None): Query parameters for filtering the results.
+            filters (dict[str, Any] | None): Query parameters for filtering the results.
             **kwargs (Any): Additional arguments for the API call.
 
         Returns:
@@ -283,14 +270,14 @@ class Endpoint:
 
     def create(
         self,
-        data: dict | list | str | None = None,
+        data: dict[str, Any] | list[Any] | str | None = None,
         id: int | str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Perform a POST request to create a new resource.
 
         Args:
-            data (dict | list | str | None): The payload data to create the resource.
+            data (dict[str, Any] | list[Any] | str | None): The payload data to create the resource.
             id (int | str | None): The ID of the resource, if creating a sub-resource.
             **kwargs (Any): Additional arguments for the API call.
 
@@ -300,13 +287,16 @@ class Endpoint:
         return self(method="POST", data=data, id=id, **kwargs)
 
     def update(
-        self, id: int | str, data: dict | list | str | None = None, **kwargs: Any
+        self, id: int | str, data: dict[str, Any] | list[Any] | str | None = None, **kwargs: Any
     ) -> requests.Response:
         """Perform a PUT request to update an existing resource.
 
+        According to the Mailjet API documentation, all PUT requests behave like
+        PATCH requests, affecting only the specified properties.
+
         Args:
             id (int | str): The exact ID of the resource to update.
-            data (dict | list | str | None): The updated payload data.
+            data (dict[str, Any] | list[Any] | str | None): The updated payload data.
             **kwargs (Any): Additional arguments for the API call.
 
         Returns:
@@ -335,37 +325,60 @@ class Client:
     to allow flexible interaction with various Mailjet API endpoints.
 
     Attributes:
-        auth (tuple[str, str] | None): A tuple containing the API key and secret.
+        auth (tuple[str, str] | str | None): A tuple containing the API key and secret, or a Bearer token string.
         config (Config): Configuration settings for the API client.
         session (requests.Session): A persistent HTTP session for optimized connection pooling.
     """
 
     def __init__(
         self,
-        auth: tuple[str, str] | None = None,
+        auth: tuple[str, str] | str | None = None,
         config: Config | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize a new Client instance for API interaction.
 
         Args:
-            auth (tuple[str, str] | None): A tuple containing the API key and secret.
+            auth (tuple[str, str] | str | None): A tuple of (API_KEY, API_SECRET) for Basic Auth (Email API), or a single string TOKEN for Bearer Auth (Content API v1).
             config (Config | None): An explicit Config object.
             **kwargs (Any): Additional keyword arguments passed to the Config constructor if no config is provided.
+
+        Raises:
+            ValueError: If the provided authentication token or tuple is malformed or invalid.
+            TypeError: If the `auth` argument is not of an expected type (tuple, str, or None).
         """
         self.auth = auth
         self.config = config or Config(**kwargs)
 
         self.session = requests.Session()
-        if self.auth:
-            self.session.auth = self.auth
+
+        # Bearer Auth is required for the v1 Content API endpoints (Tokens, Templates, Images)
+        if self.auth is not None:
+            if isinstance(self.auth, tuple):
+                if len(self.auth) != 2:
+                    msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."  # type: ignore[unreachable]
+                    raise ValueError(msg)
+                self.session.auth = self.auth
+            elif isinstance(self.auth, str):
+                clean_token = self.auth.strip()
+                if not clean_token:
+                    msg = "Bearer token cannot be an empty string."
+                    raise ValueError(msg)
+                if "\n" in clean_token or "\r" in clean_token:
+                    msg = "Bearer token contains invalid characters (Header Injection risk)."
+                    raise ValueError(msg)
+                self.session.headers.update({"Authorization": f"Bearer {clean_token}"})
+            else:
+                msg = f"Invalid auth type: expected tuple, str, or None, got {type(self.auth).__name__}"  # type: ignore[unreachable]
+                raise TypeError(msg)
+
         self.session.headers.update({"User-Agent": self.config.user_agent})
 
     def __getattr__(self, name: str) -> Endpoint:
         """Dynamically access API endpoints as attributes.
 
         Args:
-            name (str): The name of the attribute being accessed (e.g., 'contact_managecontactslists').
+            name (str): The name of the attribute being accessed (e.g., 'contact_managecontactslists', 'statcounters').
 
         Returns:
             Endpoint: An initialized Endpoint instance for the requested resource.
@@ -376,8 +389,8 @@ class Client:
         self,
         method: str,
         url: str,
-        filters: dict | None = None,
-        data: dict | list | str | None = None,
+        filters: dict[str, Any] | None = None,
+        data: dict[str, Any] | list[Any] | str | None = None,
         headers: dict[str, str] | None = None,
         timeout: int | None = None,
         **kwargs: Any,
@@ -391,8 +404,8 @@ class Client:
         Args:
             method (str): The HTTP method to use.
             url (str): The fully constructed URL.
-            filters (dict | None): Query parameters.
-            data (dict | list | str | None): The request body payload.
+            filters (dict[str, Any] | None): Query parameters.
+            data (dict[str, Any] | list[Any] | str | None): The request body payload.
             headers (dict[str, str] | None): HTTP headers.
             timeout (int | None): Request timeout in seconds.
             **kwargs (Any): Additional arguments to pass to `requests.request`.
