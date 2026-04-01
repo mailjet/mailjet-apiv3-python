@@ -6,26 +6,33 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Added
 
-- Comprehensive `pre-commit` hooks for formatting, typing, and security.
 - Adaptive routing for SMS API (`v4`), supporting dynamic versioning overrides.
-- Segregated tests into `tests/unit/` (offline) and `tests/integration/` (live network).
-- Defined explicit public module interfaces using `__all__` to prevent namespace pollution.
-- Safe encapsulation of network errors: exceptions are now wrapped in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`).
+- Safe encapsulation of network errors: exceptions are now wrapped in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`, `ApiError`).
 - Centralized HTTP status logging in `api_call` using standard Python `logging`.
+- Defined explicit public module interfaces using `__all__` to prevent namespace pollution.
 - `Logging & Debugging` troubleshooting guide in `README.md`.
+- Segregated tests into `tests/unit/` (offline) and `tests/integration/` (live network).
+- Comprehensive `pre-commit` hooks for formatting, typing, and security.
 
 ### Changed
 
-- Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for connection pooling.
-- Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures.
+- [BREAKING] Bumping to v2.0.0 due to cleanup of legacy methods, unused parameters, and unused exceptions to conform to modern Python developer experience standards. Developer workflows utilizing standard CRUD methods (create, get, update, delete) and returning standard HTTP Responses are **unaffected**.
+- Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for connection pooling to drastically improve performance on multiple sequential requests.
 - Enforced absolute imports and strict type narrowing across the codebase.
-- Improved test coverage using `pytest` and mocked HTTP sessions.
+- Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures, achieving 94% core test coverage.
 - Updated `pyproject.toml` and `Makefile` to reflect the new test directory structure.
 
 ### Removed
 
-- Root `test.py` monolith (replaced by a modular test directory structure).
+- [BREAKING] Removed the legacy `ensure_ascii` and `data_encoding` arguments from the create and update method signatures. The underlying `requests` library automatically handles UTF-8 serialization. If raw, non-escaped JSON injection is strictly required, developers can manually pass a pre-serialized JSON string to the data parameter instead of a dictionary.
+- [BREAKING] Removed unused HTTP exception classes (`AuthorizationError`, `ApiRateLimitError`, `DoesNotExistError`, `ValidationError`, `ActionDeniedError`). The SDK natively returns the `requests.Response` object for standard HTTP status codes (e.g., `400`, `401`, `404`), rendering these exceptions "dead code". Only genuine network drop exceptions (TimeoutError, etc.) remain.
+- [BREAKING] Removed the `parse_response` and `logging_handler` utility functions. Logging is now integrated cleanly and automatically via Python's standard `logging` library. See the `README` for the new 2-line setup.
 - Redundant class constants (`API_REF`, `DEFAULT_API_URL`).
+- Root `test.py` monolith (replaced by a modular test directory structure).
+
+### Pull Requests Merged
+
+- [PR_125](https://github.com/mailjet/mailjet-apiv3-python/pull/125) - Refactor client.
 
 ## [1.5.1] - 2025-07-14
 

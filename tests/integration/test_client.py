@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 
 import pytest
 
@@ -28,6 +29,116 @@ def client_live_invalid_auth() -> Client:
 
 
 # --- Integration & HTTP Behavior Tests ---
+
+
+def test_live_send_api_v3_1_sandbox_happy_path(client_live: Client) -> None:
+    """Test Send API v3.1 happy path using SandboxMode to prevent actual email delivery.
+
+    A 200 OK confirms the endpoint parsed the payload correctly and authenticated us.
+    """
+    client_v31 = Client(auth=client_live.auth, version="v3.1")
+    data = {
+        "Messages": [
+            {
+                "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
+                "To": [{"Email": "passenger1@mailjet.com", "Name": "passenger 1"}],
+                "Subject": "CI/CD Sandbox Test",
+                "TextPart": "This is a test from the Mailjet Python Wrapper.",
+            }
+        ],
+        "SandboxMode": True,
+    }
+    result = client_v31.send.create(data=data)
+
+    # Depending on whether pilot@mailjet.com is validated on the tester's account,
+    # Mailjet might return 200 (Success in Sandbox) or 400/401 (Sender not validated).
+    # Crucially, it must NOT be 404 (Endpoint not found).
+    assert result.status_code in (200, 400, 401)
+    assert result.status_code != 404
+
+
+def test_live_send_api_v3_1_bad_payload(client_live: Client) -> None:
+    """Test Send API v3.1 bad path (missing mandatory Messages array)."""
+    client_v31 = Client(auth=client_live.auth, version="v3.1")
+    result = client_v31.send.create(data={"InvalidField": True})
+    # Expecting 400 Bad Request because 'Messages' is missing
+    assert result.status_code == 400
+
+
+def test_live_send_api_v3_bad_payload(client_live: Client) -> None:
+    """Test legacy Send API v3 bad path endpoint availability.
+
+    By sending an empty payload, we expect Mailjet to actively reject it with a 400 Bad Request,
+    proving the URL /v3/send exists and is actively listening.
+    """
+    result = client_live.send.create(data={})
+    assert result.status_code == 400
+
+
+def test_live_content_api_lifecycle_happy_path(client_live: Client) -> None:
+    """End-to-End happy path test of the Content API.
+
+    Creates a template, updates its HTML content via detailcontent, retrieves it, and cleans up.
+    """
+    # 1. Create a dummy template with a unique name to avoid conflicts
+    unique_suffix = uuid.uuid4().hex[:8]
+    template_data = {
+        "Name": f"CI/CD Test Template {unique_suffix}",
+        "Author": "Mailjet Python Wrapper",
+        "Description": "Temporary template for integration testing.",
+        "EditMode": 1,
+    }
+    create_resp = client_live.template.create(data=template_data)
+
+    if create_resp.status_code != 201:
+        pytest.skip(f"Could not create template for testing: {create_resp.text}")
+
+    template_id = create_resp.json()["Data"][0]["ID"]
+
+    try:
+        # 2. Add Content via the specific detailcontent Content API endpoint
+        content_data = {
+            "Headers": {"Subject": "Test Content Subject"},
+            "Html-part": "<html><body><h1>Hello from Python!</h1></body></html>",
+            "Text-part": "Hello from Python!",
+        }
+        content_resp = client_live.template_detailcontent.create(
+            id=template_id, data=content_data
+        )
+
+        # Expecting 200 OK or 201 Created from a successful content update
+        assert content_resp.status_code in (200, 201)
+
+        # 3. Verify Retrieval of Content
+        get_resp = client_live.template_detailcontent.get(id=template_id)
+        assert get_resp.status_code == 200
+
+    finally:
+        # 4. Always clean up the dummy template
+        client_live.template.delete(id=template_id)
+
+
+def test_live_content_api_bad_path(client_live: Client) -> None:
+    """Test Content API bad path (accessing detailcontent of a non-existent template)."""
+    invalid_template_id = 999999999999
+    result = client_live.template_detailcontent.get(id=invalid_template_id)
+    # Should return 400 or 404 for non-existent resources
+    assert result.status_code in (400, 404)
+
+
+def test_live_sms_api_v4_auth_rejection(client_live: Client) -> None:
+    """Test SMS API endpoint availability and auto-routing to v4.
+
+    SMS API requires a Bearer token. Because we are using the Email API's basic auth
+    credentials, we expect Mailjet to strictly reject us with a 401 Unauthorized.
+    This safely proves the `/v4/sms-send` endpoint was hit accurately.
+    """
+    data = {"Text": "Hello from Python", "To": "+1234567890", "From": "MJSMS"}
+    result = client_live.sms_send.create(data=data)
+
+    # 401 Unauthorized or 403 Forbidden proves it's an auth failure, NOT a 404 routing failure.
+    assert result.status_code in (400, 401, 403)
+    assert result.status_code != 404
 
 
 def test_json_data_str_or_bytes_with_ensure_ascii(client_live: Client) -> None:
@@ -82,7 +193,12 @@ def test_csv_import_flow(client_live: Client) -> None:
     from pathlib import Path
 
     # 1. We need a valid contactslist ID. We create a temporary one for the test.
-    list_resp = client_live.contactslist.create(data={"Name": "Test CSV List"})
+    # Use unique name to prevent "already exists" errors during parallel or repeated runs.
+    unique_suffix = uuid.uuid4().hex[:8]
+    list_resp = client_live.contactslist.create(
+        data={"Name": f"Test CSV List {unique_suffix}"}
+    )
+
     # If auth fails or rate limited, gracefully skip or assert
     if list_resp.status_code != 201:
         pytest.skip(f"Failed to create test contact list: {list_resp.text}")

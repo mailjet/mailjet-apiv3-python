@@ -2,21 +2,19 @@
 
 The `mailjet_rest.client` module includes the core `Client` class for managing
 API requests, configuration, and error handling, as well as utility functions
-and classes for building request headers, URLs, and parsing responses.
+and classes for building URLs and managing endpoints.
 
 Classes:
     - Config: Manages configuration settings for the Mailjet API.
     - Endpoint: Represents specific API endpoints and provides methods for HTTP operations.
     - Client: The main API client for authenticating and making requests.
-    - ApiError: Base class for handling API-specific errors.
+    - ApiError: Base class for handling network-level API errors.
 """
 
 from __future__ import annotations
 
-import datetime
 import json
 import logging
-from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,35 +26,15 @@ from requests.exceptions import Timeout as RequestsTimeout
 from mailjet_rest._version import __version__
 
 __all__ = [
-    "ActionDeniedError",
     "ApiError",
-    "ApiRateLimitError",
-    "AuthorizationError",
     "Client",
     "Config",
     "CriticalApiError",
-    "DoesNotExistError",
     "Endpoint",
     "TimeoutError",
-    "ValidationError",
 ]
 
 logger = logging.getLogger(__name__)
-
-
-def logging_handler(to_file: bool = False) -> logging.Handler:
-    """Create and configure a basic logging handler for API requests.
-
-    Parameters:
-    - to_file (bool): A flag indicating whether to log to a file. Defaults to False.
-
-    Returns:
-    - logging.Handler: A configured logging handler object.
-    """
-    if to_file:
-        filename = datetime.datetime.now().strftime("%Y-%m-%d") + ".log"
-        return logging.FileHandler(filename)
-    return logging.StreamHandler()
 
 
 def prepare_url(match: Any) -> str:
@@ -71,79 +49,19 @@ def prepare_url(match: Any) -> str:
     return f"_{match.group(0).lower()}"
 
 
-def parse_response(
-    response: requests.Response, handler: Any = None, debug: bool = False
-) -> requests.Response:
-    """Parse the response from an API request and conditionally handle legacy debug logging.
-
-    Parameters:
-    - response (requests.Response): The response object from the API request.
-    - handler (Any): A function or method that provides a logging handler.
-    - debug (bool): A flag indicating whether debug mode is enabled. Defaults to False.
-
-    Returns:
-    - requests.Response: The unmodified API response object.
-    """
-    if debug:
-        legacy_logger = logging.getLogger("mailjet_rest")
-        legacy_logger.setLevel(logging.DEBUG)
-
-        if handler:
-            with suppress(Exception):
-                # Handle test cases passing a lambda or function
-                h = handler() if callable(handler) else handler
-                # Type Narrowing for pyright: Ensure h is actually a logging.Handler
-                if isinstance(h, logging.Handler):
-                    if not any(
-                        isinstance(existing, type(h))
-                        for existing in legacy_logger.handlers
-                    ):
-                        legacy_logger.addHandler(h)
-
-        legacy_logger.debug(f"Response status: {response.status_code}")
-        legacy_logger.debug(f"Response text: {response.text}")
-
-    return response
-
-
 class ApiError(Exception):
-    """Base class for all API-related errors.
+    """Base class for all API-related network errors.
 
-    This exception serves as the root for all custom API error types,
-    allowing for more specific error handling based on the type of API
-    failure encountered.
-    """
-
-
-class AuthorizationError(ApiError):
-    """Error raised for authorization failures.
-
-    This error is raised when the API request fails due to invalid
-    or missing authentication credentials.
-    """
-
-
-class ActionDeniedError(ApiError):
-    """Error raised when an action is denied by the API.
-
-    This exception is triggered when an action is requested but is not
-    permitted, likely due to insufficient permissions.
+    This exception serves as the root for custom API error types,
+    handling situations where the physical network request fails.
     """
 
 
 class CriticalApiError(ApiError):
-    """Error raised for critical API failures.
+    """Error raised for critical API connection failures.
 
-    This error represents severe issues with the API or infrastructure
-    that prevent requests from completing.
-    """
-
-
-class ApiRateLimitError(ApiError):
-    """Error raised when the API rate limit is exceeded.
-
-    This exception is raised when the user has made too many requests
-    within a given time frame, as enforced by the API's rate limit policy.
+    This error represents severe network issues (like DNS resolution failure
+    or connection refused) that prevent requests from reaching the server.
     """
 
 
@@ -151,25 +69,7 @@ class TimeoutError(ApiError):
     """Error raised when an API request times out.
 
     This error is raised if an API request does not complete within
-    the allowed timeframe, possibly due to network issues or server load.
-    """
-
-
-class DoesNotExistError(ApiError):
-    """Error raised when a requested resource does not exist.
-
-    This exception is triggered when a specific resource is requested
-    but cannot be found in the API, indicating a potential data mismatch
-    or invalid identifier.
-    """
-
-
-class ValidationError(ApiError):
-    """Error raised for invalid input data.
-
-    This exception is raised when the input data for an API request
-    does not meet validation requirements, such as incorrect data types
-    or missing fields.
+    the allowed timeframe, possibly due to network latency or server load.
     """
 
 

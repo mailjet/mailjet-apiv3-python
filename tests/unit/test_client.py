@@ -20,19 +20,13 @@ from mailjet_rest.client import (
     Config,
     CriticalApiError,
     TimeoutError,
-    logging_handler,
-    parse_response,
     prepare_url,
 )
 
 
 @pytest.fixture
 def client_offline() -> Client:
-    """Return a client with fake credentials for pure offline unit testing.
-
-    Returns:
-    - Client: An instance of the Mailjet Client.
-    """
+    """Return a client with fake credentials for pure offline unit testing."""
     return Client(auth=("fake_public_key", "fake_private_key"), version="v3")
 
 
@@ -40,11 +34,7 @@ def client_offline() -> Client:
 
 @pytest.mark.parametrize("api_version", ["v1", "v3", "v3.1", "v4", "v99_future"])
 def test_dynamic_versions_standard_rest(api_version: str) -> None:
-    """Test standard REST API URLs adapt to any version string.
-
-    Parameters:
-    - api_version (str): The version string injected by pytest.
-    """
+    """Test standard REST API URLs adapt to any version string."""
     client = Client(auth=("a", "b"), version=api_version)
     assert (
         client.contact._build_url()
@@ -58,22 +48,14 @@ def test_dynamic_versions_standard_rest(api_version: str) -> None:
 
 @pytest.mark.parametrize("api_version", ["v1", "v3", "v3.1", "v4", "v99_future"])
 def test_dynamic_versions_send_api(api_version: str) -> None:
-    """Test Send API URLs correctly adapt to any version string without the REST prefix.
-
-    Parameters:
-    - api_version (str): The version string injected by pytest.
-    """
+    """Test Send API URLs correctly adapt to any version string without the REST prefix."""
     client = Client(auth=("a", "b"), version=api_version)
     assert client.send._build_url() == f"https://api.mailjet.com/{api_version}/send"
 
 
 @pytest.mark.parametrize("api_version", ["v1", "v3", "v3.1", "v4", "v99_future"])
 def test_dynamic_versions_data_api(api_version: str) -> None:
-    """Test DATA API URLs correctly adapt to any version string.
-
-    Parameters:
-    - api_version (str): The version string injected by pytest.
-    """
+    """Test DATA API URLs correctly adapt to any version string."""
     client = Client(auth=("a", "b"), version=api_version)
     assert (
         client.contactslist_csvdata._build_url(id=123)
@@ -92,29 +74,67 @@ def test_dynamic_versions_sms_api_adaptive() -> None:
 
 
 def test_routing_content_api(client_offline: Client) -> None:
-    """Test Content API routing with sub-actions.
-
-    Parameters:
-    - client_offline (Client): Offline test fixture.
-    """
+    """Test Content API routing with sub-actions."""
     assert (
         client_offline.template_detailcontent._build_url(id=123)
         == "https://api.mailjet.com/v3/REST/template/123/detailcontent"
     )
 
 
-# --- HTTP Methods & Execution Coverage Tests ---
+def test_sms_api_v4_routing(
+    client_offline: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify SMS API explicitly promotes the URL to /v4/sms-send regardless of v3 setting."""
 
+    def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
+        assert url == "https://api.mailjet.com/v4/sms-send"
+        resp = requests.Response()
+        resp.status_code = 200
+        return resp
+
+    monkeypatch.setattr(client_offline.session, "request", mock_request)
+    client_offline.sms_send.create(data={"Text": "Hello", "To": "+123"})
+
+
+def test_send_api_v3_bad_path_routing(
+    client_offline: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify Send API v3 handles bad payloads gracefully at the routing level."""
+
+    def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
+        assert method == "POST"
+        assert url == "https://api.mailjet.com/v3/send"
+        resp = requests.Response()
+        resp.status_code = 400
+        return resp
+
+    monkeypatch.setattr(client_offline.session, "request", mock_request)
+    result = client_offline.send.create(data={})
+    assert result.status_code == 400
+
+
+def test_content_api_bad_path_routing(
+    client_offline: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify Content API routes correctly even when invalid operations are attempted."""
+
+    def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
+        assert url == "https://api.mailjet.com/v3/REST/template/999/detailcontent"
+        resp = requests.Response()
+        resp.status_code = 404
+        return resp
+
+    monkeypatch.setattr(client_offline.session, "request", mock_request)
+    result = client_offline.template_detailcontent.get(id=999)
+    assert result.status_code == 404
+
+
+# --- HTTP Methods & Execution Coverage Tests ---
 
 def test_http_methods_and_timeout(
     client_offline: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Mock the session request to hit standard wrapper methods and fallback parameters.
-
-    Parameters:
-    - client_offline (Client): Offline test fixture.
-    - monkeypatch (pytest.MonkeyPatch): Pytest monkeypatch utility.
-    """
+    """Mock the session request to hit standard wrapper methods and fallback parameters."""
     def mock_request(*args: Any, **kwargs: Any) -> requests.Response:
         resp = requests.Response()
         resp.status_code = 200
@@ -136,12 +156,7 @@ def test_http_methods_and_timeout(
 def test_client_coverage_edge_cases(
     client_offline: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Explicitly hit partial branches (BrPart) to achieve 100% coverage.
-
-    Parameters:
-    - client_offline (Client): Offline test fixture.
-    - monkeypatch (pytest.MonkeyPatch): Pytest monkeypatch utility.
-    """
+    """Explicitly hit partial branches (BrPart) to achieve 100% coverage."""
     def mock_request(*args: Any, **kwargs: Any) -> requests.Response:
         resp = requests.Response()
         resp.status_code = 200
@@ -279,11 +294,7 @@ def test_config_getitem_all_branches() -> None:
 # --- Legacy Functionality Coverage Tests ---
 
 def test_legacy_action_id_fallback(client_offline: Client) -> None:
-    """Test backward compatibility of the action_id parameter alias.
-
-    Parameters:
-    - client_offline (Client): Offline test fixture.
-    """
+    """Test backward compatibility of the action_id parameter alias."""
     assert (
         client_offline.contact._build_url(id=999)
         == "https://api.mailjet.com/v3/REST/contact/999"
@@ -328,71 +339,3 @@ def test_prepare_url_leading_trailing_underscores_input_bad() -> None:
     name = re.sub(r"[A-Z]", prepare_url, "_contactManagecontactslists_")
     url, _ = config[name]
     assert url == "https://api.mailjet.com/v3/REST/"
-
-
-# --- Legacy Logging Coverage Tests ---
-
-@pytest.fixture
-def mock_response() -> requests.Response:
-    """Provide a mock Response object for offline logging testing."""
-    response = requests.Response()
-    response.status_code = 404
-    response._content = b'{"ErrorMessage": "Not found"}'
-    return response
-
-
-def test_debug_logging_to_stdout(
-    mock_response: requests.Response, caplog: LogCaptureFixture
-) -> None:
-    """Test writing debug statements to standard output.
-
-    Parameters:
-    - mock_response (requests.Response): Mock API response.
-    - caplog (LogCaptureFixture): Pytest logger capture.
-    """
-    caplog.set_level(logging.DEBUG)
-    parse_response(mock_response, handler=logging_handler(), debug=True)
-    assert "Response status: 404" in caplog.text
-
-
-def test_debug_logging_to_log_file(
-    mock_response: requests.Response, caplog: LogCaptureFixture
-) -> None:
-    """Test generating a FileHandler for the debug logger.
-
-    Parameters:
-    - mock_response (requests.Response): Mock API response.
-    - caplog (LogCaptureFixture): Pytest logger capture.
-    """
-    caplog.set_level(logging.DEBUG)
-    handler_factory = lambda: logging_handler(to_file=True)
-    parse_response(mock_response, handler=handler_factory, debug=True)
-    assert "Response status: 404" in caplog.text
-
-
-def test_parse_response_branches(mock_response: requests.Response) -> None:
-    """Hit the edge case branches in parse_response (no handler, and duplicate handler).
-
-    Parameters:
-    - mock_response (requests.Response): Mock API response.
-    """
-    # 1. Missing branch: handler is explicitly None
-    parse_response(mock_response, debug=True)
-
-    # 2. Missing branch: handler is already attached to logger
-    legacy_logger = logging.getLogger("mailjet_rest")
-    dummy_handler = logging.StreamHandler()
-    legacy_logger.addHandler(dummy_handler)
-    try:
-        parse_response(mock_response, handler=dummy_handler, debug=True)
-    finally:
-        legacy_logger.removeHandler(dummy_handler)
-
-
-def test_parse_response_exception_handling(mock_response: requests.Response) -> None:
-    """Force an exception inside parse_response's logging handler logic to cover the except block.
-
-    Parameters:
-    - mock_response (requests.Response): Mock API response.
-    """
-    parse_response(mock_response, handler=lambda: 1 / 0, debug=True)
