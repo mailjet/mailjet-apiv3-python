@@ -227,6 +227,15 @@ repos:
         args: [--select=D200,D213,D400,D415]
         additional_dependencies: [tomli]
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.8
+    hooks:
+      - id: ruff-check
+        name: "🐍 lint · Check with Ruff"
+        args: [--fix, --preview]
+      - id: ruff-format
+        name: "🐍 format · Format with Ruff"
+
   - repo: https://github.com/econchick/interrogate
     rev: 1.7.0
     hooks:
