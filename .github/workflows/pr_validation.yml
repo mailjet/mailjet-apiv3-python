@@ -22,7 +22,7 @@ jobs:
 
       - name: Build package
         run: |
-          pip install --upgrade build setuptools setuptools-scm
+          pip install --upgrade build setuptools setuptools-scm twine
           python -m build
           twine check dist/*
 
