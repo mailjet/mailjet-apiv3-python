@@ -76,12 +76,12 @@ def test_auth_validation_errors() -> None:
 
 
 # ==========================================
-# 2. Security & Sanitization Tests
+# 2. Security & Sanitization Tests (OWASP)
 # ==========================================
 
 
 def test_config_api_url_validation_scheme() -> None:
-    """Verify that HTTP (non-TLS) connections are explicitly blocked."""
+    """Verify that HTTP (non-TLS) connections are explicitly blocked (CWE-319)."""
     with pytest.raises(ValueError, match="Secure connection required: api_url scheme must be 'https'"):
         Config(api_url="http://api.mailjet.com")
 
@@ -92,20 +92,60 @@ def test_config_api_url_validation_hostname() -> None:
         Config(api_url="https://")
 
 
+def test_config_timeout_validation() -> None:
+    """Verify OWASP Input Validation prevents resource exhaustion via illegal timeouts (CWE-400)."""
+    with pytest.raises(ValueError, match="Timeout must be strictly between 1 and 300"):
+        Config(timeout=0)
+    with pytest.raises(ValueError, match="Timeout must be strictly between 1 and 300"):
+        Config(timeout=301)
+    with pytest.raises(ValueError, match="Timeout must be strictly between 1 and 300"):
+        Config(timeout=-10)
+
+
 def test_url_sanitization_path_traversal(client_offline: Client) -> None:
     """Verify that dynamically injected IDs and Action IDs are strictly URL-encoded to prevent CWE-22."""
-    # Test standard REST endpoint ID sanitization
     url_rest = client_offline.contact._build_url(id="123/../../delete")
     assert "123%2F..%2F..%2Fdelete" in url_rest
     assert "123/../../delete" not in url_rest
 
-    # Test Content API action_id sanitization
     url_action = client_offline.template_detailcontent._build_url(id=1, action_id="P/../D")
     assert "P%2F..%2FD" in url_action
 
-    # Test CSV endpoint ID sanitization
     url_csv = client_offline.contactslist_csvdata._build_url(id="456?drop=1")
     assert "456%3Fdrop%3D1" in url_csv
+
+
+def test_client_repr_and_str_redact_secrets() -> None:
+    """Verify OWASP Secrets Management prevents credential leakage in logs/traces (CWE-316)."""
+    public = "sensitive_public_key_123"
+    private = "sensitive_private_key_456"
+    client = Client(auth=(public, private))
+
+    client_repr = repr(client)
+    client_str = str(client)
+
+    assert public not in client_repr
+    assert private not in client_repr
+    assert public not in client_str
+    assert private not in client_str
+    assert "Client API Version" in client_repr
+    assert "Mailjet Client" in client_str
+
+
+def test_client_mounts_retry_adapter() -> None:
+    """Verify Zero Trust architecture mounts the Exponential Backoff adapter correctly."""
+    client = Client(auth=("a", "b"))
+    adapter = client.session.get_adapter("https://api.mailjet.com/")
+
+    # Extract the retry strategy from the adapter
+    retry_strategy = getattr(adapter, "max_retries", None)
+    assert retry_strategy is not None
+    assert retry_strategy.total == 3
+    assert 502 in retry_strategy.status_forcelist
+
+    # POST/PUT must not be retried to maintain idempotency
+    assert "POST" not in retry_strategy.allowed_methods
+    assert "GET" in retry_strategy.allowed_methods
 
 
 # ==========================================
@@ -126,19 +166,16 @@ def test_ambiguity_warnings_logged(
 
     monkeypatch.setattr(client_offline.session, "request", mock_request)
 
-    # 1. Email API v3 using plural 'templates'
     client_offline.templates.get()
     assert "Email API (v3) uses the singular '/template'" in caplog.text
     caplog.clear()
 
-    # 2. Content API v1 using singular 'template'
     client_v1 = Client(auth="token", version="v1")
     monkeypatch.setattr(client_v1.session, "request", mock_request)
     client_v1.template.get()
     assert "Content API (v1) uses the plural '/templates'" in caplog.text
     caplog.clear()
 
-    # 3. Send API using unsupported version (v1)
     client_v1.send.create(data={})
     assert "Send API is only available on 'v3' and 'v3.1'" in caplog.text
 
@@ -160,14 +197,8 @@ def test_dynamic_versions_standard_rest(api_version: str) -> None:
 def test_dynamic_versions_content_api_v1_routing() -> None:
     """Test that Content API v1 routing maps correctly according to the Mailjet Docs."""
     client_v1 = Client(auth="token", version="v1")
-
-    # Standard REST resources in plural
     assert client_v1.templates._build_url() == "https://api.mailjet.com/v1/REST/templates"
-
-    # Data resources (images) correctly routed to /data/ instead of /REST/
     assert client_v1.data_images._build_url(id=123) == "https://api.mailjet.com/v1/data/images/123"
-
-    # Sub-actions using slashes natively
     assert (
         client_v1.template_contents_lock._build_url(id=1) == "https://api.mailjet.com/v1/REST/template/1/contents/lock"
     )
@@ -198,19 +229,15 @@ def test_build_csv_url_all_branches() -> None:
     """Explicitly verify every branch of the new _build_csv_url helper."""
     client = Client(auth=("a", "b"), version="v3")
 
-    # Path 1: csvdata with an ID
     assert (
         client.contactslist_csvdata._build_url(id=123)
         == "https://api.mailjet.com/v3/DATA/contactslist/123/CSVData/text:plain"
     )
-    # Path 2: csverror with an ID
     assert (
         client.contactslist_csverror._build_url(id=123)
         == "https://api.mailjet.com/v3/DATA/contactslist/123/CSVError/text:csv"
     )
-    # Path 3: csvdata without an ID
     assert client.contactslist_csvdata._build_url() == "https://api.mailjet.com/v3/DATA/contactslist"
-    # Path 4: csverror without an ID
     assert client.contactslist_csverror._build_url() == "https://api.mailjet.com/v3/DATA/contactslist"
 
 
@@ -297,9 +324,7 @@ def test_http_methods_and_timeout(
     resp_delete = client_offline.contact.delete(id=1)
     assert resp_delete.status_code == 200
 
-    resp_direct = client_offline.contact(
-        method="GET", headers={"X-Custom": "1"}, timeout=None
-    )
+    resp_direct = client_offline.contact(method="GET", headers={"X-Custom": "1"}, timeout=10)
     assert resp_direct.status_code == 200
 
 
@@ -314,18 +339,13 @@ def test_client_coverage_edge_cases(
 
     monkeypatch.setattr(client_offline.session, "request", mock_request)
 
-    # Test mapping action_id when id is None
     client_offline.contact(action_id=999)
-    # Test kwarg fallback 'filter' instead of 'filters'
     client_offline.contact.get(filter={"Email": "test@test.com"})
-    # Test kwargs with an existing 'filter' key when 'filters' is already populated
     client_offline.contact.get(filters={"limit": 1}, filter={"ignored": "legacy"})
 
-    # Test JSON dumps vs raw strings
     client_offline.contact.create(data="raw,string,data")
     client_offline.contact.create(data=[{"Email": "test@test.com"}])
 
-    # Test headers injection
     headers = client_offline.contact._build_headers(custom_headers={"X-Test": "1"})
     assert headers["X-Test"] == "1"
 
@@ -457,7 +477,6 @@ def test_config_getitem_all_branches() -> None:
     assert "v3/DATA/contactslist" in url
     assert headers["Content-type"] == "application/json"
 
-    # Test v1 manual access via config lookup
     config_v1 = Config(version="v1")
     url, headers = config_v1["templates"]
     assert url == "https://api.mailjet.com/v1/REST/templates"

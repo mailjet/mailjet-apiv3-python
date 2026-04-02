@@ -17,13 +17,16 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import Any
+from typing import Literal
 from urllib.parse import quote
 from urllib.parse import urlparse
 
 import requests  # pyright: ignore[reportMissingModuleSource]
+from requests.adapters import HTTPAdapter
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import RequestException
 from requests.exceptions import Timeout as RequestsTimeout
+from urllib3.util.retry import Retry
 
 from mailjet_rest._version import __version__
 
@@ -74,7 +77,7 @@ class Config:
     timeout: int = 15
 
     def __post_init__(self) -> None:
-        """Validate configuration for secure transport."""
+        """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
         parsed = urlparse(self.api_url)
         if parsed.scheme != "https":
             msg = f"Secure connection required: api_url scheme must be 'https', got '{parsed.scheme}'."
@@ -84,6 +87,10 @@ class Config:
             raise ValueError(msg)
         if not self.api_url.endswith("/"):
             self.api_url += "/"
+
+        if self.timeout <= 0 or self.timeout > 300:
+            msg = f"Timeout must be strictly between 1 and 300 seconds, got {self.timeout}."
+            raise ValueError(msg)
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the API endpoint URL and headers for a given key.
@@ -242,7 +249,7 @@ class Endpoint:
 
     def __call__(
         self,
-        method: str = "GET",
+        method: Literal["GET", "POST", "PUT", "DELETE"] = "GET",
         filters: dict[str, Any] | None = None,
         data: dict[str, Any] | list[Any] | str | None = None,
         headers: dict[str, str] | None = None,
@@ -254,7 +261,7 @@ class Endpoint:
         """Execute the API call directly.
 
         Args:
-            method (str): The HTTP method.
+            method (Literal["GET", "POST", "PUT", "DELETE"]): The HTTP method.
             filters (dict[str, Any] | None): Query parameters.
             data (dict[str, Any] | list[Any] | str | None): Request payload.
             headers (dict[str, str] | None): Custom headers.
@@ -379,18 +386,30 @@ class Client:
             ValueError: If the authentication credentials are invalid.
             TypeError: If the authentication credentials type is invalid.
         """
-        self.auth = auth
+        # OWASP Secrets Management: Do not store raw `auth` directly as an instance attribute if possible.
+        # We only use it for setup, preventing it from being serialized natively.
         self.config = config or Config(**kwargs)
         self.session = requests.Session()
 
-        if self.auth is not None:
-            if isinstance(self.auth, tuple):
-                if len(self.auth) != 2:
+        # Zero Trust & Resiliency: Configure robust retries for transient network failures
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "OPTIONS"],  # Avoid retrying POST/PUT to prevent duplicate actions
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+
+        if auth is not None:
+            if isinstance(auth, tuple):
+                if len(auth) != 2:
                     msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."  # type: ignore[unreachable]
                     raise ValueError(msg)
-                self.session.auth = self.auth
-            elif isinstance(self.auth, str):
-                clean_token = self.auth.strip()
+                # Strip potential invisible whitespaces (Input Validation)
+                self.session.auth = (str(auth[0]).strip(), str(auth[1]).strip())
+            elif isinstance(auth, str):
+                clean_token = auth.strip()
                 if not clean_token:
                     msg = "Bearer token cannot be an empty string."
                     raise ValueError(msg)
@@ -399,10 +418,26 @@ class Client:
                     raise ValueError(msg)
                 self.session.headers.update({"Authorization": f"Bearer {clean_token}"})
             else:
-                msg = f"Invalid auth type: expected tuple, str, or None, got {type(self.auth).__name__}"  # type: ignore[unreachable]
+                msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"  # type: ignore[unreachable]
                 raise TypeError(msg)
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
+
+    def __repr__(self) -> str:
+        """OWASP Secrets Management: Redact sensitive information from object representation.
+
+        Returns:
+            str: A redacted string representation of the Client instance.
+        """
+        return f"<Client API Version='{self.config.version}' URL='{self.config.api_url}'>"
+
+    def __str__(self) -> str:
+        """OWASP Secrets Management: Redact sensitive information from string representation.
+
+        Returns:
+            str: A redacted, human-readable string representation of the Client.
+        """
+        return f"Mailjet Client ({self.config.version})"
 
     def __getattr__(self, name: str) -> Endpoint:
         """Dynamically access API endpoints as attributes.
@@ -417,7 +452,7 @@ class Client:
 
     def api_call(
         self,
-        method: str,
+        method: Literal["GET", "POST", "PUT", "DELETE"],
         url: str,
         filters: dict[str, Any] | None = None,
         data: dict[str, Any] | list[Any] | str | None = None,
@@ -428,7 +463,7 @@ class Client:
         """Perform the actual network request using the persistent session.
 
         Args:
-            method (str): The HTTP method.
+            method (Literal["GET", "POST", "PUT", "DELETE"]): The HTTP method.
             url (str): The fully constructed URL.
             filters (dict[str, Any] | None): Query parameters.
             data (dict[str, Any] | list[Any] | str | None): Request payload.
@@ -451,7 +486,7 @@ class Client:
         if timeout is None:
             timeout = self.config.timeout
 
-        logger.debug("Sending Request: %s %s", method.upper(), url)
+        logger.debug("Sending Request: %s %s", method, url)
 
         try:
             response = self.session.request(
@@ -464,7 +499,7 @@ class Client:
                 **kwargs,
             )
         except RequestsTimeout as error:
-            logger.exception("Timeout Error: %s %s", method.upper(), url)
+            logger.exception("Timeout Error: %s %s", method, url)
             msg = f"Request to Mailjet API timed out: {error}"
             raise TimeoutError(msg) from error
         except RequestsConnectionError as error:
@@ -485,7 +520,7 @@ class Client:
             logger.error(
                 "API Error %s | %s %s | Response: %s",
                 response.status_code,
-                method.upper(),
+                method,
                 url,
                 getattr(response, "text", ""),
             )
@@ -493,7 +528,7 @@ class Client:
             logger.debug(
                 "API Success %s | %s %s",
                 getattr(response, "status_code", 200),
-                method.upper(),
+                method,
                 url,
             )
 

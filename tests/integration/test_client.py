@@ -33,7 +33,7 @@ def client_live_invalid_auth() -> Client:
 
 def test_live_send_api_v3_1_sandbox_happy_path(client_live: Client) -> None:
     """Test Send API v3.1 happy path using SandboxMode to prevent actual email delivery."""
-    client_v31 = Client(auth=client_live.auth, version="v3.1")
+    client_v31 = Client(auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]), version="v3.1")
     data = {
         "Messages": [
             {
@@ -54,7 +54,7 @@ def test_live_send_api_v3_1_template_language_and_variables(
     client_live: Client,
 ) -> None:
     """Test Send API v3.1 with TemplateLanguage and Variables (Issue #97)."""
-    client_v31 = Client(auth=client_live.auth, version="v3.1")
+    client_v31 = Client(auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]), version="v3.1")
     data = {
         "Messages": [
             {
@@ -110,7 +110,7 @@ def test_live_email_api_v3_template_lifecycle(client_live: Client) -> None:
 
 def test_live_content_api_v1_template_lifecycle(client_live: Client) -> None:
     """End-to-End test of the true v1 Content API Templates utilizing lock/unlock workflow."""
-    client_v1 = Client(auth=client_live.auth, version="v1")
+    client_v1 = Client(auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]), version="v1")
 
     template_data = {"Name": f"v1-template-{uuid.uuid4().hex[:8]}", "EditMode": 2, "Purposes": ["transactional"]}
     # 1. Create Template
@@ -155,7 +155,6 @@ def test_live_content_api_v1_template_lifecycle(client_live: Client) -> None:
 
 # --- Security Verification Tests ---
 
-
 def test_live_path_traversal_prevention(client_live: Client) -> None:
     """Verify that malicious IDs are securely URL-encoded, preventing directory traversal execution on the server."""
     # Attempt to traverse up the REST API path to reach an unauthorized endpoint.
@@ -169,10 +168,9 @@ def test_live_path_traversal_prevention(client_live: Client) -> None:
 
 # --- Error Path & General Routing Tests ---
 
-
 def test_live_send_api_v3_1_bad_payload(client_live: Client) -> None:
     """Test Send API v3.1 bad path (missing mandatory Messages array)."""
-    client_v31 = Client(auth=client_live.auth, version="v3.1")
+    client_v31 = Client(auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]), version="v3.1")
     result = client_v31.send.create(data={"InvalidField": True})
     assert result.status_code == 400
 
@@ -209,8 +207,8 @@ def test_live_statcounters_happy_path(client_live: Client) -> None:
 
 
 def test_get_no_param(client_live: Client) -> None:
-    """Tests a standard GET request without parameters."""
-    result = client_live.contact.get()
+    """Tests a standard GET request. Passes explicit valid timeout to ensure config validation allows it."""
+    result = client_live.contact.get(timeout=25)
     assert result.status_code == 200
 
 

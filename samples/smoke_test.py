@@ -117,17 +117,48 @@ def test_content_api_images_real_upload():
     return mailjet_v1.data_images.create(headers={"Content-Type": None}, files=files_payload)
 
 
+def test_get_senders():
+    """Test 9: Email API v3 (Senders)"""
+    return mailjet_v3.sender.get(filters={"limit": 2})
+
+
+def test_get_webhooks():
+    """Test 10: Email API v3 (Webhooks)"""
+    return mailjet_v3.eventcallbackurl.get(filters={"limit": 2})
+
+
+def test_get_campaigns():
+    """Test 11: Email API v3 (Campaigns)"""
+    return mailjet_v3.campaign.get(filters={"limit": 2})
+
+
+def test_get_messages():
+    """Test 12: Email API v3 (Messages)"""
+    return mailjet_v3.message.get(filters={"limit": 2})
+
+
+def test_email_api_v3_templates():
+    """Test 13: Email API v3 (Legacy Templates - Singular)"""
+    return mailjet_v3.template.get(filters={"limit": 2})
+
+
 if __name__ == "__main__":
     if not API_KEY or not API_SECRET:
         print("⚠️ MJ_APIKEY_PUBLIC and/or MJ_APIKEY_PRIVATE not found.")
 
+    # Execute all 13 checks
     run_test("1. Send API v3.1 (Sandbox)", test_send_sandbox)
     run_test("2. Email API v3 (Contacts)", test_get_contacts)
     run_test("3. Email API v3 (Statistics)", test_get_statistics)
     run_test("4. Email API v3 (Parse API)", test_parse_api)
     run_test("5. Email API v3 (Segmentation)", test_segmentation)
-    run_test("6. Content API v1 (Templates)", test_content_api_templates)
+    run_test("6. Content API v1 (Templates - Plural)", test_content_api_templates)
 
-    # We only explicitly pass expected_status when it deviates from the (200,) default
     run_test("7. Content API v1 (Negative Upload)", test_content_api_images_negative, expected_status=(400,))
     run_test("8. Content API v1 (Real Multipart Upload)", test_content_api_images_real_upload, expected_status=(201,))
+
+    run_test("9. Email API v3 (Senders)", test_get_senders)
+    run_test("10. Email API v3 (Webhooks)", test_get_webhooks)
+    run_test("11. Email API v3 (Campaigns)", test_get_campaigns)
+    run_test("12. Email API v3 (Messages)", test_get_messages)
+    run_test("13. Email API v3 (Legacy Templates - Singular)", test_email_api_v3_templates)
