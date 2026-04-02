@@ -12,7 +12,9 @@ permissions:
 
 jobs:
   publish:
+    name: Build and Publish to PyPI
     runs-on: ubuntu-latest
+
     permissions:
       id-token: write  # Required for trusted publishing
       contents: read
@@ -20,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # MANDATORY: Required for setuptools_scm to read the git tag
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -61,7 +63,7 @@ jobs:
           export SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION
           python -m build
 
-      - name: Check dist
+      - name: Verify package (check dist)
         run: |
           ls -alh
           twine check dist/*
