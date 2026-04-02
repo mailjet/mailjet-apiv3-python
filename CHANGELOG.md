@@ -6,6 +6,8 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Added
 
+- Content API `v1` real multipart upload support using `requests` `files` kwarg.
+- Content API v1 routes: pluralized `templates` and isolated `data/images` endpoints strictly mapping to official Mailjet architecture.
 - Validated and added explicit test coverage for Issue #97, proving `TemplateLanguage` and `Variables` are correctly serialized by the SDK.
 - Safe encapsulation of network errors: exceptions are now wrapped in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`, `ApiError`).
 - Centralized HTTP status logging in `api_call` using standard Python `logging`.
@@ -17,6 +19,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 ### Changed
 
 - [BREAKING] Bumping to v2.0.0 due to cleanup of legacy methods, unused parameters, and unused exceptions to conform to modern Python developer experience standards. Developer workflows utilizing standard CRUD methods (create, get, update, delete) and returning standard HTTP Responses are **unaffected**.
+- Fixed `statcounters` required filters (`CounterTiming` parameter explicitly added).
 - Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for connection pooling to drastically improve performance on multiple sequential requests.
 - Enforced absolute imports, strict type narrowing, and strict Google Style docstring validation across the codebase.
 - Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures, refactoring assertions to the AAA (Arrange, Act, Assert) pattern, and achieving 94% core test coverage.

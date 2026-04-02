@@ -192,7 +192,7 @@ from mailjet_rest import Client, TimeoutError, CriticalApiError
 
 ```python
 import os
-from mailjet_rest.client import Client, CriticalApiError, TimeoutError, ApiError
+from mailjet_rest import Client, CriticalApiError, TimeoutError, ApiError
 
 api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
 api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
@@ -653,22 +653,26 @@ print(result.json())
 Use the `data_images` resource to map the request to `/v1/data/images`.
 
 ```python
-from mailjet_rest import Client
+import base64
 import os
+from mailjet_rest import Client
 
-api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
-api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+# Base64 encoded image data (1x1 transparent PNG)
+b64_string = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+image_bytes = base64.b64decode(b64_string)
 
-client = Client(auth=(api_key, api_secret), version="v1")
+# Ensure to pass your Bearer token
+client = Client(auth=os.environ.get("MJ_CONTENT_TOKEN", ""), version="v1")
 
-# Base64 encoded image data
-data = {
-    "name": "logo.png",
-    # 1x1 PNG pixel
-    "image_data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+# The Image upload requires a JSON metadata part (with a Status) and the physical file part
+files_payload = {
+    "metadata": (None, '{"name": "logo.png", "Status": "open"}', "application/json"),
+    "file": ("logo.png", image_bytes, "image/png"),
 }
 
-result = client.data_images.create(data=data)
+# Deleting the default Content-Type header allows requests to generate multipart/form-data
+result = client.data_images.create(headers={"Content-Type": None}, files=files_payload)
+
 print(result.status_code)
 ```
 

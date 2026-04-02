@@ -1,4 +1,4 @@
-"""Unit tests for the Mailjet API client routing and internal logic."""
+"""Unit tests for the Mailjet API client routing, internal logic, and security."""
 
 from __future__ import annotations
 
@@ -30,7 +30,9 @@ def client_offline() -> Client:
     return Client(auth=("fake_public_key", "fake_private_key"), version="v3")
 
 
-# --- Authentication & Initialization Tests ---
+# ==========================================
+# 1. Authentication & Initialization Tests
+# ==========================================
 
 
 def test_bearer_token_auth_initialization() -> None:
@@ -73,7 +75,72 @@ def test_auth_validation_errors() -> None:
         Client(auth=["key", "secret"])  # type: ignore[arg-type]
 
 
-# --- Dynamic API Versioning Tests ---
+# ==========================================
+# 2. Security & Sanitization Tests
+# ==========================================
+
+
+def test_config_api_url_validation_scheme() -> None:
+    """Verify that HTTP (non-TLS) connections are explicitly blocked."""
+    with pytest.raises(ValueError, match="Secure connection required: api_url scheme must be 'https'"):
+        Config(api_url="http://api.mailjet.com")
+
+
+def test_config_api_url_validation_hostname() -> None:
+    """Verify that malformed URLs without hostnames are rejected."""
+    with pytest.raises(ValueError, match="Invalid api_url: missing hostname"):
+        Config(api_url="https://")
+
+
+def test_url_sanitization_path_traversal(client_offline: Client) -> None:
+    """Verify that dynamically injected IDs and Action IDs are strictly URL-encoded to prevent CWE-22."""
+    # Test standard REST endpoint ID sanitization
+    url_rest = client_offline.contact._build_url(id="123/../../delete")
+    assert "123%2F..%2F..%2Fdelete" in url_rest
+    assert "123/../../delete" not in url_rest
+
+    # Test Content API action_id sanitization
+    url_action = client_offline.template_detailcontent._build_url(id=1, action_id="P/../D")
+    assert "P%2F..%2FD" in url_action
+
+    # Test CSV endpoint ID sanitization
+    url_csv = client_offline.contactslist_csvdata._build_url(id="456?drop=1")
+    assert "456%3Fdrop%3D1" in url_csv
+
+
+# ==========================================
+# 3. Dynamic API Versioning & DX Guardrails
+# ==========================================
+
+
+def test_ambiguity_warnings_logged(
+    client_offline: Client, monkeypatch: pytest.MonkeyPatch, caplog: LogCaptureFixture
+) -> None:
+    """Verify that _check_dx_guardrails correctly flags API version ambiguities."""
+    caplog.set_level(logging.WARNING, logger="mailjet_rest.client")
+
+    def mock_request(*args: Any, **kwargs: Any) -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = 404
+        return resp
+
+    monkeypatch.setattr(client_offline.session, "request", mock_request)
+
+    # 1. Email API v3 using plural 'templates'
+    client_offline.templates.get()
+    assert "Email API (v3) uses the singular '/template'" in caplog.text
+    caplog.clear()
+
+    # 2. Content API v1 using singular 'template'
+    client_v1 = Client(auth="token", version="v1")
+    monkeypatch.setattr(client_v1.session, "request", mock_request)
+    client_v1.template.get()
+    assert "Content API (v1) uses the plural '/templates'" in caplog.text
+    caplog.clear()
+
+    # 3. Send API using unsupported version (v1)
+    client_v1.send.create(data={})
+    assert "Send API is only available on 'v3' and 'v3.1'" in caplog.text
 
 
 @pytest.mark.parametrize("api_version", ["v1", "v3", "v3.1", "v99_future"])
@@ -91,12 +158,27 @@ def test_dynamic_versions_standard_rest(api_version: str) -> None:
 
 
 def test_dynamic_versions_content_api_v1_routing() -> None:
-    """Test that Content API v1 routing uses /REST/ and uses slashes for sub-actions."""
+    """Test that Content API v1 routing maps correctly according to the Mailjet Docs."""
     client_v1 = Client(auth="token", version="v1")
+
+    # Standard REST resources in plural
     assert client_v1.templates._build_url() == "https://api.mailjet.com/v1/REST/templates"
+
+    # Data resources (images) correctly routed to /data/ instead of /REST/
     assert client_v1.data_images._build_url(id=123) == "https://api.mailjet.com/v1/data/images/123"
+
+    # Sub-actions using slashes natively
     assert (
         client_v1.template_contents_lock._build_url(id=1) == "https://api.mailjet.com/v1/REST/template/1/contents/lock"
+    )
+
+
+def test_dynamic_versions_content_api_v1_complex_routing() -> None:
+    """Test that Content API v1 properly maps complex multi-parameter URLs (id + action_id)."""
+    client_v1 = Client(auth="token", version="v1")
+    assert (
+        client_v1.templates_contents_types._build_url(id=1, action_id="P")
+        == "https://api.mailjet.com/v1/REST/templates/1/contents/types/P"
     )
 
 
@@ -107,29 +189,35 @@ def test_dynamic_versions_send_api(api_version: str) -> None:
     assert client.send._build_url() == f"https://api.mailjet.com/{api_version}/send"
 
 
-@pytest.mark.parametrize("api_version", ["v1", "v3", "v3.1", "v99_future"])
-def test_dynamic_versions_data_api(api_version: str) -> None:
-    """Test DATA API URLs correctly adapt to any version string."""
-    client = Client(auth=("a", "b"), version=api_version)
+# ==========================================
+# 4. CSV Routing & Endpoint Construction
+# ==========================================
+
+
+def test_build_csv_url_all_branches() -> None:
+    """Explicitly verify every branch of the new _build_csv_url helper."""
+    client = Client(auth=("a", "b"), version="v3")
+
+    # Path 1: csvdata with an ID
     assert (
         client.contactslist_csvdata._build_url(id=123)
-        == f"https://api.mailjet.com/{api_version}/DATA/contactslist/123/CSVData/text:plain"
+        == "https://api.mailjet.com/v3/DATA/contactslist/123/CSVData/text:plain"
     )
-
-
-def test_routing_content_api(client_offline: Client) -> None:
-    """Test older Content API routing with sub-actions."""
+    # Path 2: csverror with an ID
     assert (
-        client_offline.template_detailcontent._build_url(id=123)
-        == "https://api.mailjet.com/v3/REST/template/123/detailcontent"
+        client.contactslist_csverror._build_url(id=123)
+        == "https://api.mailjet.com/v3/DATA/contactslist/123/CSVError/text:csv"
     )
+    # Path 3: csvdata without an ID
+    assert client.contactslist_csvdata._build_url() == "https://api.mailjet.com/v3/DATA/contactslist"
+    # Path 4: csverror without an ID
+    assert client.contactslist_csverror._build_url() == "https://api.mailjet.com/v3/DATA/contactslist"
 
 
 def test_send_api_v3_bad_path_routing(
     client_offline: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify Send API v3 handles bad payloads gracefully at the routing level."""
-
     def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
         assert method == "POST"
         assert url == "https://api.mailjet.com/v3/send"
@@ -146,7 +234,6 @@ def test_content_api_bad_path_routing(
     client_offline: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify Content API routes correctly even when invalid operations are attempted."""
-
     def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
         assert url == "https://api.mailjet.com/v3/REST/template/999/detailcontent"
         resp = requests.Response()
@@ -159,8 +246,7 @@ def test_content_api_bad_path_routing(
 
 
 def test_statcounters_endpoint_routing(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify that statcounters (Email API Data & Stats) is routed correctly as per README."""
-
+    """Verify that statcounters (Email API Data & Stats) is routed correctly."""
     def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
         assert method == "GET"
         assert url == "https://api.mailjet.com/v3/REST/statcounters"
@@ -183,7 +269,10 @@ def test_statcounters_endpoint_routing(client_offline: Client, monkeypatch: pyte
     assert result.status_code == 200
 
 
-# --- HTTP Methods & Execution Coverage Tests ---
+# ==========================================
+# 5. HTTP Methods, Logging & Exceptions
+# ==========================================
+
 
 def test_http_methods_and_timeout(
     client_offline: Client, monkeypatch: pytest.MonkeyPatch
@@ -222,28 +311,23 @@ def test_client_coverage_edge_cases(
         resp = requests.Response()
         resp.status_code = 200
         return resp
+
     monkeypatch.setattr(client_offline.session, "request", mock_request)
 
-    assert (
-        client_offline.contactslist_csvdata._build_url()
-        == "https://api.mailjet.com/v3/DATA/contactslist"
-    )
-    assert (
-        client_offline.contactslist_csverror._build_url()
-        == "https://api.mailjet.com/v3/DATA/contactslist"
-    )
-
+    # Test mapping action_id when id is None
     client_offline.contact(action_id=999)
+    # Test kwarg fallback 'filter' instead of 'filters'
     client_offline.contact.get(filter={"Email": "test@test.com"})
-    client_offline.contact.get(timeout=30)
+    # Test kwargs with an existing 'filter' key when 'filters' is already populated
+    client_offline.contact.get(filters={"limit": 1}, filter={"ignored": "legacy"})
 
+    # Test JSON dumps vs raw strings
     client_offline.contact.create(data="raw,string,data")
     client_offline.contact.create(data=[{"Email": "test@test.com"}])
 
+    # Test headers injection
     headers = client_offline.contact._build_headers(custom_headers={"X-Test": "1"})
     assert headers["X-Test"] == "1"
-
-    client_offline.contact.get(filters={"limit": 1}, filter={"ignored": "legacy"})
 
 
 def test_send_api_v3_1_template_language_variables(
@@ -282,7 +366,6 @@ def test_api_call_exceptions_and_logging(
     client_offline: Client, monkeypatch: pytest.MonkeyPatch, caplog: LogCaptureFixture
 ) -> None:
     """Verify that network exceptions are mapped correctly and HTTP states are logged."""
-
     caplog.set_level(logging.DEBUG, logger="mailjet_rest.client")
 
     def mock_timeout(*args: Any, **kwargs: Any) -> None:
@@ -343,7 +426,10 @@ def test_api_call_exceptions_and_logging(
     assert "API Success None" in caplog.text
 
 
-# --- Config & Initialization Tests ---
+# ==========================================
+# 6. Config & Legacy Routing Tests
+# ==========================================
+
 
 def test_client_custom_version() -> None:
     client = Client(auth=("a", "b"), version="v3.1")
@@ -376,8 +462,6 @@ def test_config_getitem_all_branches() -> None:
     url, headers = config_v1["templates"]
     assert url == "https://api.mailjet.com/v1/REST/templates"
 
-
-# --- Legacy Functionality Coverage Tests ---
 
 def test_legacy_action_id_fallback(client_offline: Client) -> None:
     assert (

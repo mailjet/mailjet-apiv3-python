@@ -1,4 +1,3 @@
----
 name: mailjet
 channels:
   - defaults

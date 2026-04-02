@@ -17,6 +17,8 @@ import json
 import logging
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote
+from urllib.parse import urlparse
 
 import requests  # pyright: ignore[reportMissingModuleSource]
 from requests.exceptions import ConnectionError as RequestsConnectionError
@@ -51,53 +53,40 @@ def prepare_url(match: Any) -> str:
 
 
 class ApiError(Exception):
-    """Base class for all API-related network errors.
-
-    This exception serves as the root for custom API error types,
-    handling situations where the physical network request fails.
-    """
+    """Base class for all API-related network errors."""
 
 
 class CriticalApiError(ApiError):
-    """Error raised for critical API connection failures.
-
-    This error represents severe network issues (like DNS resolution failure
-    or connection refused) that prevent requests from reaching the server.
-    """
+    """Error raised for critical API connection failures."""
 
 
 class TimeoutError(ApiError):
-    """Error raised when an API request times out.
-
-    This error is raised if an API request does not complete within
-    the allowed timeframe, possibly due to network latency or server load.
-    """
+    """Error raised when an API request times out."""
 
 
 @dataclass
 class Config:
-    """Configuration settings for interacting with the Mailjet API.
-
-    This class stores and manages API configuration details, including the API URL,
-    version, and user agent string.
-
-    Attributes:
-        version (str): API version to use, defaulting to 'v3'.
-        api_url (str): The base URL for Mailjet API requests.
-        user_agent (str): User agent string including the package version for tracking.
-        timeout (int): Default timeout in seconds for API requests.
-    """
+    """Configuration settings for interacting with the Mailjet API."""
 
     version: str = "v3"
     api_url: str = "https://api.mailjet.com/"
     user_agent: str = f"mailjet-apiv3-python/v{__version__}"
     timeout: int = 15
 
+    def __post_init__(self) -> None:
+        """Validate configuration for secure transport."""
+        parsed = urlparse(self.api_url)
+        if parsed.scheme != "https":
+            msg = f"Secure connection required: api_url scheme must be 'https', got '{parsed.scheme}'."
+            raise ValueError(msg)
+        if not parsed.hostname:
+            msg = "Invalid api_url: missing hostname."
+            raise ValueError(msg)
+        if not self.api_url.endswith("/"):
+            self.api_url += "/"
+
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the API endpoint URL and headers for a given key.
-
-        This method builds the URL and headers required for specific API interactions.
-        It is maintained primarily for backward compatibility.
 
         Args:
             key (str): The name of the API endpoint.
@@ -126,32 +115,72 @@ class Config:
 
 
 class Endpoint:
-    """A class representing a specific Mailjet API endpoint.
-
-    This class provides methods to perform HTTP requests to a given API endpoint,
-    including GET, POST, PUT, and DELETE requests. It manages dynamic URL construction
-    and headers based on the requested resource.
-
-    Attributes:
-        client (Client): The parent Mailjet API client instance.
-        name (str): The specific endpoint or action name.
-    """
+    """A class representing a specific Mailjet API endpoint."""
 
     def __init__(self, client: Client, name: str) -> None:
         """Initialize a new Endpoint instance.
 
         Args:
-            client (Client): The Mailjet Client session manager.
-            name (str): The dynamic name of the endpoint being accessed.
+            client (Client): The Mailjet API client.
+            name (str): The name of the endpoint.
         """
         self.client = client
         self.name = name
 
-    def _build_url(self, id: int | str | None = None) -> str:
+    @staticmethod
+    def _check_dx_guardrails(version: str, name_lower: str, resource_lower: str) -> None:
+        """Emit warnings for ambiguous routing scenarios.
+
+        Args:
+            version (str): The API version being used.
+            name_lower (str): The lowercase name of the endpoint.
+            resource_lower (str): The lowercase primary resource.
+        """
+        if name_lower == "send" and version not in {"v3", "v3.1"}:
+            logger.warning(
+                "Mailjet API Ambiguity: The Send API is only available on 'v3' and 'v3.1'. "
+                "Routing via '%s' will likely result in a 404 Not Found.",
+                version,
+            )
+        elif version == "v1" and resource_lower == "template":
+            logger.warning(
+                "Mailjet API Ambiguity: Content API (v1) uses the plural '/templates' resource. "
+                "Requesting the singular '/template' may result in a 404 Not Found."
+            )
+        elif version.startswith("v3") and resource_lower == "templates":
+            logger.warning(
+                "Mailjet API Ambiguity: Email API (%s) uses the singular '/template' resource. "
+                "Requesting the plural '/templates' may result in a 404 Not Found.",
+                version,
+            )
+
+    @staticmethod
+    def _build_csv_url(base_url: str, version: str, resource: str, name_lower: str, id: int | str | None) -> str:
+        """Construct the URL for CSV data endpoints.
+
+        Args:
+            base_url (str): The base API URL.
+            version (str): The API version.
+            resource (str): The base resource name.
+            name_lower (str): The lowercase endpoint name.
+            id (int | str | None): The primary resource ID.
+
+        Returns:
+            str: The fully constructed CSV endpoint URL.
+        """
+        url = f"{base_url}/{version}/DATA/{resource}"
+        if id is not None:
+            safe_id = quote(str(id), safe="")
+            suffix = "CSVData/text:plain" if name_lower.endswith("_csvdata") else "CSVError/text:csv"
+            url += f"/{safe_id}/{suffix}"
+        return url
+
+    def _build_url(self, id: int | str | None = None, action_id: int | str | None = None) -> str:
         """Construct the URL for the specific API request.
 
         Args:
-            id (int | str | None): The ID of the specific resource, if applicable.
+            id (int | str | None): The primary resource ID.
+            action_id (int | str | None): The sub-action ID (e.g. content_type for Content API).
 
         Returns:
             str: The fully qualified URL for the API endpoint.
@@ -160,33 +189,35 @@ class Endpoint:
         version = self.client.config.version
         name_lower = self.name.lower()
 
+        action_parts = self.name.split("_")
+        resource = action_parts[0]
+        resource_lower = resource.lower()
+
+        self._check_dx_guardrails(version, name_lower, resource_lower)
+
         if name_lower == "send":
             return f"{base_url}/{version}/send"
 
-        action_parts = self.name.split("_")
-        resource = action_parts[0]
-
         if name_lower.endswith(("_csvdata", "_csverror")):
-            url = f"{base_url}/{version}/DATA/{resource}"
-            if id is not None:
-                suffix = "CSVData/text:plain" if name_lower.endswith("_csvdata") else "CSVError/text:csv"
-                url += f"/{id}/{suffix}"
-            return url
+            return self._build_csv_url(base_url, version, resource, name_lower, id)
 
-        if resource.lower() == "data":
-            # Content API Data Endpoints (e.g. data_images -> /v1/data/images)
+        if resource_lower == "data":
             action_path = "/".join(action_parts)
             url = f"{base_url}/{version}/{action_path}"
         else:
-            # Standard REST API (v1 and v3)
             url = f"{base_url}/{version}/REST/{resource}"
 
         if id is not None:
-            url += f"/{id}"
+            safe_id = quote(str(id), safe="")
+            url += f"/{safe_id}"
 
-        if len(action_parts) > 1 and resource.lower() != "data":
+        if len(action_parts) > 1 and resource_lower != "data":
             sub_action = "/".join(action_parts[1:]) if version == "v1" else "-".join(action_parts[1:])
             url += f"/{sub_action}"
+
+        if action_id is not None:
+            safe_action_id = quote(str(action_id), safe="")
+            url += f"/{safe_action_id}"
 
         return url
 
@@ -194,10 +225,10 @@ class Endpoint:
         """Build headers based on the endpoint requirements.
 
         Args:
-            custom_headers (dict[str, str] | None): Additional headers to include.
+            custom_headers (dict[str, str] | None): Custom headers to include.
 
         Returns:
-            dict[str, str]: A dictionary containing the standard and custom headers.
+            dict[str, str]: A dictionary of HTTP headers.
         """
         headers = {}
         if self.name.lower().endswith("_csvdata"):
@@ -223,20 +254,21 @@ class Endpoint:
         """Execute the API call directly.
 
         Args:
-            method (str): The HTTP method to use (e.g., 'GET', 'POST').
-            filters (dict[str, Any] | None): Query parameters to include in the request.
-            data (dict[str, Any] | list[Any] | str | None): The payload to send in the request body.
-            headers (dict[str, str] | None): Custom HTTP headers.
-            id (int | str | None): The ID of the resource to access.
-            action_id (int | str | None): Legacy parameter, acts as an alias for id.
-            timeout (int | None): Custom timeout for this specific request.
-            **kwargs (Any): Additional arguments passed to the underlying requests Session.
+            method (str): The HTTP method.
+            filters (dict[str, Any] | None): Query parameters.
+            data (dict[str, Any] | list[Any] | str | None): Request payload.
+            headers (dict[str, str] | None): Custom headers.
+            id (int | str | None): Primary resource ID.
+            action_id (int | str | None): Sub-action ID.
+            timeout (int | None): Custom timeout.
+            **kwargs (Any): Additional arguments.
 
         Returns:
-            requests.Response: The HTTP response from the Mailjet API.
+            requests.Response: The HTTP response from the API.
         """
         if id is None and action_id is not None:
             id = action_id
+            action_id = None
 
         if filters is None and "filter" in kwargs:
             filters = kwargs.pop("filter")
@@ -245,7 +277,7 @@ class Endpoint:
 
         return self.client.api_call(
             method=method,
-            url=self._build_url(id=id),
+            url=self._build_url(id=id, action_id=action_id),
             filters=filters,
             data=data,
             headers=self._build_headers(headers),
@@ -254,81 +286,81 @@ class Endpoint:
         )
 
     def get(
-        self, id: int | str | None = None, filters: dict[str, Any] | None = None, **kwargs: Any
+        self,
+        id: int | str | None = None,
+        filters: dict[str, Any] | None = None,
+        action_id: int | str | None = None,
+        **kwargs: Any,
     ) -> requests.Response:
-        """Perform a GET request to retrieve one or multiple resources.
+        """Perform a GET request to retrieve resources.
 
         Args:
-            id (int | str | None): The ID of the specific resource to retrieve.
-            filters (dict[str, Any] | None): Query parameters for filtering the results.
-            **kwargs (Any): Additional arguments for the API call.
+            id (int | str | None): The primary resource ID.
+            filters (dict[str, Any] | None): Query parameters.
+            action_id (int | str | None): The sub-action ID.
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response from the API.
         """
-        return self(method="GET", id=id, filters=filters, **kwargs)
+        return self(method="GET", id=id, filters=filters, action_id=action_id, **kwargs)
 
     def create(
         self,
         data: dict[str, Any] | list[Any] | str | None = None,
         id: int | str | None = None,
+        action_id: int | str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Perform a POST request to create a new resource.
 
         Args:
-            data (dict[str, Any] | list[Any] | str | None): The payload data to create the resource.
-            id (int | str | None): The ID of the resource, if creating a sub-resource.
-            **kwargs (Any): Additional arguments for the API call.
+            data (dict[str, Any] | list[Any] | str | None): Request payload.
+            id (int | str | None): The primary resource ID.
+            action_id (int | str | None): The sub-action ID.
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response from the API.
         """
-        return self(method="POST", data=data, id=id, **kwargs)
+        return self(method="POST", data=data, id=id, action_id=action_id, **kwargs)
 
     def update(
-        self, id: int | str, data: dict[str, Any] | list[Any] | str | None = None, **kwargs: Any
+        self,
+        id: int | str,
+        data: dict[str, Any] | list[Any] | str | None = None,
+        action_id: int | str | None = None,
+        **kwargs: Any,
     ) -> requests.Response:
         """Perform a PUT request to update an existing resource.
 
-        According to the Mailjet API documentation, all PUT requests behave like
-        PATCH requests, affecting only the specified properties.
-
         Args:
-            id (int | str): The exact ID of the resource to update.
-            data (dict[str, Any] | list[Any] | str | None): The updated payload data.
-            **kwargs (Any): Additional arguments for the API call.
+            id (int | str): The primary resource ID.
+            data (dict[str, Any] | list[Any] | str | None): Updated payload.
+            action_id (int | str | None): The sub-action ID.
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response from the API.
         """
-        return self(method="PUT", id=id, data=data, **kwargs)
+        return self(method="PUT", id=id, data=data, action_id=action_id, **kwargs)
 
-    def delete(self, id: int | str, **kwargs: Any) -> requests.Response:
+    def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:
         """Perform a DELETE request to remove a resource.
 
         Args:
-            id (int | str): The exact ID of the resource to delete.
-            **kwargs (Any): Additional arguments for the API call.
+            id (int | str): The primary resource ID.
+            action_id (int | str | None): The sub-action ID.
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response from the API.
         """
-        return self(method="DELETE", id=id, **kwargs)
+        return self(method="DELETE", id=id, action_id=action_id, **kwargs)
 
 
 class Client:
-    """A client for interacting with the Mailjet API.
-
-    This class manages authentication, configuration, and API endpoint access.
-    It initializes with API authentication details and uses dynamic attribute access
-    to allow flexible interaction with various Mailjet API endpoints.
-
-    Attributes:
-        auth (tuple[str, str] | str | None): A tuple containing the API key and secret, or a Bearer token string.
-        config (Config): Configuration settings for the API client.
-        session (requests.Session): A persistent HTTP session for optimized connection pooling.
-    """
+    """A client for interacting with the Mailjet API."""
 
     def __init__(
         self,
@@ -336,23 +368,21 @@ class Client:
         config: Config | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize a new Client instance for API interaction.
+        """Initialize a new Client instance.
 
         Args:
-            auth (tuple[str, str] | str | None): A tuple of (API_KEY, API_SECRET) for Basic Auth (Email API), or a single string TOKEN for Bearer Auth (Content API v1).
-            config (Config | None): An explicit Config object.
-            **kwargs (Any): Additional keyword arguments passed to the Config constructor if no config is provided.
+            auth (tuple[str, str] | str | None): Authentication credentials.
+            config (Config | None): Configuration settings.
+            **kwargs (Any): Additional arguments.
 
         Raises:
-            ValueError: If the provided authentication token or tuple is malformed or invalid.
-            TypeError: If the `auth` argument is not of an expected type (tuple, str, or None).
+            ValueError: If the authentication credentials are invalid.
+            TypeError: If the authentication credentials type is invalid.
         """
         self.auth = auth
         self.config = config or Config(**kwargs)
-
         self.session = requests.Session()
 
-        # Bearer Auth is required for the v1 Content API endpoints (Tokens, Templates, Images)
         if self.auth is not None:
             if isinstance(self.auth, tuple):
                 if len(self.auth) != 2:
@@ -378,10 +408,10 @@ class Client:
         """Dynamically access API endpoints as attributes.
 
         Args:
-            name (str): The name of the attribute being accessed (e.g., 'contact_managecontactslists', 'statcounters').
+            name (str): The name of the API endpoint.
 
         Returns:
-            Endpoint: An initialized Endpoint instance for the requested resource.
+            Endpoint: An Endpoint instance for the requested resource.
         """
         return Endpoint(self, name)
 
@@ -397,26 +427,22 @@ class Client:
     ) -> requests.Response:
         """Perform the actual network request using the persistent session.
 
-        This method catches specific network-level exceptions raised by the
-        underlying HTTP client and re-raises them as custom API errors to
-        decouple the SDK from external library implementations.
-
         Args:
-            method (str): The HTTP method to use.
+            method (str): The HTTP method.
             url (str): The fully constructed URL.
             filters (dict[str, Any] | None): Query parameters.
-            data (dict[str, Any] | list[Any] | str | None): The request body payload.
+            data (dict[str, Any] | list[Any] | str | None): Request payload.
             headers (dict[str, str] | None): HTTP headers.
-            timeout (int | None): Request timeout in seconds.
-            **kwargs (Any): Additional arguments to pass to `requests.request`.
+            timeout (int | None): Request timeout.
+            **kwargs (Any): Additional arguments.
 
         Returns:
-            requests.Response: The response object from the HTTP request.
+            requests.Response: The HTTP response from the API.
 
         Raises:
             TimeoutError: If the API request times out.
-            CriticalApiError: If there is a connection failure to the API.
-            ApiError: For other unhandled underlying request exceptions.
+            CriticalApiError: If there is a connection failure.
+            ApiError: For other unhandled request exceptions.
         """
         payload = data
         if isinstance(data, (dict, list)):
