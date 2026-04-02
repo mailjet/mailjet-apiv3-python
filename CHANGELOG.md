@@ -4,8 +4,14 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
+### Security
+
+- Prevented Path Traversal (CWE-22) vulnerabilities by enforcing strict URL encoding (urllib.parse.quote) on all dynamically injected path parameters (id and action_id).
+- Prevented cleartext transmission (CWE-319) by enforcing strict api_url scheme validation (https) and hostname presence during Config initialization.
+
 ### Added
 
+- Developer Experience (DX) Guardrails: The SDK now logs explicit warnings when encountering ambiguous routing configurations (e.g., using the singular `template` resource on Content API `v1`, or attempting to route the Send API outside of `v3`/`v3.1`).
 - Content API `v1` real multipart upload support using `requests` `files` kwarg.
 - Content API v1 routes: pluralized `templates` and isolated `data/images` endpoints strictly mapping to official Mailjet architecture.
 - Validated and added explicit test coverage for Issue #97, proving `TemplateLanguage` and `Variables` are correctly serialized by the SDK.
@@ -21,9 +27,11 @@ We [keep a changelog.](http://keepachangelog.com/)
 - [BREAKING] Bumping to v2.0.0 due to cleanup of legacy methods, unused parameters, and unused exceptions to conform to modern Python developer experience standards. Developer workflows utilizing standard CRUD methods (create, get, update, delete) and returning standard HTTP Responses are **unaffected**.
 - Fixed `statcounters` required filters (`CounterTiming` parameter explicitly added).
 - Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for connection pooling to drastically improve performance on multiple sequential requests.
+- Refactored `Endpoint._build_url` cyclomatic complexity by extracting `_build_csv_url` and `_check_dx_guardrails` into pure `@staticmethods` to satisfy strict static analysis (PLR6301, C901).
 - Enforced absolute imports, strict type narrowing, and strict Google Style docstring validation across the codebase.
 - Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures, refactoring assertions to the AAA (Arrange, Act, Assert) pattern, and achieving 94% core test coverage.
 - Cleaned up local development environments (environment-dev.yaml) and pinned sub-dependencies for stable CI pipelines.
+- Optimized CI pipeline execution speed by implementing native pip dependency caching (`cache: 'pip'`).
 - Updated `pyproject.toml` and `Makefile` to reflect the new test directory structure.
 - Updated `SECURITY.md` policy to reflect support exclusively for the `>= 2.0.x` active branch.
 
