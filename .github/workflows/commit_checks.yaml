@@ -3,15 +3,16 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [master]
   pull_request:
+    branches: [master]
 
 permissions:
   contents: read
 
 jobs:
   pre-commit:
+    name: Lint & Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,7 +22,7 @@ jobs:
       - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
 
   test:
-    name: test py${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Test py${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -38,17 +39,21 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # Get full history with tags (required for setuptools-scm)
-      - uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167 # v3.3.0
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167 # v3.3.0
         with:
           python-version: ${{ matrix.python-version }}
           channels: defaults
           show-channel-urls: true
           environment-file: environment.yaml
+          cache: 'pip'  # Drastically speeds up CI by caching pip dependencies
 
-      - name: Install the package
+      - name: Install dependencies and package
         run: |
+          python -m pip install --upgrade pip
           pip install .
           conda info
+
       - name: Test package imports
         run: python -c "import mailjet_rest"
 
@@ -57,5 +62,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
-      - name: Tests
-        run: pytest -v tests/unit/
+      - name: Run Unit & Integration Tests
+        run: pytest --cov=mailjet_rest --cov-report=term-missing tests/ -v
