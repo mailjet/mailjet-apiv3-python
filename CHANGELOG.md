@@ -6,42 +6,44 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Security
 
-- Prevented Path Traversal (CWE-22) vulnerabilities by enforcing strict URL encoding (urllib.parse.quote) on all dynamically injected path parameters (id and action_id).
-- Prevented cleartext transmission (CWE-319) by enforcing strict api_url scheme validation (https) and hostname presence during Config initialization.
+- Prevented Path Traversal (CWE-22) vulnerabilities by enforcing strict URL encoding (`urllib.parse.quote`) on all dynamically injected path parameters (`id` and `action_id`).
+- Prevented cleartext transmission (CWE-319) by enforcing strict `api_url` scheme validation (`https`) and hostname presence during `Config` initialization.
+- Added comprehensive security scanning to the CI/CD pipeline (`bandit`, `semgrep`, `gitleaks`, `detect-secrets`).
+- Updated `SECURITY.md` policy to clarify supported active branches.
 
 ### Added
 
+- Context Managers (Resource Management): The `Client` now supports the `with` statement (`__enter__` / `__exit__`) for automatic TCP connection pooling and socket cleanup, preventing resource leaks.
+- Smart Telemetry: The SDK now automatically extracts Mailjet Trace IDs (`CustomID`, `Campaign`, `TemplateID`) from payloads and headers, injecting them into debug logs for easier correlation with the Mailjet Dashboard.
+- Executable Documentation: Added `samples/smoke_readme_runner.py` as a dynamic test suite to guarantee all `README.md` examples are continuously validated and functional against the live API.
 - Developer Experience (DX) Guardrails: The SDK now logs explicit warnings when encountering ambiguous routing configurations (e.g., using the singular `template` resource on Content API `v1`, or attempting to route the Send API outside of `v3`/`v3.1`).
-- Content API `v1` real multipart upload support using `requests` `files` kwarg.
-- Content API v1 routes: pluralized `templates` and isolated `data/images` endpoints strictly mapping to official Mailjet architecture.
+- Content API (v1): Native `multipart/form-data` upload support using the `requests` `files` kwarg for the `data_images` endpoint.
+- DX Guardrails: The SDK now logs explicit warnings when encountering ambiguous routing configurations (e.g., using the singular `template` resource on Content API `v1`).
+- Safe Exceptions: Network errors are now safely encapsulated in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`, `ApiError`).
+- CentralNative Logging: Centralized HTTP status and debug logging in `api_call` using standard Python `logging`.
 - Validated and added explicit test coverage for Issue #97, proving `TemplateLanguage` and `Variables` are correctly serialized by the SDK.
-- Safe encapsulation of network errors: exceptions are now wrapped in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`, `ApiError`).
-- Centralized HTTP status logging in `api_call` using standard Python `logging`.
-- Defined explicit public module interfaces using `__all__` to prevent namespace pollution.
-- `Logging & Debugging` troubleshooting guide in `README.md`.
-- Segregated tests into `tests/unit/` (offline) and `tests/integration/` (live network).
-- Comprehensive `pre-commit` hooks for formatting, typing, and security.
 
 ### Changed
 
-- [BREAKING] Bumping to v2.0.0 due to cleanup of legacy methods, unused parameters, and unused exceptions to conform to modern Python developer experience standards. Developer workflows utilizing standard CRUD methods (create, get, update, delete) and returning standard HTTP Responses are **unaffected**.
-- Fixed `statcounters` required filters (`CounterTiming` parameter explicitly added).
-- Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for connection pooling to drastically improve performance on multiple sequential requests.
-- Refactored `Endpoint._build_url` cyclomatic complexity by extracting `_build_csv_url` and `_check_dx_guardrails` into pure `@staticmethods` to satisfy strict static analysis (PLR6301, C901).
-- Enforced absolute imports, strict type narrowing, and strict Google Style docstring validation across the codebase.
-- Modernized the test suite by migrating from legacy `unittest` classes to `pytest` fixtures, refactoring assertions to the AAA (Arrange, Act, Assert) pattern, and achieving 94% core test coverage.
-- Cleaned up local development environments (environment-dev.yaml) and pinned sub-dependencies for stable CI pipelines.
-- Optimized CI pipeline execution speed by implementing native pip dependency caching (`cache: 'pip'`).
-- Updated `pyproject.toml` and `Makefile` to reflect the new test directory structure.
-- Updated `SECURITY.md` policy to reflect support exclusively for the `>= 2.0.x` active branch.
+- Test Suite Modernization: Migrated from legacy `unittest` monolith to `pytest`, segregated into `tests/unit/` (offline) and `tests/integration/` (live network), adhering to the AAA (Arrange, Act, Assert) pattern.
+- CI/CD Optimization: Drastically improved GitHub Actions speed and reliability by implementing native pip dependency caching (`cache: 'pip'`) and isolated wheel installation tests.
+- Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for robust connection pooling on multiple sequential requests.
+- Refactored `Endpoint._build_url` cyclomatic complexity by extracting pure `@staticmethod` helpers (`_build_csv_url`, `_check_dx_guardrails`) to satisfy strict static analysis.
+- Expanded `pre-commit` hooks for robust linting, formatting, and typing (`ruff`, `mypy`, `pyright`, `typos`, etc.).
+- Defined explicit public module interfaces using `__all__` to prevent namespace pollution.
+- Fixed `statcounters` required filters (explicitly added the `CounterTiming` parameter).
+- Cleaned up local development environments (`environment-dev.yaml`) and pinned sub-dependencies for stable CI pipelines.
+
+### Deprecated
+
+- Legacy HTTP exception classes (`AuthorizationError`, `ApiRateLimitError`, `DoesNotExistError`, `ValidationError`, `ActionDeniedError`). The SDK natively returns the `requests.Response` object for standard HTTP status codes.
+- The legacy `ensure_ascii` and `data_encoding` arguments in the `create` and `update` method signatures. The underlying `requests` library handles UTF-8 serialization natively..
+- The `parse_response` and `logging_handler` utility functions. Logging is now integrated cleanly and automatically via Python's standard `logging` library. See the `README` for the new 2-line setup.
 
 ### Removed
 
-- [BREAKING] Removed the legacy `ensure_ascii` and `data_encoding` arguments from the create and update method signatures. The underlying `requests` library automatically handles UTF-8 serialization. If raw, non-escaped JSON injection is strictly required, developers can manually pass a pre-serialized JSON string to the data parameter instead of a dictionary.
-- [BREAKING] Removed unused HTTP exception classes (`AuthorizationError`, `ApiRateLimitError`, `DoesNotExistError`, `ValidationError`, `ActionDeniedError`). The SDK natively returns the `requests.Response` object for standard HTTP status codes (e.g., `400`, `401`, `404`), rendering these exceptions "dead code". Only genuine network drop exceptions (TimeoutError, etc.) remain.
-- [BREAKING] Removed the `parse_response` and `logging_handler` utility functions. Logging is now integrated cleanly and automatically via Python's standard `logging` library. See the `README` for the new 2-line setup.
+- Root `test.py` monolith (replaced by a modular `test/` directory structure).
 - Redundant class constants (`API_REF`, `DEFAULT_API_URL`).
-- Root `test.py` monolith (replaced by a modular test directory structure).
 
 ### Pull Requests Merged
 

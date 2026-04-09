@@ -94,11 +94,11 @@ def test_config_api_url_validation_hostname() -> None:
 
 def test_config_timeout_validation() -> None:
     """Verify OWASP Input Validation prevents resource exhaustion via illegal timeouts (CWE-400)."""
-    with pytest.raises(ValueError, match="Timeout must be strictly between 1 and 300"):
+    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
         Config(timeout=0)
-    with pytest.raises(ValueError, match="Timeout must be strictly between 1 and 300"):
+    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
         Config(timeout=301)
-    with pytest.raises(ValueError, match="Timeout must be strictly between 1 and 300"):
+    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
         Config(timeout=-10)
 
 
@@ -200,7 +200,8 @@ def test_dynamic_versions_content_api_v1_routing() -> None:
     assert client_v1.templates._build_url() == "https://api.mailjet.com/v1/REST/templates"
     assert client_v1.data_images._build_url(id=123) == "https://api.mailjet.com/v1/data/images/123"
     assert (
-        client_v1.template_contents_lock._build_url(id=1) == "https://api.mailjet.com/v1/REST/template/1/contents/lock"
+        client_v1.template_contents_lock._build_url(id=1)
+        == "https://api.mailjet.com/v1/REST/template/1/contents/lock"
     )
 
 
@@ -237,8 +238,14 @@ def test_build_csv_url_all_branches() -> None:
         client.contactslist_csverror._build_url(id=123)
         == "https://api.mailjet.com/v3/DATA/contactslist/123/CSVError/text:csv"
     )
-    assert client.contactslist_csvdata._build_url() == "https://api.mailjet.com/v3/DATA/contactslist"
-    assert client.contactslist_csverror._build_url() == "https://api.mailjet.com/v3/DATA/contactslist"
+    assert (
+        client.contactslist_csvdata._build_url()
+        == "https://api.mailjet.com/v3/DATA/contactslist"
+    )
+    assert (
+        client.contactslist_csverror._build_url()
+        == "https://api.mailjet.com/v3/DATA/contactslist"
+    )
 
 
 def test_send_api_v3_bad_path_routing(
@@ -272,7 +279,9 @@ def test_content_api_bad_path_routing(
     assert result.status_code == 404
 
 
-def test_statcounters_endpoint_routing(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_statcounters_endpoint_routing(
+    client_offline: Client, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify that statcounters (Email API Data & Stats) is routed correctly."""
     def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
         assert method == "GET"
@@ -324,7 +333,9 @@ def test_http_methods_and_timeout(
     resp_delete = client_offline.contact.delete(id=1)
     assert resp_delete.status_code == 200
 
-    resp_direct = client_offline.contact(method="GET", headers={"X-Custom": "1"}, timeout=10)
+    resp_direct = client_offline.contact(
+        method="GET", headers={"X-Custom": "1"}, timeout=10
+    )
     assert resp_direct.status_code == 200
 
 
@@ -522,3 +533,69 @@ def test_prepare_url_leading_trailing_underscores_input_bad() -> None:
     name = re.sub(r"[A-Z]", prepare_url, "_contactManagecontactslists_")
     url, _ = config[name]
     assert url == "https://api.mailjet.com/v3/REST/"
+
+
+# ==========================================
+# 7. Context Manager Tests
+# ==========================================
+
+def test_client_explicit_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify the explicit close method correctly calls session.close()."""
+    client = Client(auth=("public", "private"))
+
+    close_called = False
+    def mock_close() -> None:
+        nonlocal close_called
+        close_called = True
+
+    # Intercept the underlying requests.Session.close method
+    monkeypatch.setattr(client.session, "close", mock_close)
+
+    client.close()
+    assert close_called is True, "Expected client.session.close() to be called."
+
+
+def test_client_context_manager_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that the 'with' statement safely cleans up resources on exit."""
+    client = Client(auth=("public", "private"))
+
+    close_called = False
+    def mock_close() -> None:
+        nonlocal close_called
+        close_called = True
+
+    monkeypatch.setattr(client.session, "close", mock_close)
+
+    # Act: Use the client within a context manager
+    with client as active_client:
+        # Assert __enter__ returned the correct object
+        assert active_client is client
+        # Assert close hasn't been prematurely called
+        assert close_called is False
+
+    # Assert __exit__ successfully called the close method
+    assert close_called is True, "Context manager __exit__ failed to call close()."
+
+
+def test_client_context_manager_exception_safety(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that resources are still cleaned up if an exception occurs inside the 'with' block."""
+    client = Client(auth=("public", "private"))
+
+    close_called = False
+    def mock_close() -> None:
+        nonlocal close_called
+        close_called = True
+
+    monkeypatch.setattr(client.session, "close", mock_close)
+
+    class SimulatedError(Exception):
+        pass
+
+    try:
+        with client:
+            raise SimulatedError("Something went wrong during an API call")
+    except SimulatedError:
+        pass
+
+    # The most important assertion: Even though the code crashed, the sockets were closed.
+    assert close_called is True, "Exception inside context manager bypassed cleanup!"

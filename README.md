@@ -5,26 +5,18 @@
 [![PyPI Version](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
 [![GitHub Release](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
 [![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/mailjet/mailjet-apiv3-python)
-[![License](https://img.shields.io/github/license/mailjet/mailjet-apiv3-python)](https://github.com/mailjet/mailjet-apiv3-python/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/mailjet/mailjet-apiv3-python)](https://github.com/mailjet/mailjet-apiv3-python/blob/master/LICENSE)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/mailjet-rest)](https://img.shields.io/pypi/dm/mailjet-rest)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/mailjet/mailjet-apiv3-python/commit_checks.yaml)](https://github.com/mailjet/mailjet-apiv3-python/actions)
-
+[![Build Status](https://img.shields.io/github/actions/workflow/status/mailjet/mailjet-apiv3-python/commit_checks.yaml)](https://github.com/mailjet/mailjet-apiv3-python)
 [![GitHub Stars](https://img.shields.io/github/stars/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/stars/mailjet/mailjet-apiv3-python)
 [![GitHub Issues](https://img.shields.io/github/issues/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/issues/mailjet/mailjet-apiv3-python)
 [![GitHub PRs](https://img.shields.io/github/issues-pr/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/issues-pr/mailjet/mailjet-apiv3-python)
 
-## Overview
-
-Welcome to the [Mailjet] official Python API wrapper!
-
-Check out all the resources and Python code examples in the official [Mailjet Documentation][doc].
-
 ## Table of contents
 
+- [Overview](#overview)
 - [Compatibility](#compatibility)
 - [Requirements](#requirements)
-  - [Build backend dependencies](#build-backend-dependencies)
-  - [Runtime dependencies](#runtime-dependencies)
   - [Test dependencies](#test-dependencies)
 - [Installation](#installation)
   - [pip install](#pip-install)
@@ -33,44 +25,49 @@ Check out all the resources and Python code examples in the official [Mailjet Do
   - [For development](#for-development)
     - [Using conda](#using-conda)
 - [Authentication](#authentication)
-- [Make your first call](#make-your-first-call)
-- [Client / Call configuration specifics](#client--call-configuration-specifics)
-  - [API versioning](#api-versioning)
-  - [Base URL](#base-url)
+- [Quick Start](#quick-start)
+  - [Advanced Configuration](#advanced-configuration)
+    - [API Versioning](#api-versioning)
+    - [Base URL](#base-url)
+- [Usage](#usage)
+  - [Error Handling](#error-handling)
+- [Logging & Debugging](#logging--debugging)
+  - [IDE Autocompletion & DX](#ide-autocompletion--dx)
   - [URL path](#url-path)
 - [Request examples](#request-examples)
   - [Full list of supported endpoints](#full-list-of-supported-endpoints)
-  - [POST request](#post-request)
-    - [Simple POST request](#simple-post-request)
-    - [Using actions](#using-actions)
-  - [GET request](#get-request)
-    - [Retrieve all objects](#retrieve-all-objects)
-    - [Using filtering](#using-filtering)
-    - [Using pagination](#using-pagination)
-    - [Retrieve a single object](#retrieve-a-single-object)
-  - [PUT request](#put-request)
-  - [DELETE request](#delete-request)
+  - [Send API (v3.1)](#send-api-v31)
+    - [Send a basic email](#send-a-basic-email)
+  - [Send an email using a Mailjet Template](#send-an-email-using-a-mailjet-template)
+  - [Standard REST Actions (GET, POST, PUT, DELETE)](#standard-rest-actions-get-post-put-delete)
+    - [POST (Create)](#post-create)
+    - [GET Request](#get-request)
+    - [PUT (Update / Patch specific fields)](#put-update--patch-specific-fields)
+    - [DELETE (Returns 204 No Content)](#delete-returns-204-no-content)
+  - [Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)](#email-api-ecosystem-webhooks-parse-api-segmentation-stats)
+  - [Content API](#content-api)
+- [Deprecation Warnings](#deprecation-warnings)
+- [Type Hinting](#type-hinting)
 - [License](#license)
 - [Contribute](#contribute)
 - [Contributors](#contributors)
+
+## Overview
+
+Welcome to the [Mailjet] official Python API wrapper!
+
+Check out all the resources and Python code examples in the official [Mailjet Documentation][doc].
 
 ## Compatibility
 
 This library `mailjet_rest` officially supports the following Python versions:
 
-- Python >=3.10,\<3.14
-
-It's tested up to 3.13 (including).
+- Python >= 3.10, < 3.15
 
 ## Requirements
 
-### Build backend dependencies
-
-To build the `mailjet_rest` package from the sources you need `setuptools` (as a build backend), `wheel`, and `setuptools-scm`.
-
-### Runtime dependencies
-
-At runtime the package requires only `requests >=2.32.5`.
+- **Build backend:** `setuptools`, `wheel`, `setuptools-scm`
+- **Runtime:** `requests >= 2.32.5`
 
 ### Test dependencies
 
@@ -81,16 +78,11 @@ Make sure to provide the environment variables from [Authentication](#authentica
 
 ### pip install
 
-First, create a virtual environment:
+Create a virtual environment and install the wrapper:
 
 ```bash
-virtualenv -p python3 venv
+python -m venv venv
 source venv/bin/activate
-```
-
-Then, install the wrapper:
-
-```bash
 pip install mailjet-rest
 ```
 
@@ -137,122 +129,58 @@ conda activate mailjet-dev
 
 ## Authentication
 
-The Mailjet Email API uses your API and Secret keys for authentication. [Grab][api_credential] and save your Mailjet API credentials.
+The Mailjet Email API uses your API and Secret keys for authentication. [Grab][api_credential] and save your Mailjet API credentials securely in your environment variables.
 
 ```bash
 export MJ_APIKEY_PUBLIC='your api key'  # pragma: allowlist secret
 export MJ_APIKEY_PRIVATE='your api secret'  # pragma: allowlist secret
+export MJ_CONTENT_TOKEN='your_bearer_token' # Optional, for Content API v1
 ```
 
-> **Note**
-> For the SMS API the authorization credentials are your API Token.
+## Quick Start
 
-Initialize your [Mailjet] client:
+**Best Practice**: Use the [Mailjet] `Client` as a Context Manager (`with` statement) to automatically pool and close underlying TCP connections, preventing resource leaks.
 
 ```python
-# import the mailjet wrapper
+import os
 from mailjet_rest import Client
-import os
-
-# Get your environment Mailjet keys
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-
-mailjet = Client(auth=(api_key, api_secret))
-```
-
-## Make your first call
-
-Here's an example on how to send an email:
-
-```python
-from mailjet_rest import Client
-import os
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
-data = {
-    "FromEmail": "$SENDER_EMAIL",
-    "FromName": "$SENDER_NAME",
-    "Subject": "Your email flight plan!",
-    "Text-part": "Dear passenger, welcome to Mailjet! May the delivery force be with you!",
-    "Html-part": '<h3>Dear passenger, welcome to <a href="https://www.mailjet.com/">Mailjet</a>!<br />May the delivery force be with you!',
-    "Recipients": [{"Email": "$RECIPIENT_EMAIL"}],
-}
-result = mailjet.send.create(data=data)
-print(result.status_code)
-print(result.json())
-```
-
-## Error Handling
-
-The client safely wraps network-level exceptions to prevent leaking requests dependencies. You can catch these custom exceptions to handle network drops or timeouts gracefully:
-from mailjet_rest import Client, TimeoutError, CriticalApiError
-
-```python
-import os
-from mailjet_rest import Client, CriticalApiError, TimeoutError, ApiError
 
 api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
 api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
-mailjet = Client(auth=(api_key, api_secret))
 
-try:
-    result = mailjet.contact.get()
-    # Note: HTTP errors (like 404 or 401) do not raise exceptions by default.
-    # You should always check the status_code:
-    if result.status_code != 200:
-        print(f"API Error: {result.status_code}")
-except TimeoutError:
-    print("The request to the Mailjet API timed out.")
-except CriticalApiError as e:
-    print(f"Network connection failed: {e}")
-except ApiError as e:
-    print(f"An unexpected Mailjet API error occurred: {e}")
+with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
+    data = {
+        "Messages": [
+            {
+                "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
+                "To": [{"Email": "passenger1@mailjet.com", "Name": "Passenger 1"}],
+                "Subject": "Your email flight plan!",
+                "TextPart": "Welcome to Mailjet! May the delivery force be with you!",
+            }
+        ]
+    }
+    result = mailjet.send.create(data=data)
+    print(result.status_code)
 ```
 
-## Logging & Debugging
+(Note:
 
-The Mailjet SDK includes built-in logging to help you troubleshoot API requests, inspect generated URLs, and read server error messages (like `400 Bad Request` or `401 Unauthorized`).
-The SDK uses the standard Python logging module under the namespace mailjet_rest.client.
+> **Note**
+> If you choose not to use the context manager, you should manually call mailjet.close() when your application shuts down).
 
-To enable detailed logging in your application, configure the logger before making requests:
+### Advanced Configuration
+
+You can pass configuration overrides directly when initializing the `Client` or during individual API calls:
 
 ```python
-import logging
-from mailjet_rest import Client
+# Set custom base URL, timeout, and API version
+mailjet = Client(auth=(api_key, api_secret), version="v3.1", api_url="https://api.us.mailjet.com/", timeout=30)
 
-# Enable DEBUG level for the Mailjet SDK logger
-logging.getLogger("mailjet_rest.client").setLevel(logging.DEBUG)
-
-# Configure the basic console output (if not already configured in your app)
-logging.basicConfig(format="%(levelname)s - %(name)s - %(message)s")
-
-# Now, any API requests or errors will be printed to your console
-mailjet = Client(auth=("api_key", "api_secret"))
-mailjet.contact.get()
+# Override timeout for a single, heavy request
+result = mailjet.contact.get(timeout=60)
 ```
 
-## Client / Call Configuration Specifics
-
-### Client / Call configuration override
-
-You can pass a dictionary to the client or to the call to establish a configuration.
-
-#### Client
-
-```python
-mailjet = Client(auth=(api_key, api_secret), timeout=30)
-```
-
-#### Call
-
-```python
-result = mailjet.send.create(data=data, timeout=30)
-```
-
-### API Versioning
+#### API Versioning
 
 The Mailjet API is spread among distinct versions:
 
@@ -260,23 +188,16 @@ The Mailjet API is spread among distinct versions:
 - `v3.1` - Email Send API v3.1, which is the latest version of our Send API
 - `v1` - Content API (Templates, Blocks, Images)
 
-Since most Email API endpoints are located under `v3`, it is set as the default one and does not need to be specified when making your request. For the others you need to specify the version using `version`. For example, if using Send API `v3.1`:
+Since most Email API endpoints are located under `v3`, it is set as the default one and does not need to be specified when making your request.
+For the others you need to specify the version using `version`. For example, if using Send API `v3.1`:
 
 ```python
-# import the mailjet wrapper
-from mailjet_rest import Client
-import os
-
-# Get your environment Mailjet keys
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-
 mailjet = Client(auth=(api_key, api_secret), version="v3.1")
 ```
 
 For additional information refer to our [API Reference](https://dev.mailjet.com/reference/overview/versioning/).
 
-### Base URL
+#### Base URL
 
 The default base domain name for the Mailjet API is `api.mailjet.com`. You can modify this base URL by setting a value for `api_url` in your call:
 
@@ -286,9 +207,64 @@ mailjet = Client(auth=(api_key, api_secret), api_url="https://api.us.mailjet.com
 
 If your account has been moved to Mailjet's **US architecture**, the URL value you need to set is `https://api.us.mailjet.com`.
 
+## Usage
+
+### Error Handling
+
+The client safely wraps network-level exceptions. Standard HTTP errors (like `404 Not Found` or `400 Bad Request`) **do not** raise exceptions; they return the `requests.Response` object directly so you can inspect `status_code` and `.json()`.
+
+```python
+from mailjet_rest import CriticalApiError, TimeoutError, ApiError
+
+try:
+    result = mailjet.contact.get()
+    if result.status_code != 200:
+        print(f"API Error: {result.status_code} - {result.text}")
+
+except TimeoutError:
+    print("The request to the Mailjet API timed out.")
+except CriticalApiError as e:
+    print(f"Network connection failed: {e}")
+```
+
+## Logging & Debugging
+
+The SDK integrates seamlessly with Python's standard `logging` library and features **Smart Telemetry**.
+If you pass identifiers like `CustomID`, `Campaign`, or `TemplateID` in your payload, the SDK automatically extracts them and injects a `Trace` context into your logs.
+This allows you to easily correlate local application errors with your Mailjet Dashboard analytics.
+
+```python
+import logging
+from mailjet_rest import Client
+
+logging.getLogger("mailjet_rest.client").setLevel(logging.DEBUG)
+logging.basicConfig(format="%(levelname)s - %(message)s")
+
+with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
+    # Adding 'CustomID' enables Smart Tracing in the console logs
+    mailjet.send.create(
+        data={
+            "Messages": [
+                {
+                    "From": {"Email": "test@test.com"},
+                    "To": [{"Email": "user@test.com"}],
+                    "CustomID": "Promo_Black_Friday",
+                }
+            ]
+        }
+    )
+```
+
+_Console output will feature_: `DEBUG - Sending Request: POST ... | Trace: [CustomID=Promo_Black_Friday]`
+
+### IDE Autocompletion & DX
+
+Because the SDK utilizes dynamic URL dispatching (`__getattr__`), to prevent "Magic Method Traps" (accidentally dispatching internal Python methods), the SDK includes strict _poka-yoke_ guardrails.
+Attempting to access private attributes or removed properties (like `client.auth`) will safely throw an explicit `AttributeError` instead of a ghost API request.
+
 ### URL path
 
-According to python special characters limitations we can't use slashes `/` and dashes `-` which is acceptable for URL path building. Instead python client uses another way for path building. You should replace slashes `/` by underscore `_` and dashes `-` by capitalizing next letter in path.
+According to python special characters limitations we can't use slashes `/` and dashes `-` which is acceptable for URL path building. Instead, python client uses another way for path building. You should replace slashes `/` by underscore `_` and dashes `-` by capitalizing next letter in path.
 For example, to reach `statistics/link-click` path you should call `statistics_linkClick` attribute of python client.
 
 ```python
@@ -314,6 +290,17 @@ result = mailjet.data_images.get()
 
 > [!IMPORTANT]\
 > This is a full list of supported endpoints this wrapper provides [samples](samples)
+
+### Executable README (Smoke Test)
+
+Want to test all these examples at once? We provide an executable script that dynamically creates, tests, and safely cleans up all resources mentioned in this document.
+It's a great way to verify your API credentials and network access.
+
+Simply run:
+
+```bash
+python samples/smoke_readme_runner.py
+```
 
 ### Send API (v3.1)
 
@@ -348,11 +335,6 @@ print(result.json())
 When using `TemplateLanguage`, ensure that you pass a standard Python dictionary to the `Variables` parameter.
 
 ```python
-from mailjet_rest import Client
-import os
-
-api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
-api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
 mailjet = Client(auth=(api_key, api_secret), version="v3.1")
 
 data = {
@@ -370,40 +352,23 @@ data = {
 result = mailjet.send.create(data=data)
 ```
 
-### POST request
+### Standard REST Actions (GET, POST, PUT, DELETE)
 
-#### Simple POST request
+#### POST (Create)
+
+##### Simple POST request
 
 ```python
-"""
-Create a new contact:
-"""
-
-from mailjet_rest import Client
-import os
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
+# Create a new contact
 data = {"Email": "Mister@mailjet.com"}
 result = mailjet.contact.create(data=data)
-print(result.status_code)
 print(result.json())
 ```
 
-#### Using actions
+##### Using actions
 
 ```python
-"""
-Manage the subscription status of a contact to multiple lists:
-"""
-
-from mailjet_rest import Client
-import os
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
+# Manage the subscription status of a contact to multiple lists
 id_ = "$ID"
 data = {
     "ContactsLists": [
@@ -412,52 +377,43 @@ data = {
     ]
 }
 result = mailjet.contact_managecontactslists.create(id=id_, data=data)
-print(result.status_code)
 print(result.json())
 ```
 
-### GET Request
+#### GET Request
 
-#### Retrieve all objects
+##### Retrieve all objects
 
 ```python
-"""
-Retrieve all contacts:
-"""
-
-from mailjet_rest import Client
-import os
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
+# Retrieve all contacts
 result = mailjet.contact.get()
-print(result.status_code)
 print(result.json())
 ```
 
-#### Using filtering
+##### GET (Read one)
 
 ```python
-"""
-Retrieve all contacts that are not in the campaign exclusion list:
-"""
+# Retrieve a specific contact ID
+id_ = "Contact_ID"
+result = mailjet.contact.get(id=id_)
+print(result.json())
+```
 
-from mailjet_rest import Client
-import os
+##### Using filtering
 
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
+```python
+# Retrieve contacts that are not in the campaign exclusion list
 filters = {
+    "limit": 40,
+    "offset": 50,
+    "sort": "Email desc",
     "IsExcludedFromCampaigns": "false",
 }
 result = mailjet.contact.get(filters=filters)
-print(result.status_code)
 print(result.json())
 ```
 
-#### Using pagination
+##### Using pagination
 
 Some requests (for example [GET /contact](https://dev.mailjet.com/email/reference/contacts/contact/#v3_get_contact)) has `limit`, `offset` and `sort` query string parameters. These parameters could be used for pagination.
 `limit` `int` Limit the response to a select number of returned objects. Default value: `10`. Maximum value: `1000`
@@ -466,59 +422,21 @@ Some requests (for example [GET /contact](https://dev.mailjet.com/email/referenc
 Next example returns 40 contacts starting from 51th record sorted by `Email` field descendally:
 
 ```python
-import os
-from mailjet_rest import Client
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
-
 filters = {
     "limit": 40,
     "offset": 50,
     "sort": "Email desc",
 }
 result = mailjet.contact.get(filters=filters)
-print(result.status_code)
 print(result.json())
 ```
 
-#### Retrieve a single object
-
-```python
-"""
-Retrieve a specific contact ID:
-"""
-
-from mailjet_rest import Client
-import os
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
-id_ = "Contact_ID"
-result = mailjet.contact.get(id=id_)
-print(result.status_code)
-print(result.json())
-```
-
-### PUT request
+#### PUT (Update / Patch specific fields)
 
 A `PUT` request in the Mailjet API will work as a `PATCH` request - the update will affect only the specified properties. The other properties of an existing resource will neither be modified, nor deleted. It also means that all non-mandatory properties can be omitted from your payload.
 
-Here's an example of a `PUT` request:
-
 ```python
-"""
-Update the contact properties for a contact:
-"""
-
-from mailjet_rest import Client
-import os
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
+# Update the contact properties for a contact
 id_ = "$CONTACT_ID"
 data = {
     "Data": [
@@ -527,86 +445,55 @@ data = {
     ]
 }
 result = mailjet.contactdata.update(id=id_, data=data)
-print(result.status_code)
 print(result.json())
 ```
 
-### DELETE request
+#### DELETE (Returns 204 No Content)
 
 Upon a successful `DELETE` request the response will not include a response body, but only a `204 No Content` response code.
 
-Here's an example of a `DELETE` request:
-
 ```python
-"""
-Delete an email template:
-"""
-
-from mailjet_rest import Client
-import os
-
-api_key = os.environ["MJ_APIKEY_PUBLIC"]
-api_secret = os.environ["MJ_APIKEY_PRIVATE"]
-mailjet = Client(auth=(api_key, api_secret))
+# Delete an email template
 id_ = "Template_ID"
 result = mailjet.template.delete(id=id_)
-print(result.status_code)
 print(result.json())
 ```
 
 ### Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)
 
-#### Webhooks: Real-time Event Tracking
+#### Webhooks (Real-time Event Tracking)
 
 You can subscribe to real-time events (open, click, bounce, etc.) by configuring a webhook URL using the `eventcallbackurl` resource.
 
 ```python
-from mailjet_rest import Client
-import os
-
-client = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
-
 data = {
     "EventType": "open",
-    "Url": "[https://www.mydomain.com/webhook](https://www.mydomain.com/webhook)",
+    "Url": "https://www.mydomain.com/webhook",
     "Status": "alive",
 }
 result = client.eventcallbackurl.create(data=data)
-print(result.status_code)
 ```
 
-#### Parse API: Receive Inbound Emails
+#### Parse API (Receive Inbound Emails)
 
 The Parse API routes incoming emails sent to a specific domain to your custom webhook.
 
 ```python
-from mailjet_rest import Client
-import os
-
-client = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
-
 data = {"Url": "https://www.mydomain.com/mj_parse.php"}
 result = client.parseroute.create(data=data)
-print(result.status_code)
 ```
 
-#### Segmentation: Contact Filters
+#### Segmentation (Contact Filters)
 
 Create expressions to dynamically filter your contacts (e.g., customers under 35) using `contactfilter`.
 
 ```python
-from mailjet_rest import Client
-import os
-
-client = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
-
 data = {
     "Description": "Will send only to contacts under 35 years of age.",
     "Expression": "(age<35)",
     "Name": "Customers under 35",
 }
 result = client.contactfilter.create(data=data)
-print(result.status_code)
 ```
 
 #### Retrieve Campaign Statistics
@@ -629,17 +516,13 @@ print(result.json())
 
 ### Content API
 
+Requires `version="v1"`. You can authenticate using Basic Auth or a Bearer Token.
+
 The Content API (`v1`) allows managing templates, generating API tokens, and uploading images. The SDK handles the required `/REST/` prefix for most resources automatically, while appropriately mapping `data_images` to `/data/`.
 
 #### Generating a Token
 
 ```python
-from mailjet_rest import Client
-import os
-
-api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
-api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
-
 # Tokens endpoint requires Basic Auth initially
 client = Client(auth=(api_key, api_secret), version="v1")
 data = {"Name": "My Access Token", "Permissions": ["read_template", "create_template"]}
@@ -648,21 +531,16 @@ result = client.token.create(data=data)
 print(result.json())
 ```
 
-#### Uploading an Image
+#### Uploading an Image via Multipart Form-Data
 
-Use the `data_images` resource to map the request to `/v1/data/images`.
+To upload physical files, use the `data_images` resource and delete the default Content-Type header so requests can generate proper multipart boundaries. The request will be mapped to `/v1/data/images`.
 
 ```python
 import base64
-import os
-from mailjet_rest import Client
 
 # Base64 encoded image data (1x1 transparent PNG)
 b64_string = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 image_bytes = base64.b64decode(b64_string)
-
-# Ensure to pass your Bearer token
-client = Client(auth=os.environ.get("MJ_CONTENT_TOKEN", ""), version="v1")
 
 # The Image upload requires a JSON metadata part (with a Status) and the physical file part
 files_payload = {
@@ -672,50 +550,31 @@ files_payload = {
 
 # Deleting the default Content-Type header allows requests to generate multipart/form-data
 result = client.data_images.create(headers={"Content-Type": None}, files=files_payload)
-
-print(result.status_code)
 ```
 
 #### Locking a Template Content
 
-Sub-actions are safely handled using slashes (`contents/lock` instead of `contents-lock`).
+Sub-actions are safely handled using slashes (e.g., `template_contents_lock` becomes `template/<template_id>/contents/lock`).
 
 ```python
-from mailjet_rest import Client
-import os
-
-client = Client(auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]), version="v1")
-
 template_id = 1234567
 
 # This routes to POST /v1/REST/template/1234567/contents/lock
 result = client.template_contents_lock.create(id=template_id)
-print(result.status_code)
 ```
 
-#### Update Template Content
+## Deprecation Warnings
 
-Use the specific \_detailcontent resource route to update the HTML or Text parts of an existing template.
+The SDK includes an active native Python deprecation system to protect your application from sudden API breaking changes.
 
-```python
-from mailjet_rest import Client
-import os
+If you attempt to use legacy arguments (like `ensure_ascii` or `data_encoding`), obsolete utility functions (`parse_response`), or ambiguous routing (`v1` with `/template`), the SDK will **not** break your code.
+It will successfully execute the request but will emit a non-breaking `DeprecationWarning` to help you gracefully migrate to modern standards.
 
-api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
-api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
-mailjet = Client(auth=(api_key, api_secret))
+## Type Hinting
 
-template_id = 1234567
+This SDK is fully type-hinted and compatible with static type checkers like `mypy` and `pyright`.
 
-data = {
-    "Html-part": "<html><body><h1>Updated Content from Python SDK</h1></body></html>",
-    "Text-part": "Updated Content from Python SDK",
-    "Headers": {"Subject": "New Subject from API"},
-}
-
-result = mailjet.template_detailcontent.create(id=template_id, data=data)
-print(result.status_code)
-```
+Because of the dynamic URL dispatch engine (`__getattr__`), IDEs may flag endpoints like `client.contact.create` as `Any`. If you enforce strict typing in your application, you may safely ignore these specific dynamically dispatched calls.
 
 ## License
 
@@ -745,4 +604,4 @@ If you have suggestions on how to improve the guides, please submit an issue in 
 
 [api_credential]: https://app.mailjet.com/account/apikeys
 [doc]: https://dev.mailjet.com/email/guides/?python#
-[mailjet]: (https://www.mailjet.com)
+[mailjet]: https://www.mailjet.com

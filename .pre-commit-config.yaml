@@ -160,77 +160,6 @@ repos:
         name: "🔧 ci/cd · Validate GitHub workflows"
         files: ^\.github/workflows/.*\.ya?ml$
 
-  # Python code formatting
-  - repo: https://github.com/PyCQA/autoflake
-    rev: v2.3.3
-    hooks:
-      - id: autoflake
-        name: "🐍 format · Remove unused imports"
-        args:
-          - --in-place
-          - --remove-all-unused-imports
-          - --remove-unused-variable
-          - --ignore-init-module-imports
-
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.21.2
-    hooks:
-      - id: pyupgrade
-        name: "🐍 format · Modernize syntax"
-        args: [--py310-plus, --keep-runtime-typing]
-
-  - repo: https://github.com/akaihola/darker
-    rev: v3.0.0
-    hooks:
-      - id: darker
-        name: "🐍 format · Format changed lines"
-        additional_dependencies: [black]
-
-  # Python linting (comprehensive checks)
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.3.0
-    hooks:
-      - id: flake8
-        name: "🐍 lint · Check style (Flake8)"
-        args: ["--ignore=E501,C901", --max-complexity=13]
-        additional_dependencies:
-          - radon
-          - flake8-docstrings
-          - Flake8-pyproject
-          - flake8-bugbear
-          - flake8-comprehensions
-          - flake8-tidy-imports
-          - pycodestyle
-        exclude: ^tests
-
-  - repo: https://github.com/PyCQA/pylint
-    rev: v4.0.5
-    hooks:
-      - id: pylint
-        name: "🐍 lint · Check code quality"
-        args:
-          - --exit-zero
-
-  - repo: https://github.com/dosisod/refurb
-    rev: v2.3.0
-    hooks:
-      - id: refurb
-        name: "🐍 performance · Suggest modernizations"
-        args: ["--enable-all", "--ignore", "FURB147"]
-        # Constrain mypy to <1.15.0 because of an error:
-        # 'Options' object has no attribute 'allow_redefinition' and no __dict__ for setting new attributes
-        additional_dependencies:
-          - mypy<1.15.0
-
-  # Python documentation
-  - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.3.0
-    hooks:
-      - id: pydocstyle
-        name: "🐍 docs · Validate docstrings"
-        args: [--select=D200,D213,D400,D415]
-        additional_dependencies: [tomli]
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.8
     hooks:
@@ -239,6 +168,14 @@ repos:
         args: [--fix, --preview]
       - id: ruff-format
         name: "🐍 format · Format with Ruff"
+
+  - repo: https://github.com/PyCQA/pylint
+    rev: v4.0.5
+    hooks:
+      - id: pylint
+        name: "🐍 lint · Check code quality"
+        args:
+          - --exit-zero
 
   - repo: https://github.com/econchick/interrogate
     rev: 1.7.0
@@ -301,3 +238,17 @@ repos:
           - mdformat-gfm
           - mdformat-black
           - mdformat-ruff
+
+# TODO: Enable it for a single check
+#  - repo: https://github.com/tcort/markdown-link-check
+#    rev: v3.14.2
+#    hooks:
+#      - id: markdown-link-check
+#        name: "📝 docs · Check markdown links"
+#
+#  # Makefile linting
+#  - repo: https://github.com/checkmake/checkmake
+#    rev: v0.3.0
+#    hooks:
+#      - id: checkmake
+#        name: "🔧 build · Lint Makefile"

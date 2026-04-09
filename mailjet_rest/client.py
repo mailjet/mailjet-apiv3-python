@@ -3,19 +3,17 @@
 The `mailjet_rest.client` module includes the core `Client` class for managing
 API requests, configuration, and error handling, as well as utility functions
 and classes for building URLs and managing endpoints.
-
-Classes:
-    - Config: Manages configuration settings for the Mailjet API.
-    - Endpoint: Represents specific API endpoints and provides methods for HTTP operations.
-    - Client: The main API client for authenticating and making requests.
-    - ApiError: Base class for handling network-level API errors.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import sys
+import warnings
+from contextlib import suppress
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
 from urllib.parse import quote
@@ -29,15 +27,32 @@ from requests.exceptions import Timeout as RequestsTimeout
 from urllib3.util.retry import Retry
 
 from mailjet_rest._version import __version__
+from mailjet_rest.utils.guardrails import validate_attribute_access
 
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 
 __all__ = [
+    "ActionDeniedError",
     "ApiError",
+    "ApiRateLimitError",
+    "AuthorizationError",
     "Client",
     "Config",
     "CriticalApiError",
+    "DoesNotExistError",
     "Endpoint",
     "TimeoutError",
+    "ValidationError",
+    "logging_handler",
+    "parse_response",
 ]
 
 logger = logging.getLogger(__name__)
@@ -47,12 +62,15 @@ def prepare_url(match: Any) -> str:
     """Replace capital letters in the input string with a dash prefix and converts them to lowercase.
 
     Args:
-        match (Any): A regex match object representing a substring from the input string containing a capital letter.
+        match (Any): A regex match object.
 
     Returns:
-        str: A string containing a dash followed by the lowercase version of the input capital letter.
+        str: A formatted URL string fragment.
     """
     return f"_{match.group(0).lower()}"
+
+
+# --- Exceptions ---
 
 
 class ApiError(Exception):
@@ -67,6 +85,72 @@ class TimeoutError(ApiError):
     """Error raised when an API request times out."""
 
 
+# --- Deprecated Legacy Exceptions ---
+
+
+class AuthorizationError(ApiError):
+    """Deprecated: The SDK natively returns the requests.Response object for 401."""
+
+
+class ActionDeniedError(ApiError):
+    """Deprecated: The SDK natively returns the requests.Response object for 403."""
+
+
+class DoesNotExistError(ApiError):
+    """Deprecated: The SDK natively returns the requests.Response object for 404."""
+
+
+class ValidationError(ApiError):
+    """Deprecated: The SDK natively returns the requests.Response object for 400."""
+
+
+class ApiRateLimitError(ApiError):
+    """Deprecated: The SDK natively returns the requests.Response object for 429."""
+
+
+# --- Deprecated Utilities ---
+
+
+def parse_response(response: requests.Response, debug: bool = False) -> dict[str, Any] | str:
+    """Deprecated: Extract JSON or text from response.
+
+    Args:
+        response (requests.Response): The HTTP response.
+        debug (bool): Deprecated debug flag.
+
+    Returns:
+        dict[str, Any] | str: The parsed JSON dictionary or raw text string.
+    """
+    warnings.warn(
+        "parse_response is deprecated and will be removed in future releases. "
+        "Please use response.json() or response.text directly on the requests.Response object.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    try:
+        return response.json()
+    except ValueError:
+        return response.text
+
+
+def logging_handler(response: requests.Response) -> None:
+    """Deprecated: Custom logging handler.
+
+    Args:
+        response (requests.Response): The HTTP response.
+    """
+    warnings.warn(
+        "logging_handler is deprecated and will be removed in future releases. "
+        "Logging is now integrated cleanly and automatically via Python's standard `logging` library.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    # The SDK's api_call method now logs natively.
+
+
+# --- Core Classes ---
+
+
 @dataclass
 class Config:
     """Configuration settings for interacting with the Mailjet API."""
@@ -74,7 +158,7 @@ class Config:
     version: str = "v3"
     api_url: str = "https://api.mailjet.com/"
     user_agent: str = f"mailjet-apiv3-python/v{__version__}"
-    timeout: int = 15
+    timeout: int | float | tuple[float, float] = 60
 
     def __post_init__(self) -> None:
         """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
@@ -88,18 +172,28 @@ class Config:
         if not self.api_url.endswith("/"):
             self.api_url += "/"
 
-        if self.timeout <= 0 or self.timeout > 300:
-            msg = f"Timeout must be strictly between 1 and 300 seconds, got {self.timeout}."
-            raise ValueError(msg)
+        def _validate_timeout(t: float) -> None:
+            if t <= 0 or t > 300:
+                msg = f"Timeout values must be strictly between 1 and 300 seconds, got {t}."
+                raise ValueError(msg)
+
+        if isinstance(self.timeout, tuple):
+            if len(self.timeout) != 2:
+                msg = f"Timeout tuple must contain exactly two elements: (connect_timeout, read_timeout), got {self.timeout}."  # type: ignore[unreachable]
+                raise ValueError(msg)
+            for t_val in self.timeout:
+                _validate_timeout(t_val)
+        else:
+            _validate_timeout(self.timeout)
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the API endpoint URL and headers for a given key.
 
         Args:
-            key (str): The name of the API endpoint.
+            key (str): The endpoint key name.
 
         Returns:
-            tuple[str, dict[str, str]]: A tuple containing the constructed URL and headers.
+            tuple[str, dict[str, str]]: The constructed URL and headers dictionary.
         """
         action = key.split("_")[0]
         name_lower = key.lower()
@@ -125,41 +219,24 @@ class Endpoint:
     """A class representing a specific Mailjet API endpoint."""
 
     def __init__(self, client: Client, name: str) -> None:
-        """Initialize a new Endpoint instance.
-
-        Args:
-            client (Client): The Mailjet API client.
-            name (str): The name of the endpoint.
-        """
+        """Initialize a new Endpoint instance."""
         self.client = client
         self.name = name
 
     @staticmethod
     def _check_dx_guardrails(version: str, name_lower: str, resource_lower: str) -> None:
-        """Emit warnings for ambiguous routing scenarios.
-
-        Args:
-            version (str): The API version being used.
-            name_lower (str): The lowercase name of the endpoint.
-            resource_lower (str): The lowercase primary resource.
-        """
+        """Emit warnings for ambiguous routing scenarios."""
+        msg = ""
         if name_lower == "send" and version not in {"v3", "v3.1"}:
-            logger.warning(
-                "Mailjet API Ambiguity: The Send API is only available on 'v3' and 'v3.1'. "
-                "Routing via '%s' will likely result in a 404 Not Found.",
-                version,
-            )
+            msg = f"Mailjet API Ambiguity: The Send API is only available on 'v3' and 'v3.1'. Routing via '{version}' will likely result in a 404 Not Found."
         elif version == "v1" and resource_lower == "template":
-            logger.warning(
-                "Mailjet API Ambiguity: Content API (v1) uses the plural '/templates' resource. "
-                "Requesting the singular '/template' may result in a 404 Not Found."
-            )
+            msg = "Mailjet API Ambiguity: Content API (v1) uses the plural '/templates' resource. Requesting the singular '/template' may result in a 404 Not Found."
         elif version.startswith("v3") and resource_lower == "templates":
-            logger.warning(
-                "Mailjet API Ambiguity: Email API (%s) uses the singular '/template' resource. "
-                "Requesting the plural '/templates' may result in a 404 Not Found.",
-                version,
-            )
+            msg = f"Mailjet API Ambiguity: Email API ({version}) uses the singular '/template' resource. Requesting the plural '/templates' may result in a 404 Not Found."
+
+        if msg:
+            warnings.warn(msg, DeprecationWarning, stacklevel=3)
+            logger.warning(msg)
 
     @staticmethod
     def _build_csv_url(base_url: str, version: str, resource: str, name_lower: str, id: int | str | None) -> str:
@@ -187,10 +264,10 @@ class Endpoint:
 
         Args:
             id (int | str | None): The primary resource ID.
-            action_id (int | str | None): The sub-action ID (e.g. content_type for Content API).
+            action_id (int | str | None): The sub-action ID.
 
         Returns:
-            str: The fully qualified URL for the API endpoint.
+            str: The fully qualified URL.
         """
         base_url = self.client.config.api_url.rstrip("/")
         version = self.client.config.version
@@ -232,10 +309,10 @@ class Endpoint:
         """Build headers based on the endpoint requirements.
 
         Args:
-            custom_headers (dict[str, str] | None): Custom headers to include.
+            custom_headers (dict[str, str] | None): Custom headers to merge.
 
         Returns:
-            dict[str, str]: A dictionary of HTTP headers.
+            dict[str, str]: The finalized HTTP headers.
         """
         headers = {}
         if self.name.lower().endswith("_csvdata"):
@@ -255,7 +332,9 @@ class Endpoint:
         headers: dict[str, str] | None = None,
         id: int | str | None = None,
         action_id: int | str | None = None,
-        timeout: int | None = None,
+        timeout: float | tuple[float, float] | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Execute the API call directly.
@@ -267,7 +346,9 @@ class Endpoint:
             headers (dict[str, str] | None): Custom headers.
             id (int | str | None): Primary resource ID.
             action_id (int | str | None): Sub-action ID.
-            timeout (int | None): Custom timeout.
+            timeout (float | tuple[float, float] | None): Request timeout.
+            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
+            data_encoding (str | None): Data encoding string (Deprecated).
             **kwargs (Any): Additional arguments.
 
         Returns:
@@ -289,6 +370,8 @@ class Endpoint:
             data=data,
             headers=self._build_headers(headers),
             timeout=timeout or self.client.config.timeout,
+            ensure_ascii=ensure_ascii,
+            data_encoding=data_encoding,
             **kwargs,
         )
 
@@ -317,6 +400,8 @@ class Endpoint:
         data: dict[str, Any] | list[Any] | str | None = None,
         id: int | str | None = None,
         action_id: int | str | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Perform a POST request to create a new resource.
@@ -325,18 +410,37 @@ class Endpoint:
             data (dict[str, Any] | list[Any] | str | None): Request payload.
             id (int | str | None): The primary resource ID.
             action_id (int | str | None): The sub-action ID.
+            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
+            data_encoding (str | None): Data encoding string (Deprecated).
             **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response from the API.
         """
-        return self(method="POST", data=data, id=id, action_id=action_id, **kwargs)
+        if ensure_ascii is not None or data_encoding is not None:
+            warnings.warn(
+                "'ensure_ascii' and 'data_encoding' are deprecated and will be removed in a future release. "
+                "The underlying requests library handles serialization natively.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return self(
+            method="POST",
+            data=data,
+            id=id,
+            action_id=action_id,
+            ensure_ascii=ensure_ascii,
+            data_encoding=data_encoding,
+            **kwargs,
+        )
 
     def update(
         self,
         id: int | str,
         data: dict[str, Any] | list[Any] | str | None = None,
         action_id: int | str | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Perform a PUT request to update an existing resource.
@@ -345,12 +449,29 @@ class Endpoint:
             id (int | str): The primary resource ID.
             data (dict[str, Any] | list[Any] | str | None): Updated payload.
             action_id (int | str | None): The sub-action ID.
+            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
+            data_encoding (str | None): Data encoding string (Deprecated).
             **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response from the API.
         """
-        return self(method="PUT", id=id, data=data, action_id=action_id, **kwargs)
+        if ensure_ascii is not None or data_encoding is not None:
+            warnings.warn(
+                "'ensure_ascii' and 'data_encoding' are deprecated and will be removed in a future release. "
+                "The underlying requests library handles serialization natively.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return self(
+            method="PUT",
+            id=id,
+            data=data,
+            action_id=action_id,
+            ensure_ascii=ensure_ascii,
+            data_encoding=data_encoding,
+            **kwargs,
+        )
 
     def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:
         """Perform a DELETE request to remove a resource.
@@ -375,28 +496,15 @@ class Client:
         config: Config | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize a new Client instance.
-
-        Args:
-            auth (tuple[str, str] | str | None): Authentication credentials.
-            config (Config | None): Configuration settings.
-            **kwargs (Any): Additional arguments.
-
-        Raises:
-            ValueError: If the authentication credentials are invalid.
-            TypeError: If the authentication credentials type is invalid.
-        """
-        # OWASP Secrets Management: Do not store raw `auth` directly as an instance attribute if possible.
-        # We only use it for setup, preventing it from being serialized natively.
+        """Initialize a new Client instance."""
         self.config = config or Config(**kwargs)
         self.session = requests.Session()
 
-        # Zero Trust & Resiliency: Configure robust retries for transient network failures
         retry_strategy = Retry(
             total=3,
             backoff_factor=1,
             status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "OPTIONS"],  # Avoid retrying POST/PUT to prevent duplicate actions
+            allowed_methods=["GET", "OPTIONS"],
         )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         self.session.mount("https://", adapter)
@@ -406,7 +514,6 @@ class Client:
                 if len(auth) != 2:
                     msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."  # type: ignore[unreachable]
                     raise ValueError(msg)
-                # Strip potential invisible whitespaces (Input Validation)
                 self.session.auth = (str(auth[0]).strip(), str(auth[1]).strip())
             elif isinstance(auth, str):
                 clean_token = auth.strip()
@@ -423,11 +530,51 @@ class Client:
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
 
+    def close(self) -> None:
+        """Close the underlying requests.Session to free up system sockets."""
+        if self.session:
+            self.session.close()
+
+    def __enter__(self) -> Self:
+        """Enter the context manager.
+
+        Returns:
+            Self: The active Client instance.
+        """
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        """Exit the context manager and clean up resources.
+
+        Args:
+            exc_type (type[BaseException] | None): Exception type.
+            exc_val (BaseException | None): Exception value.
+            exc_tb (TracebackType | None): Traceback.
+        """
+        self.close()
+
+    def __getattr__(self, name: str) -> Endpoint:
+        """Dynamically access API endpoints as attributes.
+
+        Args:
+            name (str): Endpoint name.
+
+        Returns:
+            Endpoint: An Endpoint instance for the requested resource.
+        """
+        validate_attribute_access(self.__class__.__name__, name)
+        return Endpoint(self, name)
+
     def __repr__(self) -> str:
         """OWASP Secrets Management: Redact sensitive information from object representation.
 
         Returns:
-            str: A redacted string representation of the Client instance.
+            str: A redacted string representation of the client instance.
         """
         return f"<Client API Version='{self.config.version}' URL='{self.config.api_url}'>"
 
@@ -435,20 +582,67 @@ class Client:
         """OWASP Secrets Management: Redact sensitive information from string representation.
 
         Returns:
-            str: A redacted, human-readable string representation of the Client.
+            str: A redacted string representation.
         """
         return f"Mailjet Client ({self.config.version})"
 
-    def __getattr__(self, name: str) -> Endpoint:
-        """Dynamically access API endpoints as attributes.
+    @staticmethod
+    def _extract_data_trace(data: dict[str, Any], trace_ctx: list[str]) -> None:
+        """Extract telemetry trace IDs from the request payload.
 
         Args:
-            name (str): The name of the API endpoint.
+            data (dict[str, Any]): The request payload.
+            trace_ctx (list[str]): The list to append trace IDs to.
+        """
+        messages = data.get("Messages")
+        if isinstance(messages, list) and messages and isinstance(messages[0], dict):
+            if cid := messages[0].get("CustomID"):
+                trace_ctx.append(f"CustomID={cid}")
+            if tid := messages[0].get("TemplateID"):
+                trace_ctx.append(f"TemplateID={tid}")
+
+        if cid := data.get("X-MJ-CustomID"):
+            trace_ctx.append(f"CustomID={cid}")
+        if camp := data.get("X-Mailjet-Campaign"):
+            trace_ctx.append(f"Campaign={camp}")
+
+    @staticmethod
+    def _extract_header_trace(headers: dict[str, str], trace_ctx: list[str]) -> None:
+        """Extract telemetry trace IDs from the request headers.
+
+        Args:
+            headers (dict[str, str]): The request headers.
+            trace_ctx (list[str]): The list to append trace IDs to.
+        """
+        for k, v in headers.items():
+            k_lower = k.lower()
+            if k_lower == "x-mj-customid":
+                trace_ctx.append(f"CustomID={v}")
+            elif k_lower == "x-mailjet-campaign":
+                trace_ctx.append(f"Campaign={v}")
+
+    @staticmethod
+    def _extract_telemetry_trace(
+        data: dict[str, Any] | list[Any] | str | None,
+        headers: dict[str, str] | None,
+    ) -> str:
+        """Extract telemetry trace IDs from request data and headers.
+
+        Args:
+            data (dict[str, Any] | list[Any] | str | None): Request payload.
+            headers (dict[str, str] | None): Request headers.
 
         Returns:
-            Endpoint: An Endpoint instance for the requested resource.
+            str: A formatted trace string.
         """
-        return Endpoint(self, name)
+        trace_ctx: list[str] = []
+        with suppress(Exception):
+            if isinstance(data, dict):
+                Client._extract_data_trace(data, trace_ctx)
+            if headers:
+                Client._extract_header_trace(headers, trace_ctx)
+
+        return f" | Trace: [{' '.join(trace_ctx)}]" if trace_ctx else ""
 
     def api_call(
         self,
@@ -457,7 +651,9 @@ class Client:
         filters: dict[str, Any] | None = None,
         data: dict[str, Any] | list[Any] | str | None = None,
         headers: dict[str, str] | None = None,
-        timeout: int | None = None,
+        timeout: float | tuple[float, float] | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Perform the actual network request using the persistent session.
@@ -468,7 +664,9 @@ class Client:
             filters (dict[str, Any] | None): Query parameters.
             data (dict[str, Any] | list[Any] | str | None): Request payload.
             headers (dict[str, str] | None): HTTP headers.
-            timeout (int | None): Request timeout.
+            timeout (float | tuple[float, float] | None): Request timeout.
+            ensure_ascii (bool | None): Ensure ASCII encoding (deprecated).
+            data_encoding (str | None): Data encoding (deprecated).
             **kwargs (Any): Additional arguments.
 
         Returns:
@@ -479,35 +677,41 @@ class Client:
             CriticalApiError: If there is a connection failure.
             ApiError: For other unhandled request exceptions.
         """
-        payload = data
+        request_data: Any = data
         if isinstance(data, (dict, list)):
-            payload = json.dumps(data)
+            request_data = json.dumps(data, ensure_ascii=ensure_ascii) if ensure_ascii is not None else json.dumps(data)
+
+            # Legacy encoding support
+            if data_encoding is not None and isinstance(request_data, str):
+                request_data = request_data.encode(data_encoding)
 
         if timeout is None:
             timeout = self.config.timeout
 
-        logger.debug("Sending Request: %s %s", method, url)
+        trace_str = self._extract_telemetry_trace(data, headers)
+
+        logger.debug("Sending Request: %s %s%s", method, url, trace_str)
 
         try:
             response = self.session.request(
                 method=method,
                 url=url,
                 params=filters,
-                data=payload,
+                data=request_data,
                 headers=headers,
                 timeout=timeout,
                 **kwargs,
             )
         except RequestsTimeout as error:
-            logger.exception("Timeout Error: %s %s", method, url)
+            logger.exception("Timeout Error: %s %s%s", method, url, trace_str)
             msg = f"Request to Mailjet API timed out: {error}"
             raise TimeoutError(msg) from error
         except RequestsConnectionError as error:
-            logger.critical("Connection Error: %s | URL: %s", error, url)
+            logger.critical("Connection Error: %s | URL: %s%s", error, url, trace_str)
             msg = f"Connection to Mailjet API failed: {error}"
             raise CriticalApiError(msg) from error
         except RequestException as error:
-            logger.critical("Request Exception: %s | URL: %s", error, url)
+            logger.critical("Request Exception: %s | URL: %s%s", error, url, trace_str)
             msg = f"An unexpected Mailjet API network error occurred: {error}"
             raise ApiError(msg) from error
 
@@ -518,18 +722,20 @@ class Client:
 
         if is_error:
             logger.error(
-                "API Error %s | %s %s | Response: %s",
+                "API Error %s | %s %s%s | Response: %s",
                 response.status_code,
                 method,
                 url,
+                trace_str,
                 getattr(response, "text", ""),
             )
         else:
             logger.debug(
-                "API Success %s | %s %s",
+                "API Success %s | %s %s%s",
                 getattr(response, "status_code", 200),
                 method,
                 url,
+                trace_str,
             )
 
         return response
