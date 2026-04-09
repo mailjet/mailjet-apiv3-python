@@ -92,14 +92,40 @@ def test_config_api_url_validation_hostname() -> None:
         Config(api_url="https://")
 
 
-def test_config_timeout_validation() -> None:
+def test_config_timeout_invalid_values() -> None:
     """Verify OWASP Input Validation prevents resource exhaustion via illegal timeouts (CWE-400)."""
-    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
+    bounds_msg = "Timeout values must be strictly between 1 and 300"
+    tuple_msg = "Timeout tuple must contain exactly two elements"
+
+    # Out of bounds (int/float)
+    with pytest.raises(ValueError, match=bounds_msg):
         Config(timeout=0)
-    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
+    with pytest.raises(ValueError, match=bounds_msg):
         Config(timeout=301)
-    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
-        Config(timeout=-10)
+    with pytest.raises(ValueError, match=bounds_msg):
+        Config(timeout=-10.5)
+
+    # Invalid tuple lengths
+    with pytest.raises(ValueError, match=tuple_msg):
+        Config(timeout=(60,))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match=tuple_msg):
+        Config(timeout=(10, 20, 30))  # type: ignore[arg-type]
+
+    # Out of bounds inside a valid tuple
+    with pytest.raises(ValueError, match=bounds_msg):
+        Config(timeout=(0, 60))
+    with pytest.raises(ValueError, match=bounds_msg):
+        Config(timeout=(60, 305.5))
+
+
+def test_config_timeout_valid_values() -> None:
+    """Verify that valid timeout integers, floats, tuples, and None are correctly accepted."""
+    # Instantiating these should NOT raise any ValueError exceptions
+    assert Config(timeout=1).timeout == 1
+    assert Config(timeout=300).timeout == 300
+    assert Config(timeout=60.5).timeout == 60.5
+    assert Config(timeout=(3.05, 27.0)).timeout == (3.05, 27.0)
+    assert Config(timeout=None).timeout is None
 
 
 def test_url_sanitization_path_traversal(client_offline: Client) -> None:

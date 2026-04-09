@@ -81,7 +81,7 @@ class CriticalApiError(ApiError):
     """Error raised for critical API connection failures."""
 
 
-class TimeoutError(ApiError):
+class TimeoutError(ApiError):  # noqa: A001
     """Error raised when an API request times out."""
 
 
@@ -111,7 +111,7 @@ class ApiRateLimitError(ApiError):
 # --- Deprecated Utilities ---
 
 
-def parse_response(response: requests.Response, debug: bool = False) -> dict[str, Any] | str:
+def parse_response(response: requests.Response, debug: bool = False) -> dict[str, Any] | str:  # noqa: ARG001
     """Deprecated: Extract JSON or text from response.
 
     Args:
@@ -133,7 +133,7 @@ def parse_response(response: requests.Response, debug: bool = False) -> dict[str
         return response.text
 
 
-def logging_handler(response: requests.Response) -> None:
+def logging_handler(response: requests.Response) -> None:  # noqa: ARG001
     """Deprecated: Custom logging handler.
 
     Args:
@@ -158,7 +158,7 @@ class Config:
     version: str = "v3"
     api_url: str = "https://api.mailjet.com/"
     user_agent: str = f"mailjet-apiv3-python/v{__version__}"
-    timeout: int | float | tuple[float, float] = 60
+    timeout: int | float | tuple[float, float] | None = 60
 
     def __post_init__(self) -> None:
         """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
@@ -177,14 +177,15 @@ class Config:
                 msg = f"Timeout values must be strictly between 1 and 300 seconds, got {t}."
                 raise ValueError(msg)
 
-        if isinstance(self.timeout, tuple):
-            if len(self.timeout) != 2:
-                msg = f"Timeout tuple must contain exactly two elements: (connect_timeout, read_timeout), got {self.timeout}."  # type: ignore[unreachable]
-                raise ValueError(msg)
-            for t_val in self.timeout:
-                _validate_timeout(t_val)
-        else:
-            _validate_timeout(self.timeout)
+        if self.timeout is not None:
+            if isinstance(self.timeout, tuple):
+                if len(self.timeout) != 2:
+                    msg = f"Timeout tuple must contain exactly two elements: (connect_timeout, read_timeout), got {self.timeout}."  # type: ignore[unreachable]
+                    raise ValueError(msg)
+                for t_val in self.timeout:
+                    _validate_timeout(t_val)
+            else:
+                _validate_timeout(self.timeout)
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the API endpoint URL and headers for a given key.
@@ -195,7 +196,7 @@ class Config:
         Returns:
             tuple[str, dict[str, str]]: The constructed URL and headers dictionary.
         """
-        action = key.split("_")[0]
+        action = key.split("_", maxsplit=1)[0]
         name_lower = key.lower()
 
         if name_lower == "send":
@@ -346,7 +347,7 @@ class Endpoint:
             headers (dict[str, str] | None): Custom headers.
             id (int | str | None): Primary resource ID.
             action_id (int | str | None): Sub-action ID.
-            timeout (float | tuple[float, float] | None): Request timeout.
+            timeout (int | float | tuple[float, float] | None): Request timeout.
             ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
             data_encoding (str | None): Data encoding string (Deprecated).
             **kwargs (Any): Additional arguments.
@@ -355,7 +356,7 @@ class Endpoint:
             requests.Response: The HTTP response from the API.
         """
         if id is None and action_id is not None:
-            id = action_id
+            id = action_id  # noqa: A001
             action_id = None
 
         if filters is None and "filter" in kwargs:
@@ -664,7 +665,7 @@ class Client:
             filters (dict[str, Any] | None): Query parameters.
             data (dict[str, Any] | list[Any] | str | None): Request payload.
             headers (dict[str, str] | None): HTTP headers.
-            timeout (float | tuple[float, float] | None): Request timeout.
+            timeout (int | float | tuple[float, float] | None): Request timeout.
             ensure_ascii (bool | None): Ensure ASCII encoding (deprecated).
             data_encoding (str | None): Data encoding (deprecated).
             **kwargs (Any): Additional arguments.
