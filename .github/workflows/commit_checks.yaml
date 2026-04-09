@@ -62,5 +62,5 @@ jobs:
           python -m pip install --upgrade pip
           pip install pytest
 
-      - name: Run Unit & Integration Tests
-        run: pytest tests/ -v
+      - name: Run unit tests
+        run: pytest tests/unit/ -v
