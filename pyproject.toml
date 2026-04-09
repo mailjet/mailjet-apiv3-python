@@ -60,6 +60,7 @@ classifiers = [
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
         "Programming Language :: Python :: 3.13",
+        "Programming Language :: Python :: 3.14",
         "Programming Language :: Python :: 3 :: Only",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Communications :: Email",
@@ -74,85 +75,41 @@ classifiers = [
 
 [project.optional-dependencies]
 linting = [
-    # dev tools
-    "make",
-    "toml",
-    "autopep8",
     "bandit",
-    "black>=21.7",
-    "autoflake",
-    "flake8>=3.7.8",
-    "pep8-naming",
-    "isort",
-    "pycodestyle",
-    "pydocstyle",
-    "pyupgrade",
-    "refurb",
     "pre-commit",
     "ruff",
     "mypy",
-    "types-requests",   # mypy requests stub
-    "pandas-stubs",  # mypy pandas stub
-    "types-PyYAML",
-    "monkeytype",  # It can generate type hints based on the observed behavior of your code.
     "pyright",
-    "pylint",
-    "pyment>=0.3.3",  # for generating docstrings
-    "pytype",  # a static type checker for any type hints you have put in your code
-    "radon",
-    "safety", # Checks installed dependencies for known vulnerabilities and licenses.
+    "types-requests",
     "vulture",
-    # env variables
     "python-dotenv>=0.19.2",
 ]
 
-docs = [
-    "docconvert",
-    "pyment>=0.3.3",  # for generating docstrings
-]
-
-metrics = [
-    "pystra",  # provides functionalities to enable structural reliability analysis
-    "wily>=1.2.0",  # a tool for reporting code complexity metrics
-]
-
-profilers = ["scalene>=1.3.16", "snakeviz"]
-
 tests = [
-    # tests
     "pytest>=7.0.0",
-    "pytest-benchmark",
     "pytest-cov",
+    "pytest-xdist",
     "coverage>=4.5.4",
-    "codecov",
+    "pyfakefs",
 ]
 
-conda_build = ["conda-build"]
+profilers = [
+    "scalene>=1.3.16",
+    "snakeviz",
+]
+
+build = [
+    "python-build",
+    "twine",
+    "conda-build",
+]
 
 spelling = ["typos"]
 
-other = ["toml"]
-
-
-[tool.black]
-line-length = 120
-target-version = ["py310", "py311", "py312", "py313"]
-skip-string-normalization = false
-skip-magic-trailing-comma = false
-extend-exclude = '''
-/(
-  | docs
-  | setup.py
-  | venv
-)/
-'''
-
-[tool.autopep8]
-max_line_length = 120
-ignore = ""  # or ["E501", "W6"]
-in-place = true
-recursive = true
-aggressive = 3
+other = [
+    "jsonschema",
+    "types-jsonschema",
+]
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -186,9 +143,7 @@ exclude = [
 ]
 extend-exclude = ["tests", "test"]
 
-# Same as Black.
 line-length = 120
-#indent-width = 4
 
 # Assume Python 3.10.
 target-version = "py310"
@@ -197,50 +152,35 @@ show-fixes = true
 
 
 [tool.ruff.lint]
-# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
-# McCabe complexity (`C901`) by default.
-# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default, ('UP') is pyupgrade.
-# "ERA" - Found commented-out code
 # see https://docs.astral.sh/ruff/rules/#rules
 select = ["ALL"]
-#select = ["A", "ARG", "B", "C4", "DTZ", "E", "EM", "ERA", "EXE", "F", "FA", "FLY", "FURB", "G", "ICN", "INP", "INT", "LOG", "N", "PD", "PERF", "PIE", "PLC", "PLE", "PLW", "PT", "PTH", "PYI", "Q", "RET", "RSE", "RUF", "S", "SIM", "T10", "TID", "TRY", "UP", "W"]
 
 external = ["DOC", "PLR"]
 
 exclude = ["samples/*"]
 
-#extend-select = ["W", "N", "UP", "B", "A", "C4", "PT", "SIM", "PD", "PLE", "RUF"]
 # Never enforce `E501` (line length violations).
 ignore = [
-    # TODO: Fix unused function argument: `debug`, `kwargs`, and `method` in class Client
-    "ARG001",  #  ARG001 Unused function argument: `debug`, `kwargs`, and `method` in class Client
-    # TODO: Fix A001 Variable `TimeoutError` is shadowing a Python builtin
-    "A001" ,
-    # TODO: Fix A002 Argument `id` is shadowing a Python builtin
-    "A002",
-    "ANN401",  # ANN401 Dynamically typed expressions (typing.Any) are disallowed in `**kwargs`
-    "B904",  # Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None`
-    # pycodestyle (E, W)
-    "COM812",
-    "CPY001",   # Missing copyright notice at top of file
-    "DOC501",  # DOC501 Raised exception `TimeoutError` and `ApiError` missing from docstring
-    "E501",
+    # Architectural & backwards compatibility constraints
+    "A002",    # Argument `id` is shadowing a Python builtin
+    "ANN401",  # Dynamically typed expressions (typing.Any) are allowed for JSON payloads
     "FBT001",  # Boolean-typed positional argument in function definition
     "FBT002",  # Boolean default positional argument in function definition
-    # TODO: Replace with http.HTTPStatus, see https://docs.python.org/3/library/http.html#http-status-codes
-    "PLR2004",  # PLR2004 Magic value used in comparison, consider replacing `XXX` with a constant variable
-    "PLR0913",  # PLR0913 Too many arguments in function definition (6 > 5)
-    "PLR0917",  # PLR0917 Too many positional arguments
-    "Q003",   # Checks for avoidable escaped quotes ("\"" -> '"')
-    # TODO:" PT009 Use a regular `assert` instead of unittest-style `assertTrue`
-    "PT009",
-    "S311",  # S311 Standard pseudo-random generators are not suitable for cryptographic purposes
-    # TODO: T201 Replace `print` with logging functions
-    "T201",  # T201 `print` found
-    "PLC0207",  # PLC0207 Accessing only the first or last element of `str.split()` without setting `maxsplit=1`
 
+    # Complexity & Magic Numbers constraints for legacy SDK design
+    "PLR2004", # Magic value used in comparison
+    "PLR0913", # Too many arguments in function definition
+    "PLR0917", # Too many positional arguments
+
+    # Missing Documentation constraints
+    "CPY001",  # Missing copyright notice at top of file
+    "DOC501",  # Raised exception missing from docstring
+    "E501",    # Line length (handled by formatter)
+
+    # Formatter incompatibilities (Mandatory ignores when using Ruff Formatter)
+    "COM812",  # Trailing comma missing
+    "ISC001",  # Implicit string concatenation
 ]
-
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
@@ -260,19 +200,13 @@ docstring-quotes = "double"
 exclude = ["*.pyi"]
 # Like Black, use double quotes for strings.
 quote-style = "double"
-
 # Like Black, indent with spaces, rather than tabs.
 indent-style = "space"
-
 # Like Black, respect magic trailing commas.
 skip-magic-trailing-comma = false
-
 # Like Black, automatically detect the appropriate line ending.
 line-ending = "auto"
 
-# Enable auto-formatting of code examples in docstrings. Markdown,
-# reStructuredText code/literal blocks and doctests are all supported.
-#
 # This is currently disabled by default, but it is planned for this
 # to be opt-out in the future.
 #docstring-code-format = false
@@ -304,21 +238,6 @@ ignore-overlong-task-comments = true
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
-[tool.pydocstyle]
-convention = "google"
-match = ".*.py"
-match_dir = '^samples/'
-
-[tool.flake8]
-exclude = ["samples/*"]
-# TODO: D100 - create docstrings for modules test_client.py and test_version.py
-ignore = ['E501', "D100"]
-extend-ignore = "W503"
-per-file-ignores = [
-    '__init__.py:F401',
-]
-max-line-length = 120
-count = true
 
 [tool.mypy]
 strict = true
@@ -387,42 +306,18 @@ skips = ["B101", "B601"]
 
 [tool.bandit.any_other_function_with_shell_equals_true]
 no_shell = [
-  "os.execl",
-  "os.execle",
-  "os.execlp",
-  "os.execlpe",
-  "os.execv",
-  "os.execve",
-  "os.execvp",
-  "os.execvpe",
-  "os.spawnl",
-  "os.spawnle",
-  "os.spawnlp",
-  "os.spawnlpe",
-  "os.spawnv",
-  "os.spawnve",
-  "os.spawnvp",
-  "os.spawnvpe",
+  "os.execl", "os.execle", "os.execlp", "os.execlpe", "os.execv", "os.execve",
+  "os.execvp", "os.execvpe", "os.spawnl", "os.spawnle", "os.spawnlp",
+  "os.spawnlpe", "os.spawnv", "os.spawnve", "os.spawnvp", "os.spawnvpe",
   "os.startfile"
 ]
 shell = [
-  "os.system",
-  "os.popen",
-  "os.popen2",
-  "os.popen3",
-  "os.popen4",
-  "popen2.popen2",
-  "popen2.popen3",
-  "popen2.popen4",
-  "popen2.Popen3",
-  "popen2.Popen4",
-  "commands.getoutput",
-  "commands.getstatusoutput"
+  "os.system", "os.popen", "os.popen2", "os.popen3", "os.popen4",
+  "popen2.popen2", "popen2.popen3", "popen2.popen4", "popen2.Popen3",
+  "popen2.Popen4", "commands.getoutput", "commands.getstatusoutput"
 ]
 subprocess = [
-  "subprocess.Popen",
-  "subprocess.call",
-  "subprocess.check_call",
+  "subprocess.Popen", "subprocess.call", "subprocess.check_call",
   "subprocess.check_output"
 ]
 

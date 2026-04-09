@@ -7,3 +7,4 @@ dependencies:
   - pip
   # runtime deps
   - requests >=2.32.5
+  - typing-extensions>=4.7.1  # [py<311]

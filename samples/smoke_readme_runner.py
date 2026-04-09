@@ -8,7 +8,6 @@ import base64
 import os
 import uuid
 import logging
-from contextlib import suppress
 
 from mailjet_rest import Client
 
@@ -147,10 +146,10 @@ def run_readme_tests():
         # ---------------------------------------------------------------------
         section("Content API (v1)")
 
-        # Negative Upload (Ported from old smoke_test.py)
+        # Negative Upload
         client_logger = logging.getLogger("mailjet_rest.client")
         prev_level = client_logger.level
-        client_logger.setLevel(logging.CRITICAL)  # Suppress expected 400 error in console
+        client_logger.setLevel(logging.CRITICAL)
         try:
             res = mailjet_v1.data_images.create(data={"name": "test.png", "image_data": "iVBORw0KGgo="})
             assert res.status_code == 400
@@ -169,7 +168,7 @@ def run_readme_tests():
         print("✅ Content API (Image Upload) passed.")
 
         # ---------------------------------------------------------------------
-        # 5. ADDITIONAL HEALTH CHECKS (Ported from old smoke_test.py)
+        # 5. ADDITIONAL HEALTH CHECKS (Read-Only)
         # ---------------------------------------------------------------------
         section("Additional Health Checks (Read-Only)")
 
