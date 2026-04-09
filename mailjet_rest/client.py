@@ -333,7 +333,7 @@ class Endpoint:
         headers: dict[str, str] | None = None,
         id: int | str | None = None,
         action_id: int | str | None = None,
-        timeout: float | tuple[float, float] | None = None,
+        timeout: int | float | tuple[float, float] | None = None,  # noqa: PYI041
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
@@ -652,7 +652,7 @@ class Client:
         filters: dict[str, Any] | None = None,
         data: dict[str, Any] | list[Any] | str | None = None,
         headers: dict[str, str] | None = None,
-        timeout: float | tuple[float, float] | None = None,
+        timeout: int | float | tuple[float, float] | None = None,  # noqa: PYI041
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
