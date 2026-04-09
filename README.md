@@ -174,7 +174,12 @@ You can pass configuration overrides directly when initializing the `Client` or 
 
 ```python
 # Set custom base URL, timeout, and API version
-mailjet = Client(auth=(api_key, api_secret), version="v3.1", api_url="https://api.us.mailjet.com/", timeout=30)
+mailjet = Client(
+    auth=(api_key, api_secret),
+    version="v3.1",
+    api_url="https://api.us.mailjet.com/",
+    timeout=30,
+)
 
 # Override timeout for a single, heavy request
 result = mailjet.contact.get(timeout=60)
@@ -504,10 +509,18 @@ Retrieve performance counters using `statcounters` or location-based statistics 
 from mailjet_rest import Client
 import os
 
-mailjet = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
+mailjet = Client(
+    auth=(
+        os.environ.get("MJ_APIKEY_PUBLIC", ""),
+        os.environ.get("MJ_APIKEY_PRIVATE", ""),
+    )
+)
 
-filters = {"CounterSource": "APIKey", "CounterTiming": "Message", "CounterResolution": "Lifetime"}
-
+filters = {
+    "CounterSource": "APIKey",
+    "CounterTiming": "Message",
+    "CounterResolution": "Lifetime",
+}
 # Getting general statistics
 result = mailjet.statcounters.get(filters=filters)
 print(result.status_code)
