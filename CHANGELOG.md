@@ -13,14 +13,15 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Added
 
+- Official support for Python 3.14 (added to CI test matrix and PyPI classifiers).
+- Runtime dependency `typing-extensions>=4.7.1` for Python versions `<3.11` to support modern type hinting.
 - Context Managers (Resource Management): The `Client` now supports the `with` statement (`__enter__` / `__exit__`) for automatic TCP connection pooling and socket cleanup, preventing resource leaks.
 - Smart Telemetry: The SDK now automatically extracts Mailjet Trace IDs (`CustomID`, `Campaign`, `TemplateID`) from payloads and headers, injecting them into debug logs for easier correlation with the Mailjet Dashboard.
 - Executable Documentation: Added `samples/smoke_readme_runner.py` as a dynamic test suite to guarantee all `README.md` examples are continuously validated and functional against the live API.
 - Developer Experience (DX) Guardrails: The SDK now logs explicit warnings when encountering ambiguous routing configurations (e.g., using the singular `template` resource on Content API `v1`, or attempting to route the Send API outside of `v3`/`v3.1`).
 - Content API (v1): Native `multipart/form-data` upload support using the `requests` `files` kwarg for the `data_images` endpoint.
-- DX Guardrails: The SDK now logs explicit warnings when encountering ambiguous routing configurations (e.g., using the singular `template` resource on Content API `v1`).
 - Safe Exceptions: Network errors are now safely encapsulated in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`, `ApiError`).
-- CentralNative Logging: Centralized HTTP status and debug logging in `api_call` using standard Python `logging`.
+- Native Logging: Centralized HTTP status and debug logging in `api_call` using standard Python `logging`.
 - Validated and added explicit test coverage for Issue #97, proving `TemplateLanguage` and `Variables` are correctly serialized by the SDK.
 
 ### Changed
@@ -29,15 +30,17 @@ We [keep a changelog.](http://keepachangelog.com/)
 - CI/CD Optimization: Drastically improved GitHub Actions speed and reliability by implementing native pip dependency caching (`cache: 'pip'`) and isolated wheel installation tests.
 - Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for robust connection pooling on multiple sequential requests.
 - Refactored `Endpoint._build_url` cyclomatic complexity by extracting pure `@staticmethod` helpers (`_build_csv_url`, `_check_dx_guardrails`) to satisfy strict static analysis.
-- Expanded `pre-commit` hooks for robust linting, formatting, and typing (`ruff`, `mypy`, `pyright`, `typos`, etc.).
+- Expanded `pre-commit` hooks for robust security and formatting (ruff, mypy, pyright, typos, bandit, semgrep).
 - Defined explicit public module interfaces using `__all__` to prevent namespace pollution.
 - Fixed `statcounters` required filters (explicitly added the `CounterTiming` parameter).
 - Cleaned up local development environments (`environment-dev.yaml`) and pinned sub-dependencies for stable CI pipelines.
+- Tooling Consolidation: Completely migrated to Ruff as the single source of truth for linting and formatting, purging legacy tools (Black, Flake8, Pylint, Pydocstyle) from `pyproject.toml` and Conda environments.
+- Documentation: Rewrote `README.md` to highlight modern DX configurations, including Context Managers, robust Error Handling, and Smart Telemetry.
 
 ### Deprecated
 
 - Legacy HTTP exception classes (`AuthorizationError`, `ApiRateLimitError`, `DoesNotExistError`, `ValidationError`, `ActionDeniedError`). The SDK natively returns the `requests.Response` object for standard HTTP status codes.
-- The legacy `ensure_ascii` and `data_encoding` arguments in the `create` and `update` method signatures. The underlying `requests` library handles UTF-8 serialization natively..
+- The legacy `ensure_ascii` and `data_encoding` arguments in the `create` and `update` method signatures. The underlying `requests` library handles UTF-8 serialization natively.
 - The `parse_response` and `logging_handler` utility functions. Logging is now integrated cleanly and automatically via Python's standard `logging` library. See the `README` for the new 2-line setup.
 
 ### Removed
