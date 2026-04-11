@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
 from urllib.parse import quote
-from urllib.parse import urlparse
 
 import requests  # pyright: ignore[reportMissingModuleSource]
 from requests.adapters import HTTPAdapter
@@ -27,7 +26,12 @@ from requests.exceptions import Timeout as RequestsTimeout
 from urllib3.util.retry import Retry
 
 from mailjet_rest._version import __version__
+from mailjet_rest.utils.guardrails import check_request_security
+from mailjet_rest.utils.guardrails import sanitize_log_trace
 from mailjet_rest.utils.guardrails import validate_attribute_access
+from mailjet_rest.utils.guardrails import validate_config_url
+from mailjet_rest.utils.guardrails import validate_crlf_headers
+from mailjet_rest.utils.guardrails import validate_dx_routing
 
 
 if TYPE_CHECKING:
@@ -121,12 +125,11 @@ def parse_response(response: requests.Response, debug: bool = False) -> dict[str
     Returns:
         dict[str, Any] | str: The parsed JSON dictionary or raw text string.
     """
-    warnings.warn(
+    msg = (
         "parse_response is deprecated and will be removed in future releases. "
-        "Please use response.json() or response.text directly on the requests.Response object.",
-        DeprecationWarning,
-        stacklevel=2,
+        "Please use response.json() or response.text directly on the requests.Response object."
     )
+    warnings.warn(msg, DeprecationWarning, stacklevel=2)
     try:
         return response.json()
     except ValueError:
@@ -139,13 +142,11 @@ def logging_handler(response: requests.Response) -> None:  # noqa: ARG001
     Args:
         response (requests.Response): The HTTP response.
     """
-    warnings.warn(
+    msg = (
         "logging_handler is deprecated and will be removed in future releases. "
-        "Logging is now integrated cleanly and automatically via Python's standard `logging` library.",
-        DeprecationWarning,
-        stacklevel=2,
+        "Logging is now integrated cleanly and automatically via Python's standard `logging` library."
     )
-    # The SDK's api_call method now logs natively.
+    warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
 
 # --- Core Classes ---
@@ -162,30 +163,24 @@ class Config:
 
     def __post_init__(self) -> None:
         """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
-        parsed = urlparse(self.api_url)
-        if parsed.scheme != "https":
-            msg = f"Secure connection required: api_url scheme must be 'https', got '{parsed.scheme}'."
-            raise ValueError(msg)
-        if not parsed.hostname:
-            msg = "Invalid api_url: missing hostname."
-            raise ValueError(msg)
+        validate_config_url(self.api_url)
         if not self.api_url.endswith("/"):
             self.api_url += "/"
 
         def _validate_timeout(t: float) -> None:
             if t <= 0 or t > 300:
-                msg = f"Timeout values must be strictly between 1 and 300 seconds, got {t}."
-                raise ValueError(msg)
+                err_msg = f"Timeout values must be strictly between 1 and 300 seconds, got {t}."
+                raise ValueError(err_msg)
 
         if self.timeout is not None:
             if isinstance(self.timeout, tuple):
                 if len(self.timeout) != 2:
-                    msg = f"Timeout tuple must contain exactly two elements: (connect_timeout, read_timeout), got {self.timeout}."  # type: ignore[unreachable]
+                    msg = f"Timeout tuple must contain exactly two elements, got {self.timeout}."
                     raise ValueError(msg)
                 for t_val in self.timeout:
                     _validate_timeout(t_val)
             else:
-                _validate_timeout(self.timeout)
+                _validate_timeout(self.timeout)  # type: ignore[arg-type]
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the API endpoint URL and headers for a given key.
@@ -220,27 +215,17 @@ class Endpoint:
     """A class representing a specific Mailjet API endpoint."""
 
     def __init__(self, client: Client, name: str) -> None:
-        """Initialize a new Endpoint instance."""
+        """Initialize a new Endpoint instance.
+
+        Args:
+            client (Client): The core client instance.
+            name (str): The endpoint resource name.
+        """
         self.client = client
         self.name = name
 
     @staticmethod
-    def _check_dx_guardrails(version: str, name_lower: str, resource_lower: str) -> None:
-        """Emit warnings for ambiguous routing scenarios."""
-        msg = ""
-        if name_lower == "send" and version not in {"v3", "v3.1"}:
-            msg = f"Mailjet API Ambiguity: The Send API is only available on 'v3' and 'v3.1'. Routing via '{version}' will likely result in a 404 Not Found."
-        elif version == "v1" and resource_lower == "template":
-            msg = "Mailjet API Ambiguity: Content API (v1) uses the plural '/templates' resource. Requesting the singular '/template' may result in a 404 Not Found."
-        elif version.startswith("v3") and resource_lower == "templates":
-            msg = f"Mailjet API Ambiguity: Email API ({version}) uses the singular '/template' resource. Requesting the plural '/templates' may result in a 404 Not Found."
-
-        if msg:
-            warnings.warn(msg, DeprecationWarning, stacklevel=3)
-            logger.warning(msg)
-
-    @staticmethod
-    def _build_csv_url(base_url: str, version: str, resource: str, name_lower: str, id: int | str | None) -> str:
+    def _build_csv_url(base_url: str, version: str, resource: str, name_lower: str, id_val: int | str | None) -> str:
         """Construct the URL for CSV data endpoints.
 
         Args:
@@ -248,23 +233,23 @@ class Endpoint:
             version (str): The API version.
             resource (str): The base resource name.
             name_lower (str): The lowercase endpoint name.
-            id (int | str | None): The primary resource ID.
+            id_val (int | str | None): The primary resource ID.
 
         Returns:
             str: The fully constructed CSV endpoint URL.
         """
         url = f"{base_url}/{version}/DATA/{resource}"
-        if id is not None:
-            safe_id = quote(str(id), safe="")
+        if id_val is not None:
+            safe_id = quote(str(id_val), safe="")
             suffix = "CSVData/text:plain" if name_lower.endswith("_csvdata") else "CSVError/text:csv"
             url += f"/{safe_id}/{suffix}"
         return url
 
-    def _build_url(self, id: int | str | None = None, action_id: int | str | None = None) -> str:
+    def _build_url(self, id_val: int | str | None = None, action_id: int | str | None = None) -> str:
         """Construct the URL for the specific API request.
 
         Args:
-            id (int | str | None): The primary resource ID.
+            id_val (int | str | None): The primary resource ID.
             action_id (int | str | None): The sub-action ID.
 
         Returns:
@@ -278,13 +263,13 @@ class Endpoint:
         resource = action_parts[0]
         resource_lower = resource.lower()
 
-        self._check_dx_guardrails(version, name_lower, resource_lower)
+        validate_dx_routing(version, name_lower, resource_lower)
 
         if name_lower == "send":
             return f"{base_url}/{version}/send"
 
         if name_lower.endswith(("_csvdata", "_csverror")):
-            return self._build_csv_url(base_url, version, resource, name_lower, id)
+            return self._build_csv_url(base_url, version, resource, name_lower, id_val)
 
         if resource_lower == "data":
             action_path = "/".join(action_parts)
@@ -292,8 +277,8 @@ class Endpoint:
         else:
             url = f"{base_url}/{version}/REST/{resource}"
 
-        if id is not None:
-            safe_id = quote(str(id), safe="")
+        if id_val is not None:
+            safe_id = quote(str(id_val), safe="")
             url += f"/{safe_id}"
 
         if len(action_parts) > 1 and resource_lower != "data":
@@ -322,6 +307,7 @@ class Endpoint:
             headers["Content-Type"] = "application/json"
 
         if custom_headers:
+            validate_crlf_headers(custom_headers)
             headers.update(custom_headers)
         return headers
 
@@ -331,7 +317,7 @@ class Endpoint:
         filters: dict[str, Any] | None = None,
         data: dict[str, Any] | list[Any] | str | None = None,
         headers: dict[str, str] | None = None,
-        id: int | str | None = None,
+        id: int | str | None = None,  # noqa: A002
         action_id: int | str | None = None,
         timeout: int | float | tuple[float, float] | None = None,  # noqa: PYI041
         ensure_ascii: bool | None = None,
@@ -366,7 +352,7 @@ class Endpoint:
 
         return self.client.api_call(
             method=method,
-            url=self._build_url(id=id, action_id=action_id),
+            url=self._build_url(id_val=id, action_id=action_id),
             filters=filters,
             data=data,
             headers=self._build_headers(headers),
@@ -378,7 +364,7 @@ class Endpoint:
 
     def get(
         self,
-        id: int | str | None = None,
+        id: int | str | None = None,  # noqa: A002
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
         **kwargs: Any,
@@ -399,7 +385,7 @@ class Endpoint:
     def create(
         self,
         data: dict[str, Any] | list[Any] | str | None = None,
-        id: int | str | None = None,
+        id: int | str | None = None,  # noqa: A002
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
@@ -419,12 +405,11 @@ class Endpoint:
             requests.Response: The HTTP response from the API.
         """
         if ensure_ascii is not None or data_encoding is not None:
-            warnings.warn(
-                "'ensure_ascii' and 'data_encoding' are deprecated and will be removed in a future release. "
-                "The underlying requests library handles serialization natively.",
-                DeprecationWarning,
-                stacklevel=2,
+            msg = (
+                "'ensure_ascii' and 'data_encoding' are deprecated and will be removed in future releases. "
+                "The underlying requests library handles serialization natively."
             )
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
         return self(
             method="POST",
             data=data,
@@ -437,7 +422,7 @@ class Endpoint:
 
     def update(
         self,
-        id: int | str,
+        id: int | str,  # noqa: A002
         data: dict[str, Any] | list[Any] | str | None = None,
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
@@ -458,12 +443,11 @@ class Endpoint:
             requests.Response: The HTTP response from the API.
         """
         if ensure_ascii is not None or data_encoding is not None:
-            warnings.warn(
-                "'ensure_ascii' and 'data_encoding' are deprecated and will be removed in a future release. "
-                "The underlying requests library handles serialization natively.",
-                DeprecationWarning,
-                stacklevel=2,
+            msg = (
+                "'ensure_ascii' and 'data_encoding' are deprecated and will be removed in future releases. "
+                "The underlying requests library handles serialization natively."
             )
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
         return self(
             method="PUT",
             id=id,
@@ -474,7 +458,7 @@ class Endpoint:
             **kwargs,
         )
 
-    def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:
+    def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:  # noqa: A002
         """Perform a DELETE request to remove a resource.
 
         Args:
@@ -513,20 +497,20 @@ class Client:
         if auth is not None:
             if isinstance(auth, tuple):
                 if len(auth) != 2:
-                    msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."  # type: ignore[unreachable]
+                    msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."
                     raise ValueError(msg)
                 self.session.auth = (str(auth[0]).strip(), str(auth[1]).strip())
             elif isinstance(auth, str):
                 clean_token = auth.strip()
                 if not clean_token:
-                    msg = "Bearer token cannot be an empty string."
-                    raise ValueError(msg)
+                    err_msg = "Bearer token cannot be an empty string."
+                    raise ValueError(err_msg)
                 if "\n" in clean_token or "\r" in clean_token:
-                    msg = "Bearer token contains invalid characters (Header Injection risk)."
-                    raise ValueError(msg)
+                    err_msg = "Bearer token contains invalid characters (Header Injection risk)."
+                    raise ValueError(err_msg)
                 self.session.headers.update({"Authorization": f"Bearer {clean_token}"})
             else:
-                msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"  # type: ignore[unreachable]
+                msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"
                 raise TypeError(msg)
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
@@ -588,60 +572,97 @@ class Client:
         return f"Mailjet Client ({self.config.version})"
 
     @staticmethod
-    def _extract_data_trace(data: dict[str, Any], trace_ctx: list[str]) -> None:
-        """Extract telemetry trace IDs from the request payload.
+    def _prepare_payload(data: Any, ensure_ascii: bool | None, data_encoding: str | None) -> Any:
+        """Format request payload, supporting deprecated legacy serialization.
 
         Args:
-            data (dict[str, Any]): The request payload.
-            trace_ctx (list[str]): The list to append trace IDs to.
-        """
-        messages = data.get("Messages")
-        if isinstance(messages, list) and messages and isinstance(messages[0], dict):
-            if cid := messages[0].get("CustomID"):
-                trace_ctx.append(f"CustomID={cid}")
-            if tid := messages[0].get("TemplateID"):
-                trace_ctx.append(f"TemplateID={tid}")
+            data (Any): Input data.
+            ensure_ascii (bool | None): ASCII serialization flag.
+            data_encoding (str | None): Target encoding string.
 
-        if cid := data.get("X-MJ-CustomID"):
-            trace_ctx.append(f"CustomID={cid}")
-        if camp := data.get("X-Mailjet-Campaign"):
-            trace_ctx.append(f"Campaign={camp}")
+        Returns:
+            Any: The formatted payload as string, bytes, or None.
+        """
+        if not isinstance(data, (dict, list)):
+            return data
+
+        dump_kwargs: dict[str, Any] = {}
+        if ensure_ascii is not None:
+            dump_kwargs["ensure_ascii"] = ensure_ascii
+
+        request_data = json.dumps(data, **dump_kwargs)
+
+        if data_encoding is not None and isinstance(request_data, str):
+            # Return encoded bytes directly to avoid MyPy assignment conflict [str vs bytes]
+            return request_data.encode(data_encoding)
+
+        return request_data
 
     @staticmethod
-    def _extract_header_trace(headers: dict[str, str], trace_ctx: list[str]) -> None:
-        """Extract telemetry trace IDs from the request headers.
+    def _log_response(response: requests.Response, method: str, url: str, trace_str: str) -> None:
+        """Centralized logging for API responses.
 
         Args:
-            headers (dict[str, str]): The request headers.
-            trace_ctx (list[str]): The list to append trace IDs to.
+            response (requests.Response): The response object.
+            method (str): HTTP method.
+            url (str): Target URL.
+            trace_str (str): Formatted telemetry string.
         """
-        for k, v in headers.items():
-            k_lower = k.lower()
-            if k_lower == "x-mj-customid":
-                trace_ctx.append(f"CustomID={v}")
-            elif k_lower == "x-mailjet-campaign":
-                trace_ctx.append(f"Campaign={v}")
+        try:
+            is_error = response.status_code >= 400
+        except TypeError:
+            is_error = False
+
+        if is_error:
+            logger.error(
+                "API Error %s | %s %s%s | Response: %s",
+                response.status_code,
+                method,
+                url,
+                trace_str,
+                getattr(response, "text", ""),
+            )
+        else:
+            logger.debug(
+                "API Success %s | %s %s%s",
+                getattr(response, "status_code", 200),
+                method,
+                url,
+                trace_str,
+            )
 
     @staticmethod
-    def _extract_telemetry_trace(
-        data: dict[str, Any] | list[Any] | str | None,
-        headers: dict[str, str] | None,
-    ) -> str:
-        """Extract telemetry trace IDs from request data and headers.
+    def _extract_telemetry(data: Any, headers: dict[str, str] | None) -> str:
+        """Extract tracing identifiers for safe logging.
 
         Args:
-            data (dict[str, Any] | list[Any] | str | None): Request payload.
+            data (Any): The request payload.
             headers (dict[str, str] | None): Request headers.
 
         Returns:
-            str: A formatted trace string.
+            str: A formatted telemetry trace suffix.
         """
-        trace_ctx: list[str] = []
+        trace_ctx = []
         with suppress(Exception):
             if isinstance(data, dict):
-                Client._extract_data_trace(data, trace_ctx)
+                messages = data.get("Messages", [{}])
+                msg = messages[0] if isinstance(messages, list) and messages else {}
+                if cid := msg.get("CustomID"):
+                    trace_ctx.append(f"CustomID={sanitize_log_trace(cid)}")
+                if tid := msg.get("TemplateID"):
+                    trace_ctx.append(f"TemplateID={sanitize_log_trace(tid)}")
+                if cid_raw := data.get("X-MJ-CustomID"):
+                    trace_ctx.append(f"CustomID={sanitize_log_trace(cid_raw)}")
+                if camp := data.get("X-Mailjet-Campaign"):
+                    trace_ctx.append(f"Campaign={sanitize_log_trace(camp)}")
+
             if headers:
-                Client._extract_header_trace(headers, trace_ctx)
+                for key, val in headers.items():
+                    k_low = key.lower()
+                    if k_low == "x-mj-customid":
+                        trace_ctx.append(f"CustomID={sanitize_log_trace(val)}")
+                    elif k_low == "x-mailjet-campaign":
+                        trace_ctx.append(f"Campaign={sanitize_log_trace(val)}")
 
         return f" | Trace: [{' '.join(trace_ctx)}]" if trace_ctx else ""
 
@@ -678,18 +699,12 @@ class Client:
             CriticalApiError: If there is a connection failure.
             ApiError: For other unhandled request exceptions.
         """
-        request_data: Any = data
-        if isinstance(data, (dict, list)):
-            request_data = json.dumps(data, ensure_ascii=ensure_ascii) if ensure_ascii is not None else json.dumps(data)
+        request_data = self._prepare_payload(data, ensure_ascii, data_encoding)
+        timeout_val = timeout if timeout is not None else self.config.timeout
 
-            # Legacy encoding support
-            if data_encoding is not None and isinstance(request_data, str):
-                request_data = request_data.encode(data_encoding)
-
-        if timeout is None:
-            timeout = self.config.timeout
-
-        trace_str = self._extract_telemetry_trace(data, headers)
+        trace_str = self._extract_telemetry(data, headers)
+        check_request_security(kwargs)
+        kwargs.setdefault("allow_redirects", False)
 
         logger.debug("Sending Request: %s %s%s", method, url, trace_str)
 
@@ -700,7 +715,7 @@ class Client:
                 params=filters,
                 data=request_data,
                 headers=headers,
-                timeout=timeout,
+                timeout=timeout_val,
                 **kwargs,
             )
         except RequestsTimeout as error:
@@ -716,27 +731,5 @@ class Client:
             msg = f"An unexpected Mailjet API network error occurred: {error}"
             raise ApiError(msg) from error
 
-        try:
-            is_error = response.status_code >= 400
-        except TypeError:
-            is_error = False
-
-        if is_error:
-            logger.error(
-                "API Error %s | %s %s%s | Response: %s",
-                response.status_code,
-                method,
-                url,
-                trace_str,
-                getattr(response, "text", ""),
-            )
-        else:
-            logger.debug(
-                "API Success %s | %s %s%s",
-                getattr(response, "status_code", 200),
-                method,
-                url,
-                trace_str,
-            )
-
+        self._log_response(response, method, url, trace_str)
         return response

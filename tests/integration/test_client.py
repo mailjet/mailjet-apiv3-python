@@ -166,6 +166,14 @@ def test_live_path_traversal_prevention(client_live: Client) -> None:
     assert result.status_code in (400, 404)
 
 
+def test_live_crlf_header_injection_blocked(client_live: Client) -> None:
+    """Verify that the SDK intercepts HTTP Request Smuggling attempts before hitting the network."""
+    malicious_header = "iOS-App\r\nTransfer-Encoding: chunked\r\n\r\n[Malicious Body]"
+
+    with pytest.raises(ValueError, match="CRLF Injection detected in header"):
+        client_live.contact.get(headers={"X-User-Agent": malicious_header})
+
+
 # --- Error Path & General Routing Tests ---
 
 def test_live_send_api_v3_1_bad_payload(client_live: Client) -> None:
@@ -282,3 +290,7 @@ def test_live_content_api_images_multipart_upload() -> None:
 
         result = client_v1.data_images.create(headers={"Content-Type": None}, files=files_payload)
         assert result.status_code == 201
+
+        # Lifecycle rule: Clean up the uploaded image so we don't pollute the server
+        image_id = result.json()["Data"][0]["ID"]
+        client_v1.data_images.delete(id=image_id)

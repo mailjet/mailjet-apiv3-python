@@ -6,8 +6,13 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Security
 
-- Prevented Path Traversal (CWE-22) vulnerabilities by enforcing strict URL encoding (`urllib.parse.quote`) on all dynamically injected path parameters (`id` and `action_id`).
-- Prevented cleartext transmission (CWE-319) by enforcing strict `api_url` scheme validation (`https`) and hostname presence during `Config` initialization.
+- **CWE-22 (Prevented Path Traversal):** Prevented vulnerabilities by enforcing strict URL encoding (`urllib.parse.quote`) on all dynamically injected path parameters (`id` and `action_id`).
+- **CWE-113 (CRLF Injection):** Added strict header validation to block HTTP Request Smuggling.
+- **CWE-117 (Log Forging):** Implemented mandatory sanitization of telemetry data.
+- **CWE-316 (Secret Leakage):** Enhanced `__repr__` and `__str__` to prevent sensitive data from appearing in stack traces.
+- **CWE-319 (Cleartext transmission):** Prevented by enforcing strict `api_url` scheme validation (`https`) and hostname presence during `Config` initialization.
+- **CWE-601 (Open Redirect):** Hard-disabled automatic redirects (`allow_redirects=False`) for all API calls.
+- **CWE-918 (SSRF):** Added hostname validation to prevent credential exfiltration to non-Mailjet domains.
 - Added comprehensive security scanning to the CI/CD pipeline (`bandit`, `semgrep`, `gitleaks`, `detect-secrets`).
 - Updated `SECURITY.md` policy to clarify supported active branches.
 
@@ -16,6 +21,9 @@ We [keep a changelog.](http://keepachangelog.com/)
 - Official support for Python 3.14 (added to CI test matrix and PyPI classifiers).
 - Runtime dependency `typing-extensions>=4.7.1` for Python versions `<3.11` to support modern type hinting.
 - Context Managers (Resource Management): The `Client` now supports the `with` statement (`__enter__` / `__exit__`) for automatic TCP connection pooling and socket cleanup, preventing resource leaks.
+- New `mailjet_rest.utils.guardrails` module for centralized security and routing validation.
+- `sanitize_log_trace` utility to protect against Log Forging attacks.
+- Proactive `UserWarning` for insecure TLS configurations and unencrypted HTTP proxies.
 - Smart Telemetry: The SDK now automatically extracts Mailjet Trace IDs (`CustomID`, `Campaign`, `TemplateID`) from payloads and headers, injecting them into debug logs for easier correlation with the Mailjet Dashboard.
 - Executable Documentation: Added `samples/smoke_readme_runner.py` as a dynamic test suite to guarantee all `README.md` examples are continuously validated and functional against the live API.
 - Developer Experience (DX) Guardrails: The SDK now logs explicit warnings when encountering ambiguous routing configurations (e.g., using the singular `template` resource on Content API `v1`, or attempting to route the Send API outside of `v3`/`v3.1`).

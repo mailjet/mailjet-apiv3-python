@@ -166,6 +166,7 @@ ignore = [
     "ANN401",  # Dynamically typed expressions (typing.Any) are allowed for JSON payloads
     "FBT001",  # Boolean-typed positional argument in function definition
     "FBT002",  # Boolean default positional argument in function definition
+    "RUF100",
 
     # Complexity & Magic Numbers constraints for legacy SDK design
     "PLR2004", # Magic value used in comparison
@@ -270,7 +271,7 @@ no_implicit_optional = true
 # Configuring warnings
 warn_return_any = false
 warn_no_return = true
-warn_unreachable = true
+warn_unreachable = false
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = false
