@@ -10,9 +10,9 @@ import uuid
 import logging
 import warnings
 import time
-from contextlib import suppress
 
 from mailjet_rest import Client
+
 
 # Enable logging to see the Smart Telemetry and Guardrails in action!
 logging.getLogger("urllib3").setLevel(logging.WARNING)

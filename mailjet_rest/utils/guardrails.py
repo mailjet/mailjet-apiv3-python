@@ -51,11 +51,12 @@ def check_request_security(kwargs: dict[str, Any]) -> None:
         warnings.warn(msg, UserWarning, stacklevel=4)
 
 
-def validate_config_url(api_url: str) -> None:
+def validate_config_url(api_url: str, allowed_root_domain: str = "mailjet.com") -> None:
     """Validate API URL for secure transport and Anti-SSRF (CWE-918).
 
     Args:
         api_url (str): The base URL for the Mailjet API.
+        allowed_root_domain (str): The permitted root domain to prevent SSRF.
 
     Raises:
         ValueError: If the scheme is not HTTPS or the hostname is missing.
@@ -67,7 +68,10 @@ def validate_config_url(api_url: str) -> None:
     if not parsed.hostname:
         err_msg = "Invalid api_url: missing hostname."
         raise ValueError(err_msg)
-    if not parsed.hostname.endswith("mailjet.com"):
+
+    hostname = parsed.hostname.lower()
+    # Explicitly verify exact match OR valid subdomain match to prevent CWE-20/CWE-918 bypass
+    if hostname != allowed_root_domain and not hostname.endswith(f".{allowed_root_domain}"):
         warn_msg = f"Security Warning: api_url points to a non-Mailjet domain ({parsed.hostname})."
         warnings.warn(warn_msg, UserWarning, stacklevel=3)
 

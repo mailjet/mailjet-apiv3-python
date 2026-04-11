@@ -15,6 +15,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import ClassVar
 from typing import Literal
 from urllib.parse import quote
 
@@ -156,6 +157,8 @@ def logging_handler(response: requests.Response) -> None:  # noqa: ARG001
 class Config:
     """Configuration settings for interacting with the Mailjet API."""
 
+    ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
+
     version: str = "v3"
     api_url: str = "https://api.mailjet.com/"
     user_agent: str = f"mailjet-apiv3-python/v{__version__}"
@@ -163,7 +166,7 @@ class Config:
 
     def __post_init__(self) -> None:
         """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
-        validate_config_url(self.api_url)
+        validate_config_url(self.api_url, allowed_root_domain=self.ALLOWED_ROOT_DOMAIN)
         if not self.api_url.endswith("/"):
             self.api_url += "/"
 

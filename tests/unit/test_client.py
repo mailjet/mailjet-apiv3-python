@@ -267,12 +267,15 @@ def test_http_methods_and_timeout(client_offline: Client, monkeypatch: pytest.Mo
         return resp
 
     monkeypatch.setattr(client_offline.session, "request", mock_request)
-
-    assert client_offline.contact.get(timeout=15).text == "GET"
-    assert client_offline.contact.create(timeout=15).text == "POST"
+    get_resp = client_offline.contact.get(timeout=15).text
+    assert get_resp == "GET"
+    post_resp = client_offline.contact.create(timeout=15).text
+    assert post_resp == "POST"
     # Ensure public 'id' works for update
-    assert client_offline.contact.update(id=1, timeout=15).text == "PUT"
-    assert client_offline.contact.delete(id=1, timeout=15).text == "DELETE"
+    update_resp = client_offline.contact.update(id=1, timeout=15).text
+    assert update_resp == "PUT"
+    delete_resp = client_offline.contact.delete(id=1, timeout=15).text
+    assert delete_resp == "DELETE"
 
 
 def test_client_coverage_edge_cases(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
