@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import ClassVar
 from typing import Literal
+from typing import cast
 from urllib.parse import quote
 
 import requests  # pyright: ignore[reportMissingModuleSource]
@@ -27,12 +28,7 @@ from requests.exceptions import Timeout as RequestsTimeout
 from urllib3.util.retry import Retry
 
 from mailjet_rest._version import __version__
-from mailjet_rest.utils.guardrails import check_request_security
-from mailjet_rest.utils.guardrails import sanitize_log_trace
-from mailjet_rest.utils.guardrails import validate_attribute_access
-from mailjet_rest.utils.guardrails import validate_config_url
-from mailjet_rest.utils.guardrails import validate_crlf_headers
-from mailjet_rest.utils.guardrails import validate_dx_routing
+from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 if TYPE_CHECKING:
@@ -166,7 +162,7 @@ class Config:
 
     def __post_init__(self) -> None:
         """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
-        validate_config_url(self.api_url, allowed_root_domain=self.ALLOWED_ROOT_DOMAIN)
+        SecurityGuard.validate_config_url(self.api_url, allowed_root_domain=self.ALLOWED_ROOT_DOMAIN)
         if not self.api_url.endswith("/"):
             self.api_url += "/"
 
@@ -177,13 +173,14 @@ class Config:
 
         if self.timeout is not None:
             if isinstance(self.timeout, tuple):
+                # type: ignore[unreachable]
                 if len(self.timeout) != 2:
                     msg = f"Timeout tuple must contain exactly two elements, got {self.timeout}."
                     raise ValueError(msg)
                 for t_val in self.timeout:
                     _validate_timeout(t_val)
             else:
-                _validate_timeout(self.timeout)  # type: ignore[arg-type]
+                _validate_timeout(cast("float", self.timeout))
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the API endpoint URL and headers for a given key.
@@ -266,7 +263,7 @@ class Endpoint:
         resource = action_parts[0]
         resource_lower = resource.lower()
 
-        validate_dx_routing(version, name_lower, resource_lower)
+        SecurityGuard.validate_dx_routing(version, name_lower, resource_lower)
 
         if name_lower == "send":
             return f"{base_url}/{version}/send"
@@ -310,7 +307,7 @@ class Endpoint:
             headers["Content-Type"] = "application/json"
 
         if custom_headers:
-            validate_crlf_headers(custom_headers)
+            SecurityGuard.validate_crlf_headers(custom_headers)
             headers.update(custom_headers)
         return headers
 
@@ -499,7 +496,7 @@ class Client:
 
         if auth is not None:
             if isinstance(auth, tuple):
-                if len(auth) != 2:
+                if len(auth) != 2:  # type: ignore[unreachable]
                     msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."
                     raise ValueError(msg)
                 self.session.auth = (str(auth[0]).strip(), str(auth[1]).strip())
@@ -514,13 +511,15 @@ class Client:
                 self.session.headers.update({"Authorization": f"Bearer {clean_token}"})
             else:
                 msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"
-                raise TypeError(msg)
+                raise TypeError(msg)  # type: ignore[unreachable]
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
 
     def close(self) -> None:
-        """Close the underlying requests.Session to free up system sockets."""
+        """Close the underlying requests.Session and purge memory (CWE-316)."""
         if self.session:
+            self.session.auth = None
+            self.session.headers.clear()
             self.session.close()
 
     def __enter__(self) -> Self:
@@ -555,7 +554,7 @@ class Client:
         Returns:
             Endpoint: An Endpoint instance for the requested resource.
         """
-        validate_attribute_access(self.__class__.__name__, name)
+        SecurityGuard.validate_attribute_access(self.__class__.__name__, name)
         return Endpoint(self, name)
 
     def __repr__(self) -> str:
@@ -651,21 +650,21 @@ class Client:
                 messages = data.get("Messages", [{}])
                 msg = messages[0] if isinstance(messages, list) and messages else {}
                 if cid := msg.get("CustomID"):
-                    trace_ctx.append(f"CustomID={sanitize_log_trace(cid)}")
+                    trace_ctx.append(f"CustomID={SecurityGuard.sanitize_log_trace(cid)}")
                 if tid := msg.get("TemplateID"):
-                    trace_ctx.append(f"TemplateID={sanitize_log_trace(tid)}")
+                    trace_ctx.append(f"TemplateID={SecurityGuard.sanitize_log_trace(tid)}")
                 if cid_raw := data.get("X-MJ-CustomID"):
-                    trace_ctx.append(f"CustomID={sanitize_log_trace(cid_raw)}")
+                    trace_ctx.append(f"CustomID={SecurityGuard.sanitize_log_trace(cid_raw)}")
                 if camp := data.get("X-Mailjet-Campaign"):
-                    trace_ctx.append(f"Campaign={sanitize_log_trace(camp)}")
+                    trace_ctx.append(f"Campaign={SecurityGuard.sanitize_log_trace(camp)}")
 
             if headers:
                 for key, val in headers.items():
                     k_low = key.lower()
                     if k_low == "x-mj-customid":
-                        trace_ctx.append(f"CustomID={sanitize_log_trace(val)}")
+                        trace_ctx.append(f"CustomID={SecurityGuard.sanitize_log_trace(val)}")
                     elif k_low == "x-mailjet-campaign":
-                        trace_ctx.append(f"Campaign={sanitize_log_trace(val)}")
+                        trace_ctx.append(f"Campaign={SecurityGuard.sanitize_log_trace(val)}")
 
         return f" | Trace: [{' '.join(trace_ctx)}]" if trace_ctx else ""
 
@@ -706,7 +705,7 @@ class Client:
         timeout_val = timeout if timeout is not None else self.config.timeout
 
         trace_str = self._extract_telemetry(data, headers)
-        check_request_security(kwargs)
+        SecurityGuard.check_request_security(kwargs)
         kwargs.setdefault("allow_redirects", False)
 
         logger.debug("Sending Request: %s %s%s", method, url, trace_str)
