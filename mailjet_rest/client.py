@@ -1,8 +1,8 @@
-"""This module provides the main client and helper classes for interacting with the Mailjet API.
+"""Mailjet API v3, v3.1, and v1 Python wrapper.
 
-The `mailjet_rest.client` module includes the core `Client` class for managing
-API requests, configuration, and error handling, as well as utility functions
-and classes for building URLs and managing endpoints.
+This module provides the main client and helper classes for interacting
+with the Mailjet API. It handles authentication, secure URL construction,
+dynamic endpoint resolution, and request execution.
 """
 
 from __future__ import annotations
@@ -60,13 +60,13 @@ logger = logging.getLogger(__name__)
 
 
 def prepare_url(match: Any) -> str:
-    """Replace capital letters in the input string with a dash prefix and converts them to lowercase.
+    """Replace capital letters in the input string with a dash prefix and convert to lowercase.
 
     Args:
-        match (Any): A regex match object.
+        match (Any): A regex match object containing a capital letter.
 
     Returns:
-        str: A formatted URL string fragment.
+        str: A formatted URL string fragment (e.g., '_m').
     """
     return f"_{match.group(0).lower()}"
 
@@ -151,7 +151,15 @@ def logging_handler(response: requests.Response) -> None:  # noqa: ARG001
 
 @dataclass
 class Config:
-    """Configuration settings for interacting with the Mailjet API."""
+    """Configuration settings for interacting with the Mailjet API.
+
+    Attributes:
+        ALLOWED_ROOT_DOMAIN (ClassVar[str]): The permitted root domain to prevent SSRF.
+        version (str): The API version to use (e.g., 'v3', 'v3.1', 'v1').
+        api_url (str): The base URL for the Mailjet API.
+        user_agent (str): The User-Agent string sent with API requests.
+        timeout (int | float | tuple[float, float] | None): Request timeout in seconds.
+    """
 
     ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
 
@@ -161,7 +169,11 @@ class Config:
     timeout: int | float | tuple[float, float] | None = 60
 
     def __post_init__(self) -> None:
-        """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
+        """Validate configuration for secure transport and resource limits (OWASP Input Validation).
+
+        Raises:
+            ValueError: If the URL scheme is insecure or timeout bounds are violated.
+        """
         SecurityGuard.validate_config_url(self.api_url, allowed_root_domain=self.ALLOWED_ROOT_DOMAIN)
         if not self.api_url.endswith("/"):
             self.api_url += "/"
@@ -183,13 +195,13 @@ class Config:
                 _validate_timeout(cast("float", self.timeout))
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
-        """Retrieve the API endpoint URL and headers for a given key.
+        """Retrieve the base API endpoint URL and default headers for a given key.
 
         Args:
-            key (str): The endpoint key name.
+            key (str): The raw endpoint key name.
 
         Returns:
-            tuple[str, dict[str, str]]: The constructed URL and headers dictionary.
+            tuple[str, dict[str, str]]: A tuple containing the base URL and the headers dictionary.
         """
         action = key.split("_", maxsplit=1)[0]
         name_lower = key.lower()
@@ -212,14 +224,18 @@ class Config:
 
 
 class Endpoint:
-    """A class representing a specific Mailjet API endpoint."""
+    """A class representing a specific Mailjet API endpoint.
+
+    This class provides methods to execute standard HTTP operations (GET, POST, PUT, DELETE)
+    dynamically based on the requested resource.
+    """
 
     def __init__(self, client: Client, name: str) -> None:
         """Initialize a new Endpoint instance.
 
         Args:
-            client (Client): The core client instance.
-            name (str): The endpoint resource name.
+            client (Client): The active API client managing the session.
+            name (str): The resource name (e.g., 'contact', 'send', 'contactslist_csvdata').
         """
         self.client = client
         self.name = name
@@ -327,19 +343,19 @@ class Endpoint:
         """Execute the API call directly.
 
         Args:
-            method (Literal["GET", "POST", "PUT", "DELETE"]): The HTTP method.
-            filters (dict[str, Any] | None): Query parameters.
-            data (dict[str, Any] | list[Any] | str | None): Request payload.
-            headers (dict[str, str] | None): Custom headers.
-            id (int | str | None): Primary resource ID.
-            action_id (int | str | None): Sub-action ID.
-            timeout (int | float | tuple[float, float] | None): Request timeout.
-            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
-            data_encoding (str | None): Data encoding string (Deprecated).
-            **kwargs (Any): Additional arguments.
+            method (Literal["GET", "POST", "PUT", "DELETE"], optional): The HTTP method. Defaults to "GET".
+            filters (dict[str, Any] | None, optional): Query parameters to append to the URL.
+            data (dict[str, Any] | list[Any] | str | None, optional): The payload for the request body.
+            headers (dict[str, str] | None, optional): Additional HTTP headers to send.
+            id (int | str | None, optional): The primary resource ID.
+            action_id (int | str | None, optional): The secondary ID or action string for nested resources.
+            timeout (int | float | tuple[float, float] | None, optional): Custom timeout for this request.
+            ensure_ascii (bool | None, optional): Deprecated. Ensure ASCII serialization.
+            data_encoding (str | None, optional): Deprecated. Target encoding string for the payload.
+            **kwargs (Any): Additional parameters passed to `requests.Session.request`.
 
         Returns:
-            requests.Response: The HTTP response from the API.
+            requests.Response: The HTTP response from the Mailjet API.
         """
         if id is None and action_id is not None:
             id = action_id  # noqa: A001
@@ -473,7 +489,15 @@ class Endpoint:
 
 
 class Client:
-    """A client for interacting with the Mailjet API."""
+    """The primary client for interacting with the Mailjet API.
+
+    Handles authentication, session management, configuration, and dynamic
+    endpoint resolution via magic methods (`__getattr__`).
+
+    Examples:
+        >>> client = Client(auth=(API_KEY, API_SECRET), version='v3.1')
+        >>> response = client.send.create(data=payload)
+    """
 
     def __init__(
         self,
@@ -481,7 +505,20 @@ class Client:
         config: Config | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize a new Client instance."""
+        """Initialize a new Mailjet API Client instance.
+
+        Args:
+            auth (tuple[str, str] | str | None, optional): Authentication credentials.
+                Use a tuple `(API_KEY, API_SECRET)` for Basic Auth (Email API).
+                Use a string `TOKEN` for Bearer Auth (Content API v1).
+            config (Config | None, optional): A pre-configured `Config` instance.
+            **kwargs (Any): Configuration overrides if `config` is not provided
+                (e.g., `version='v3.1'`, `timeout=10`).
+
+        Raises:
+            ValueError: If the provided `auth` credentials are invalid or empty.
+            TypeError: If the `auth` type is neither a tuple nor a string.
+        """
         self.config = config or Config(**kwargs)
         self.session = requests.Session()
 
@@ -680,26 +717,29 @@ class Client:
         data_encoding: str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Perform the actual network request using the persistent session.
+        """Perform the actual network request using the persistent HTTP session.
+
+        This method acts as the core orchestrator, handling telemetry extraction,
+        payload serialization, security guardrails, and centralized logging.
 
         Args:
             method (Literal["GET", "POST", "PUT", "DELETE"]): The HTTP method.
-            url (str): The fully constructed URL.
-            filters (dict[str, Any] | None): Query parameters.
-            data (dict[str, Any] | list[Any] | str | None): Request payload.
-            headers (dict[str, str] | None): HTTP headers.
-            timeout (int | float | tuple[float, float] | None): Request timeout.
-            ensure_ascii (bool | None): Ensure ASCII encoding (deprecated).
-            data_encoding (str | None): Data encoding (deprecated).
-            **kwargs (Any): Additional arguments.
+            url (str): The fully constructed API URL.
+            filters (dict[str, Any] | None, optional): Query parameters.
+            data (dict[str, Any] | list[Any] | str | None, optional): Request payload.
+            headers (dict[str, str] | None, optional): Custom HTTP headers.
+            timeout (int | float | tuple[float, float] | None, optional): Request timeout.
+            ensure_ascii (bool | None, optional): Deprecated. Ensure ASCII encoding.
+            data_encoding (str | None, optional): Deprecated. Data encoding string.
+            **kwargs (Any): Additional arguments passed to `requests.Session.request`.
 
         Returns:
-            requests.Response: The HTTP response from the API.
+            requests.Response: The HTTP response from the Mailjet API.
 
         Raises:
             TimeoutError: If the API request times out.
-            CriticalApiError: If there is a connection failure.
-            ApiError: For other unhandled request exceptions.
+            CriticalApiError: If a connection failure occurs.
+            ApiError: For other unhandled network exceptions.
         """
         request_data = self._prepare_payload(data, ensure_ascii, data_encoding)
         timeout_val = timeout if timeout is not None else self.config.timeout
