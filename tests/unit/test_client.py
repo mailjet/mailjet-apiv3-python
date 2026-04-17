@@ -384,7 +384,7 @@ def test_config_getitem_all_branches() -> None:
 
     url, headers = config["send"]
     assert url == "https://api.mailjet.com/v3/send"
-    assert headers["Content-type"] == "application/json"
+    assert headers["Content-Type"] == "application/json"
 
     url, headers = config["contactslist_csvdata"]
     assert url == "https://api.mailjet.com/v3/DATA/contactslist"

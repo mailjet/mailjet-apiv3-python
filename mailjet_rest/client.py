@@ -230,9 +230,8 @@ class Config:
         else:
             url = f"{self.api_url}{self.version}/REST/{action}"
 
-        headers = {"Content-type": "application/json"}
-        if name_lower.endswith("_csvdata"):
-            headers["Content-Type"] = "text/plain"
+        # Utilize the pre-allocated constants to save dictionary creation overhead
+        headers = dict(_TEXT_HEADERS) if name_lower.endswith("_csvdata") else dict(_JSON_HEADERS)
 
         return url, headers
 
@@ -338,16 +337,14 @@ class Endpoint:
         Returns:
             dict[str, str]: The finalized HTTP headers.
         """
-        headers = {}
-        if self._name_lower.endswith("_csvdata"):
-            headers["Content-Type"] = "text/plain"
-        else:
-            headers["Content-Type"] = "application/json"
+        # Select the base immutable mapping proxy
+        base_headers = _TEXT_HEADERS if self._name_lower.endswith("_csvdata") else _JSON_HEADERS
 
         if custom_headers:
             SecurityGuard.validate_crlf_headers(custom_headers)
-            headers.update(custom_headers)
-        return headers
+            return {**base_headers, **custom_headers}
+
+        return dict(base_headers)
 
     def __call__(
         self,
