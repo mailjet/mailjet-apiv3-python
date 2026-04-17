@@ -1,8 +1,13 @@
 """Utility module providing security and routing guardrails for the Mailjet SDK."""
 
+import re
 import warnings
 from typing import Any
+from typing import Final
 from urllib.parse import urlparse
+
+
+_CRLF_RE: Final = re.compile(r"[\r\n]")
 
 
 class SecurityGuard:
@@ -110,7 +115,6 @@ class SecurityGuard:
             ValueError: If CRLF characters are detected in any header value.
         """
         for key, value in custom_headers.items():
-            val_str = str(value)
-            if "\n" in val_str or "\r" in val_str:
+            if _CRLF_RE.search(str(value)):
                 err_msg = f"CRLF Injection detected in header '{key}'"
                 raise ValueError(err_msg)

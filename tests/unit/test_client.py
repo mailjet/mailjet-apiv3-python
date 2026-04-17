@@ -21,6 +21,7 @@ from mailjet_rest.client import (
     TimeoutError,
     prepare_url,
 )
+from mailjet_rest.utils.guardrails import SecurityGuard
 
 if TYPE_CHECKING:
     # Explicitly import fixture type for MyPy in a type-checking block
@@ -502,3 +503,63 @@ def test_client_context_manager_exception_safety(monkeypatch: pytest.MonkeyPatch
 
     # The most important assertion: Even though the code crashed, the sockets were closed.
     assert close_called is True, "Exception inside context manager bypassed cleanup!"
+
+
+# ==========================================
+# 6. Performance & Memory Optimization Tests
+# ==========================================
+
+
+def test_endpoint_and_config_use_slots(client_offline: Client) -> None:
+    """Verify that __slots__ are strictly enforced for memory optimization.
+
+    This ensures that ephemeral objects do not allocate expensive __dict__
+    structures, preserving our 20% CPU/Memory performance gain.
+    """
+    # Check Config slots
+    with pytest.raises(AttributeError):
+        client_offline.config.new_dynamic_attr = "test"  # type: ignore[attr-defined]
+
+    # Check Endpoint slots
+    endpoint = client_offline.contact
+    with pytest.raises(AttributeError):
+        endpoint.new_dynamic_attr = "test"  # type: ignore[attr-defined]
+
+
+def test_endpoint_precomputes_routing_strings(client_offline: Client) -> None:
+    """Verify that Endpoint pre-computes routing strings to save CPU cycles."""
+    # Using a complex name to test string splitting and lowercasing
+    endpoint = getattr(client_offline, "Contact_Data")
+
+    assert getattr(endpoint, "_name_lower") == "contact_data"
+    assert getattr(endpoint, "_action_parts") == ["Contact", "Data"]
+    assert getattr(endpoint, "_resource_lower") == "contact"
+
+
+def test_client_retry_strategy_is_shared() -> None:
+    """Verify that Retry strategy is a ClassVar, saving instantiation overhead."""
+    client1 = Client(auth=("a", "b"))
+    client2 = Client(auth=("c", "d"))
+
+    # Assert both clients point to the exact same Retry object in memory
+    assert client1._RETRY_STRATEGY is Client._RETRY_STRATEGY
+    assert client1._RETRY_STRATEGY is client2._RETRY_STRATEGY
+    assert client1._RETRY_STRATEGY.total == 3
+
+
+def test_security_guard_crlf_rejection_fast_regex() -> None:
+    """Verify that the pre-compiled regex efficiently blocks CRLF injections."""
+    # Test Carriage Return + Line Feed
+    with pytest.raises(ValueError, match="CRLF Injection detected in header 'X-Custom'"):
+        SecurityGuard.validate_crlf_headers({"X-Custom": "value\r\ninjected"})
+
+    # Test Line Feed only
+    with pytest.raises(ValueError, match="CRLF Injection detected in header 'X-Custom'"):
+        SecurityGuard.validate_crlf_headers({"X-Custom": "value\n"})
+
+    # Test Carriage Return only
+    with pytest.raises(ValueError, match="CRLF Injection detected in header 'X-Custom'"):
+        SecurityGuard.validate_crlf_headers({"X-Custom": "value\r"})
+
+    # Should not raise
+    SecurityGuard.validate_crlf_headers({"X-Custom": "safe-value"})

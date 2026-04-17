@@ -108,7 +108,7 @@ repos:
         name: "🌳 git · Validate commit format"
 
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.13.9
+    rev: v4.13.10
     hooks:
       - id: commitizen
         name: "🌳 git · Validate commit message"
@@ -137,7 +137,7 @@ repos:
         additional_dependencies: [".[toml]"]
 
   - repo: https://github.com/semgrep/pre-commit
-    rev: 'v1.156.0'
+    rev: 'v1.159.0'
     hooks:
       - id: semgrep
         name: "🔒 security · Static analysis (semgrep)"
@@ -145,7 +145,7 @@ repos:
 
   # Spelling and typos
   - repo: https://github.com/crate-ci/typos
-    rev: v1.44.0
+    rev: v1.45.1
     hooks:
       - id: typos
         name: "📝 spelling · Check typos"
@@ -160,8 +160,18 @@ repos:
         name: "🔧 ci/cd · Validate GitHub workflows"
         files: ^\.github/workflows/.*\.ya?ml$
 
+  - repo: https://github.com/ariebovenberg/slotscheck
+    rev: v0.19.1
+    hooks:
+      - id: slotscheck
+        name: "🔍 check · slotscheck"
+        additional_dependencies:
+          - requests>=2.32.5
+          - pytest>=7.0.0
+          - typing-extensions>=4.7.1
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
+    rev: v0.15.11
     hooks:
       - id: ruff-check
         name: "🐍 lint · Check with Ruff"
@@ -188,7 +198,7 @@ repos:
 
   # Python type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v1.20.1
     hooks:
       - id: mypy
         name: "🐍 types · Check with mypy"

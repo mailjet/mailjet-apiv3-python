@@ -13,10 +13,13 @@ import sys
 import warnings
 from contextlib import suppress
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import ClassVar
+from typing import Final
 from typing import Literal
+from typing import TypeAlias
 from typing import cast
 from urllib.parse import quote
 
@@ -40,6 +43,7 @@ if sys.version_info >= (3, 11):
 else:
     from typing_extensions import Self
 
+
 __all__ = [
     "ActionDeniedError",
     "ApiError",
@@ -55,6 +59,16 @@ __all__ = [
     "logging_handler",
     "parse_response",
 ]
+
+# --- Type Aliases ---
+TimeoutType: TypeAlias = int | float | tuple[float, float] | None
+PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | None
+HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
+
+# --- Constants ---
+_DEFAULT_TIMEOUT: Final[int] = 60
+_JSON_HEADERS: Final = MappingProxyType({"Content-Type": "application/json"})
+_TEXT_HEADERS: Final = MappingProxyType({"Content-Type": "text/plain"})
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +163,7 @@ def logging_handler(response: requests.Response) -> None:  # noqa: ARG001
 # --- Core Classes ---
 
 
-@dataclass
+@dataclass(slots=True)
 class Config:
     """Configuration settings for interacting with the Mailjet API.
 
@@ -158,7 +172,7 @@ class Config:
         version (str): The API version to use (e.g., 'v3', 'v3.1', 'v1').
         api_url (str): The base URL for the Mailjet API.
         user_agent (str): The User-Agent string sent with API requests.
-        timeout (int | float | tuple[float, float] | None): Request timeout in seconds.
+        timeout (TimeoutType): Request timeout in seconds.
     """
 
     ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
@@ -166,7 +180,7 @@ class Config:
     version: str = "v3"
     api_url: str = "https://api.mailjet.com/"
     user_agent: str = f"mailjet-apiv3-python/v{__version__}"
-    timeout: int | float | tuple[float, float] | None = 60
+    timeout: TimeoutType = _DEFAULT_TIMEOUT
 
     def __post_init__(self) -> None:
         """Validate configuration for secure transport and resource limits (OWASP Input Validation).
@@ -230,6 +244,9 @@ class Endpoint:
     dynamically based on the requested resource.
     """
 
+    # Prevent dynamic dict creation for ephemeral objects
+    __slots__ = ("_action_parts", "_name_lower", "_resource_lower", "client", "name")
+
     def __init__(self, client: Client, name: str) -> None:
         """Initialize a new Endpoint instance.
 
@@ -239,6 +256,10 @@ class Endpoint:
         """
         self.client = client
         self.name = name
+        # Pre-compute routing strings ONCE instead of on every network call
+        self._name_lower = name.lower()
+        self._action_parts = name.split("_")
+        self._resource_lower = self._action_parts[0].lower()
 
     @staticmethod
     def _build_csv_url(base_url: str, version: str, resource: str, name_lower: str, id_val: int | str | None) -> str:
@@ -273,11 +294,12 @@ class Endpoint:
         """
         base_url = self.client.config.api_url.rstrip("/")
         version = self.client.config.version
-        name_lower = self.name.lower()
 
-        action_parts = self.name.split("_")
+        # Read from pre-computed slots (O(1) access time)
+        name_lower = self._name_lower
+        action_parts = self._action_parts
+        resource_lower = self._resource_lower
         resource = action_parts[0]
-        resource_lower = resource.lower()
 
         SecurityGuard.validate_dx_routing(version, name_lower, resource_lower)
 
@@ -317,7 +339,7 @@ class Endpoint:
             dict[str, str]: The finalized HTTP headers.
         """
         headers = {}
-        if self.name.lower().endswith("_csvdata"):
+        if self._name_lower.endswith("_csvdata"):
             headers["Content-Type"] = "text/plain"
         else:
             headers["Content-Type"] = "application/json"
@@ -329,13 +351,13 @@ class Endpoint:
 
     def __call__(
         self,
-        method: Literal["GET", "POST", "PUT", "DELETE"] = "GET",
+        method: HttpMethod = "GET",
         filters: dict[str, Any] | None = None,
-        data: dict[str, Any] | list[Any] | str | None = None,
+        data: PayloadType = None,
         headers: dict[str, str] | None = None,
         id: int | str | None = None,  # noqa: A002
         action_id: int | str | None = None,
-        timeout: int | float | tuple[float, float] | None = None,  # noqa: PYI041
+        timeout: TimeoutType = None,  # noqa: PYI041
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
@@ -343,13 +365,13 @@ class Endpoint:
         """Execute the API call directly.
 
         Args:
-            method (Literal["GET", "POST", "PUT", "DELETE"], optional): The HTTP method. Defaults to "GET".
+            method (HttpMethod, optional): The HTTP method. Defaults to "GET".
             filters (dict[str, Any] | None, optional): Query parameters to append to the URL.
-            data (dict[str, Any] | list[Any] | str | None, optional): The payload for the request body.
+            data (PayloadType, optional): The payload for the request body.
             headers (dict[str, str] | None, optional): Additional HTTP headers to send.
             id (int | str | None, optional): The primary resource ID.
             action_id (int | str | None, optional): The secondary ID or action string for nested resources.
-            timeout (int | float | tuple[float, float] | None, optional): Custom timeout for this request.
+            timeout (TimeoutType, optional): Custom timeout for this request.
             ensure_ascii (bool | None, optional): Deprecated. Ensure ASCII serialization.
             data_encoding (str | None, optional): Deprecated. Target encoding string for the payload.
             **kwargs (Any): Additional parameters passed to `requests.Session.request`.
@@ -400,7 +422,7 @@ class Endpoint:
 
     def create(
         self,
-        data: dict[str, Any] | list[Any] | str | None = None,
+        data: PayloadType = None,
         id: int | str | None = None,  # noqa: A002
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
@@ -410,7 +432,7 @@ class Endpoint:
         """Perform a POST request to create a new resource.
 
         Args:
-            data (dict[str, Any] | list[Any] | str | None): Request payload.
+            data (PayloadType): Request payload.
             id (int | str | None): The primary resource ID.
             action_id (int | str | None): The sub-action ID.
             ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
@@ -439,7 +461,7 @@ class Endpoint:
     def update(
         self,
         id: int | str,  # noqa: A002
-        data: dict[str, Any] | list[Any] | str | None = None,
+        data: PayloadType = None,
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
@@ -449,7 +471,7 @@ class Endpoint:
 
         Args:
             id (int | str): The primary resource ID.
-            data (dict[str, Any] | list[Any] | str | None): Updated payload.
+            data (PayloadType): Updated payload.
             action_id (int | str | None): The sub-action ID.
             ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
             data_encoding (str | None): Data encoding string (Deprecated).
@@ -499,6 +521,13 @@ class Client:
         >>> response = client.send.create(data=payload)
     """
 
+    _RETRY_STRATEGY: ClassVar[Retry] = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "OPTIONS"],
+    )
+
     def __init__(
         self,
         auth: tuple[str, str] | str | None = None,
@@ -522,13 +551,7 @@ class Client:
         self.config = config or Config(**kwargs)
         self.session = requests.Session()
 
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "OPTIONS"],
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
+        adapter = HTTPAdapter(max_retries=self._RETRY_STRATEGY)
         self.session.mount("https://", adapter)
 
         if auth is not None:
@@ -707,12 +730,12 @@ class Client:
 
     def api_call(
         self,
-        method: Literal["GET", "POST", "PUT", "DELETE"],
+        method: HttpMethod,
         url: str,
         filters: dict[str, Any] | None = None,
-        data: dict[str, Any] | list[Any] | str | None = None,
+        data: PayloadType = None,
         headers: dict[str, str] | None = None,
-        timeout: int | float | tuple[float, float] | None = None,  # noqa: PYI041
+        timeout: TimeoutType = None,  # noqa: PYI041
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
@@ -723,12 +746,12 @@ class Client:
         payload serialization, security guardrails, and centralized logging.
 
         Args:
-            method (Literal["GET", "POST", "PUT", "DELETE"]): The HTTP method.
+            method (HttpMethod): The HTTP method.
             url (str): The fully constructed API URL.
             filters (dict[str, Any] | None, optional): Query parameters.
-            data (dict[str, Any] | list[Any] | str | None, optional): Request payload.
+            data (PayloadType, optional): Request payload.
             headers (dict[str, str] | None, optional): Custom HTTP headers.
-            timeout (int | float | tuple[float, float] | None, optional): Request timeout.
+            timeout (TimeoutType, optional): Request timeout.
             ensure_ascii (bool | None, optional): Deprecated. Ensure ASCII encoding.
             data_encoding (str | None, optional): Deprecated. Data encoding string.
             **kwargs (Any): Additional arguments passed to `requests.Session.request`.
