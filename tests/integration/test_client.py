@@ -294,3 +294,91 @@ def test_live_content_api_images_multipart_upload() -> None:
         # Lifecycle rule: Clean up the uploaded image so we don't pollute the server
         image_id = result.json()["Data"][0]["ID"]
         client_v1.data_images.delete(id=image_id)
+
+
+def test_live_contact_crud_lifecycle(client_live: Client) -> None:
+    """Integration test for Contact creation, retrieval, updating, and deletion."""
+    test_email = f"ci-test-contact-{uuid.uuid4().hex[:8]}@example.com"
+
+    # 1. Create
+    create_resp = client_live.contact.create(data={"Email": test_email, "IsExcludedFromCampaigns": "true"})
+    assert create_resp.status_code == 201
+    contact_id = create_resp.json()["Data"][0]["ID"]
+
+    try:
+        # 2. Retrieve
+        get_resp = client_live.contact.get(id=contact_id)
+        assert get_resp.status_code == 200
+        assert get_resp.json()["Data"][0]["Email"] == test_email
+
+        # 3. Update
+        update_resp = client_live.contact.update(id=contact_id, data={"Name": "CI Test User"})
+        assert update_resp.status_code == 200
+
+    finally:
+        # 4. Clean up (Delete)
+        delete_resp = client_live.contact.delete(id=contact_id)
+        # Mailjet often blocks contact deletion with 401 "Operation not allowed"
+        # depending on account compliance settings. We accept this as a safe state.
+        assert delete_resp.status_code in (200, 204, 401, 405)
+
+def test_live_template_crud_lifecycle(client_live: Client) -> None:
+    """Integration test for Template shell creation, content modification, and deletion."""
+    template_name = f"CI Test Template {uuid.uuid4().hex[:8]}"
+
+    # 1. Create Template Shell
+    create_data = {
+        "Name": template_name,
+        "Author": "Mailjet Python CI",
+        "EditMode": 1,
+        "IsTextPartGenerationEnabled": True,
+        "Locale": "en_US"
+    }
+    create_resp = client_live.template.create(data=create_data)
+    assert create_resp.status_code == 201
+    template_id = create_resp.json()["Data"][0]["ID"]
+
+    try:
+        # 2. Add Content to Template (Uses POST on detailcontent)
+        content_data = {
+            "Html-part": "<html><body><h1>Hello from CI</h1></body></html>",
+            "Text-part": "Hello from CI"
+        }
+        content_resp = client_live.template_detailcontent.create(id=template_id, data=content_data)
+        assert content_resp.status_code in (200, 201)
+
+    finally:
+        # 3. Clean up (Delete)
+        delete_resp = client_live.template.delete(id=template_id)
+        assert delete_resp.status_code in (200, 204)
+
+
+def test_live_readonly_endpoints(client_live: Client) -> None:
+    """Verify that basic read operations work across multiple core endpoints."""
+    # We test multiple endpoints in one function to save execution time in CI
+    endpoints_to_test = [
+        client_live.sender,
+        client_live.message,
+        client_live.campaign,
+        client_live.contactfilter
+    ]
+
+    for endpoint in endpoints_to_test:
+        resp = endpoint.get(filters={"limit": 1})
+        # 200 OK is expected. If the account is brand new, Data might be empty, but status must be 200.
+        assert resp.status_code == 200
+        assert "Data" in resp.json(), f"Endpoint {endpoint.name} did not return 'Data' payload."
+
+
+def test_live_auth_failure_handling(client_live_invalid_auth: Client) -> None:
+    """Verify that invalid credentials reliably raise an HTTP 401 Unauthorized."""
+    resp = client_live_invalid_auth.contact.get(filters={"limit": 1})
+    assert resp.status_code == 401
+
+    # Mailjet's edge nodes sometimes return an empty body for 401s.
+    # Only attempt to parse JSON if the response actually contains text.
+    if resp.text.strip():
+        try:
+            assert "Unauthorized" in resp.text or resp.json().get("ErrorMessage")
+        except ValueError:
+            assert "Unauthorized" in resp.text

@@ -22,6 +22,7 @@ from mailjet_rest.client import (
     prepare_url,
 )
 from mailjet_rest.utils.guardrails import SecurityGuard
+from mailjet_rest.client import _JSON_HEADERS, _TEXT_HEADERS
 
 if TYPE_CHECKING:
     # Explicitly import fixture type for MyPy in a type-checking block
@@ -563,3 +564,55 @@ def test_security_guard_crlf_rejection_fast_regex() -> None:
 
     # Should not raise
     SecurityGuard.validate_crlf_headers({"X-Custom": "safe-value"})
+
+# ==========================================
+# 7. Developer Experience (DX) & Constants
+# ==========================================
+
+def test_client_dir_includes_dynamic_endpoints(client_offline: Client) -> None:
+    """Verify that __dir__ exposes dynamic endpoints for IDE autocompletion."""
+    client_dir = dir(client_offline)
+
+    # Check that standard internal attributes are preserved
+    assert "session" in client_dir
+    assert "config" in client_dir
+    assert "api_call" in client_dir
+
+    # Check a representative sample of our injected dynamic endpoints
+    expected_dynamic_endpoints = [
+        "send",
+        "contact",
+        "listrecipient",
+        "campaigndraft_send",
+        "geostatistics",
+        "sender_validate"
+    ]
+    for endpoint in expected_dynamic_endpoints:
+        assert endpoint in client_dir, f"Expected endpoint '{endpoint}' missing from __dir__"
+
+
+def test_header_constants_immutability() -> None:
+    """Verify that base headers are MappingProxyType and cannot be mutated."""
+    with pytest.raises(TypeError):
+        _JSON_HEADERS["Content-Type"] = "hacked"  # type: ignore[index]
+
+    with pytest.raises(TypeError):
+        _TEXT_HEADERS["Content-Type"] = "hacked"  # type: ignore[index]
+
+
+def test_endpoint_headers_merge_safely(client_offline: Client) -> None:
+    """Verify that endpoint header building unpacks safely without mutating the base proxies."""
+    endpoint = client_offline.contact
+    merged_headers = endpoint._build_headers({"X-Custom-Header": "SafeValue"})
+
+    # Check that the merge succeeded
+    assert merged_headers["Content-Type"] == "application/json"
+    assert merged_headers["X-Custom-Header"] == "SafeValue"
+
+    # Ensure the original proxy wasn't accidentally mutated during the merge
+    assert "X-Custom-Header" not in _JSON_HEADERS
+
+    # Check CSV data endpoints fall back to text/plain
+    csv_endpoint = getattr(client_offline, "contactslist_csvdata")
+    csv_headers = csv_endpoint._build_headers()
+    assert csv_headers["Content-Type"] == "text/plain"

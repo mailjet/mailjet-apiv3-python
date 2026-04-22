@@ -276,7 +276,7 @@ class Endpoint:
         """
         url = f"{base_url}/{version}/DATA/{resource}"
         if id_val is not None:
-            safe_id = quote(str(id_val), safe="")
+            safe_id = quote(str(id_val), safe="@+")
             suffix = "CSVData/text:plain" if name_lower.endswith("_csvdata") else "CSVError/text:csv"
             url += f"/{safe_id}/{suffix}"
         return url
@@ -315,7 +315,7 @@ class Endpoint:
             url = f"{base_url}/{version}/REST/{resource}"
 
         if id_val is not None:
-            safe_id = quote(str(id_val), safe="")
+            safe_id = quote(str(id_val), safe="@+")
             url += f"/{safe_id}"
 
         if len(action_parts) > 1 and resource_lower != "data":
@@ -548,7 +548,11 @@ class Client:
         self.config = config or Config(**kwargs)
         self.session = requests.Session()
 
-        adapter = HTTPAdapter(max_retries=self._RETRY_STRATEGY)
+        # Instance-level cache for dynamic endpoints
+        self._endpoint_cache: dict[str, Endpoint] = {}
+
+        # Expand connection pool for high-throughput batching
+        adapter = HTTPAdapter(max_retries=self._RETRY_STRATEGY, pool_connections=100, pool_maxsize=100)
         self.session.mount("https://", adapter)
 
         if auth is not None:
@@ -611,7 +615,11 @@ class Client:
         Returns:
             Endpoint: An Endpoint instance for the requested resource.
         """
-        SecurityGuard.validate_attribute_access(self.__class__.__name__, name)
+        SecurityGuard.validate_attribute_access(self.__class__.__qualname__, name)
+
+        if name not in self._endpoint_cache:
+            self._endpoint_cache[name] = Endpoint(self, name)
+
         return Endpoint(self, name)
 
     def __repr__(self) -> str:
@@ -629,6 +637,65 @@ class Client:
             str: A redacted string representation.
         """
         return f"Mailjet Client ({self.config.version})"
+
+    def __dir__(self) -> list[str]:
+        """Override __dir__ to expose dynamic endpoints for IDE autocompletion.
+
+        Returns:
+            list[str]: A sorted list of all standard attributes and dynamic API endpoints.
+        """
+        standard_attrs = list(super().__dir__())
+
+        dynamic_endpoints = [
+            # Core Routing
+            "send",
+            # Contacts & Lists
+            "contact",
+            "contactdata",
+            "contactmetadata",
+            "contactslist",
+            "contact_managemanycontacts",
+            "contactfilter",
+            "csvimport",
+            "listrecipient",
+            # Campaigns & Newsletters
+            "campaign",
+            "campaigndraft",
+            "campaigndraft_schedule",
+            "campaigndraft_send",
+            "campaigndraft_test",
+            "campaigndraft_detailcontent",
+            "newsletter",
+            # Templates & Messages
+            "message",
+            "messagehistory",
+            "messageinformation",
+            "template",
+            "templates",
+            "template_detailcontent",
+            "templates_contents",
+            "token",
+            "data_images",
+            # Stats & Webhooks
+            "statcounters",
+            "contactstatistics",
+            "liststatistics",
+            "statistics_linkClick",
+            "statistics_recipientEsp",
+            "geostatistics",
+            "toplinkclicked",
+            "eventcallbackurl",
+            "parseroute",
+            # Senders, Domains & Account
+            "dns",
+            "dns_check",
+            "sender",
+            "sender_validate",
+            "apikey",
+            "user",
+            "myprofile",
+        ]
+        return sorted(set(standard_attrs + dynamic_endpoints))
 
     @staticmethod
     def _prepare_payload(data: Any, ensure_ascii: bool | None, data_encoding: str | None) -> Any:

@@ -30,6 +30,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 - Content API (v1): Native `multipart/form-data` upload support using the `requests` `files` kwarg for the `data_images` endpoint.
 - Safe Exceptions: Network errors are now safely encapsulated in custom `mailjet_rest` exceptions (`TimeoutError`, `CriticalApiError`, `ApiError`).
 - Native Logging: Centralized HTTP status and debug logging in `api_call` using standard Python `logging`.
+- IDE Autocompletion: Overrode `__dir__` in the core `Client` to expose high-traffic dynamic endpoints (e.g., `.contact`, `.send`, `.campaigndraft`) directly to IDE autocompletion engines (VS Code, PyCharm).
 - Validated and added explicit test coverage for Issue #97, proving `TemplateLanguage` and `Variables` are correctly serialized by the SDK.
 
 ### Changed
