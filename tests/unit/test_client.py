@@ -21,7 +21,6 @@ from mailjet_rest.client import (
     CriticalApiError,
     TimeoutError,
     prepare_url,
-    _DEFAULT_TIMEOUT
 )
 from mailjet_rest.utils.guardrails import SecurityGuard
 from mailjet_rest.client import _JSON_HEADERS, _TEXT_HEADERS
