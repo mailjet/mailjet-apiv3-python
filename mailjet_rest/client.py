@@ -391,7 +391,7 @@ class Endpoint:
             filters=filters,
             data=data,
             headers=self._build_headers(headers),
-            timeout=timeout or self.client.config.timeout,
+            timeout=timeout if timeout is not None else self.client.config.timeout,
             ensure_ascii=ensure_ascii,
             data_encoding=data_encoding,
             **kwargs,
@@ -523,6 +523,7 @@ class Client:
         backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET", "OPTIONS"],
+        respect_retry_after_header=True,  # To prevent aggressive polling
     )
 
     def __init__(
@@ -831,9 +832,32 @@ class Client:
         request_data = self._prepare_payload(data, ensure_ascii, data_encoding)
         timeout_val = timeout if timeout is not None else self.config.timeout
 
+        # Soft CWE-400 mitigation: Warn on infinite blocking, but allow it for v1.x backward compatibility
+        if not timeout_val:
+            warnings.warn(
+                "Passing 'timeout=None' allows infinite socket blocking and is deprecated (CWE-400). "
+                "Explicit timeouts will be strictly enforced in Mailjet SDK v2.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         trace_str = self._extract_telemetry(data, headers)
+
         SecurityGuard.check_request_security(kwargs)
+
+        # Safe Defaults: Block Open Redirects and enforce TLS Verification
         kwargs.setdefault("allow_redirects", False)
+        kwargs.setdefault("verify", True)
+
+        # Audit Hook: Alert monitoring systems if TLS is bypassed
+        if not kwargs.get("verify"):
+            sys.audit("mailjet.api.tls_disabled", url)
+            warnings.warn(
+                "Mailjet API TLS verification is disabled. This permits MITM attacks.", RuntimeWarning, stacklevel=2
+            )
+
+        # PEP 578: Emit standard audit event for outbound network egress
+        sys.audit("mailjet.api.request", method, url)
 
         logger.debug("Sending Request: %s %s%s", method, url, trace_str)
 

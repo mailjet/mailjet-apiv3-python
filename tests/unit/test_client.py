@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any, TYPE_CHECKING
+from unittest.mock import patch, MagicMock
 
 import pytest
 import requests  # pyright: ignore[reportMissingModuleSource]
@@ -20,6 +21,7 @@ from mailjet_rest.client import (
     CriticalApiError,
     TimeoutError,
     prepare_url,
+    _DEFAULT_TIMEOUT
 )
 from mailjet_rest.utils.guardrails import SecurityGuard
 from mailjet_rest.client import _JSON_HEADERS, _TEXT_HEADERS
@@ -616,3 +618,54 @@ def test_endpoint_headers_merge_safely(client_offline: Client) -> None:
     csv_endpoint = getattr(client_offline, "contactslist_csvdata")
     csv_headers = csv_endpoint._build_headers()
     assert csv_headers["Content-Type"] == "text/plain"
+
+
+# ==========================================
+# 8. Security, Resilience & Audit Tests
+# ==========================================
+
+@patch("sys.audit")
+def test_pep578_audit_hooks_emitted(mock_audit: MagicMock, client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify that network egress and security bypasses emit PEP 578 audit events."""
+    # Mock the actual HTTP request so we don't hit the network
+    monkeypatch.setattr(client_offline.session, "request", lambda **kwargs: requests.Response())
+
+    # 1. Standard request should emit the standard network audit event
+    client_offline.contact.get()
+    mock_audit.assert_any_call("mailjet.api.request", "GET", "https://api.mailjet.com/v3/REST/contact")
+
+    # 2. Bypassing TLS should emit BOTH the network event AND the specific security warning event
+    with pytest.warns(RuntimeWarning, match="TLS verification is disabled"):
+        client_offline.contact.get(verify=False)
+
+    mock_audit.assert_any_call("mailjet.api.tls_disabled", "https://api.mailjet.com/v3/REST/contact")
+
+
+def test_infinite_timeout_deprecation_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify CWE-400 mitigation: passing timeout=None issues a warning but preserves backward compatibility."""
+    # We must instantiate a client explicitly set to None (infinite) to trigger the warning.
+    # The default client_offline has a safe timeout of 60, which would not trigger it.
+    client_inf = Client(auth=("test", "test"), timeout=None)
+    captured_kwargs = {}
+
+    def mock_request(**kwargs: Any) -> requests.Response:
+        nonlocal captured_kwargs
+        captured_kwargs = kwargs
+        return requests.Response()
+
+    monkeypatch.setattr(client_inf.session, "request", mock_request)
+
+    # Attempt to force an infinite hang, asserting that the SDK warns the developer
+    with pytest.warns(DeprecationWarning, match="allows infinite socket blocking"):
+        client_inf.contact.get(timeout=None)
+
+    # Verify the SDK still allowed the dangerous input through to the socket
+    assert captured_kwargs.get("timeout") is None
+
+
+def test_retry_strategy_respects_headers() -> None:
+    """Verify the Retry adapter is configured to respect server 429 Retry-After headers."""
+    strategy = Client._RETRY_STRATEGY
+    assert strategy.respect_retry_after_header is True
+    # Verify we are targeting the correct temporary outage status codes
+    assert set(strategy.status_forcelist) == {429, 500, 502, 503, 504}
