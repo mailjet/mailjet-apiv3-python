@@ -713,7 +713,7 @@ class Client:
         if name not in self._endpoint_cache:
             self._endpoint_cache[name] = Endpoint(self, name)
 
-        return Endpoint(self, name)
+        return self._endpoint_cache[name]
 
     def __repr__(self) -> str:
         """OWASP Secrets Management: Redact sensitive information from object representation.

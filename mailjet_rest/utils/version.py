@@ -35,7 +35,7 @@ def clean_version(version_str: str) -> tuple[int, ...]:
         version_part = match.group(1)
         return tuple(map(int, version_part.split(".")))
 
-    return 0, 0, 0  # type: ignore[unreachable]
+    return 0, 0, 0
 
 
 # VERSION is a tuple of integers (1, 3, 2).
