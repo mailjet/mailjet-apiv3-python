@@ -60,12 +60,14 @@ __all__ = [
     "parse_response",
 ]
 
-# --- Type Aliases ---
+# ==========================================
+# Types & Constants
+# ==========================================
+
 TimeoutType: TypeAlias = int | float | tuple[float, float] | None
 PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | None
 HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
 
-# --- Constants ---
 _DEFAULT_TIMEOUT: Final[int] = 60
 _JSON_HEADERS: Final = MappingProxyType({"Content-Type": "application/json"})
 _TEXT_HEADERS: Final = MappingProxyType({"Content-Type": "text/plain"})
@@ -73,19 +75,9 @@ _TEXT_HEADERS: Final = MappingProxyType({"Content-Type": "text/plain"})
 logger = logging.getLogger(__name__)
 
 
-def prepare_url(match: Any) -> str:
-    """Replace capital letters in the input string with a dash prefix and convert to lowercase.
-
-    Args:
-        match (Any): A regex match object containing a capital letter.
-
-    Returns:
-        str: A formatted URL string fragment (e.g., '_m').
-    """
-    return f"_{match.group(0).lower()}"
-
-
-# --- Exceptions ---
+# ==========================================
+# Exceptions
+# ==========================================
 
 
 class ApiError(Exception):
@@ -121,6 +113,23 @@ class ValidationError(ApiError):
 
 class ApiRateLimitError(ApiError):
     """Deprecated: The SDK natively returns the requests.Response object for 429."""
+
+
+# ==========================================
+# Utilities
+# ==========================================
+
+
+def prepare_url(match: Any) -> str:
+    """Replace capital letters in the input string with a dash prefix and convert to lowercase.
+
+    Args:
+        match (Any): A regex match object containing a capital letter.
+
+    Returns:
+        str: A formatted URL string fragment (e.g., '_m').
+    """
+    return f"_{match.group(0).lower()}"
 
 
 # --- Deprecated Utilities ---
@@ -160,7 +169,9 @@ def logging_handler(response: requests.Response) -> None:  # noqa: ARG001
     warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
 
-# --- Core Classes ---
+# ==========================================
+# Configuration & State
+# ==========================================
 
 
 @dataclass(slots=True)
@@ -234,6 +245,11 @@ class Config:
         headers = dict(_TEXT_HEADERS) if name_lower.endswith("_csvdata") else dict(_JSON_HEADERS)
 
         return url, headers
+
+
+# ==========================================
+# Routing & Endpoints
+# ==========================================
 
 
 class Endpoint:
@@ -507,6 +523,11 @@ class Endpoint:
         return self(method="DELETE", id=id, action_id=action_id, **kwargs)
 
 
+# ==========================================
+# Core Client Interface
+# ==========================================
+
+
 class Client:
     """The primary client for interacting with the Mailjet API.
 
@@ -525,6 +546,52 @@ class Client:
         allowed_methods=["GET", "OPTIONS"],
         respect_retry_after_header=True,  # To prevent aggressive polling
     )
+
+    _DYNAMIC_ENDPOINTS: ClassVar[tuple[str, ...]] = (
+        "send",
+        "contact",
+        "contactdata",
+        "contactmetadata",
+        "contactslist",
+        "contact_managemanycontacts",
+        "contactfilter",
+        "csvimport",
+        "listrecipient",
+        "campaign",
+        "campaigndraft",
+        "campaigndraft_schedule",
+        "campaigndraft_send",
+        "campaigndraft_test",
+        "campaigndraft_detailcontent",
+        "newsletter",
+        "message",
+        "messagehistory",
+        "messageinformation",
+        "template",
+        "templates",
+        "template_detailcontent",
+        "templates_contents",
+        "token",
+        "data_images",
+        "statcounters",
+        "contactstatistics",
+        "liststatistics",
+        "statistics_linkClick",
+        "statistics_recipientEsp",
+        "geostatistics",
+        "toplinkclicked",
+        "eventcallbackurl",
+        "parseroute",
+        "dns",
+        "dns_check",
+        "sender",
+        "sender_validate",
+        "apikey",
+        "user",
+        "myprofile",
+    )
+
+    # --- Initialization & Magic Methods ---
 
     def __init__(
         self,
@@ -576,13 +643,6 @@ class Client:
                 raise TypeError(msg)  # type: ignore[unreachable]
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
-
-    def close(self) -> None:
-        """Close the underlying requests.Session and purge memory (CWE-316)."""
-        if self.session:
-            self.session.auth = None
-            self.session.headers.clear()
-            self.session.close()
 
     def __enter__(self) -> Self:
         """Enter the context manager.
@@ -646,57 +706,112 @@ class Client:
             list[str]: A sorted list of all standard attributes and dynamic API endpoints.
         """
         standard_attrs = list(super().__dir__())
+        return sorted(set(standard_attrs + list(self._DYNAMIC_ENDPOINTS)))
 
-        dynamic_endpoints = [
-            # Core Routing
-            "send",
-            # Contacts & Lists
-            "contact",
-            "contactdata",
-            "contactmetadata",
-            "contactslist",
-            "contact_managemanycontacts",
-            "contactfilter",
-            "csvimport",
-            "listrecipient",
-            # Campaigns & Newsletters
-            "campaign",
-            "campaigndraft",
-            "campaigndraft_schedule",
-            "campaigndraft_send",
-            "campaigndraft_test",
-            "campaigndraft_detailcontent",
-            "newsletter",
-            # Templates & Messages
-            "message",
-            "messagehistory",
-            "messageinformation",
-            "template",
-            "templates",
-            "template_detailcontent",
-            "templates_contents",
-            "token",
-            "data_images",
-            # Stats & Webhooks
-            "statcounters",
-            "contactstatistics",
-            "liststatistics",
-            "statistics_linkClick",
-            "statistics_recipientEsp",
-            "geostatistics",
-            "toplinkclicked",
-            "eventcallbackurl",
-            "parseroute",
-            # Senders, Domains & Account
-            "dns",
-            "dns_check",
-            "sender",
-            "sender_validate",
-            "apikey",
-            "user",
-            "myprofile",
-        ]
-        return sorted(set(standard_attrs + dynamic_endpoints))
+    # --- Public API ---
+
+    def close(self) -> None:
+        """Close the underlying requests.Session and purge memory (CWE-316)."""
+        if self.session:
+            self.session.auth = None
+            self.session.headers.clear()
+            self.session.close()
+
+    def api_call(
+        self,
+        method: HttpMethod,
+        url: str,
+        filters: dict[str, Any] | None = None,
+        data: PayloadType = None,
+        headers: dict[str, str] | None = None,
+        timeout: TimeoutType = None,  # noqa: PYI041
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Perform the actual network request using the persistent HTTP session.
+
+        This method acts as the core orchestrator, handling telemetry extraction,
+        payload serialization, security guardrails, and centralized logging.
+
+        Args:
+            method (HttpMethod): The HTTP method.
+            url (str): The fully constructed API URL.
+            filters (dict[str, Any] | None, optional): Query parameters.
+            data (PayloadType, optional): Request payload.
+            headers (dict[str, str] | None, optional): Custom HTTP headers.
+            timeout (TimeoutType, optional): Request timeout.
+            ensure_ascii (bool | None, optional): Deprecated. Ensure ASCII encoding.
+            data_encoding (str | None, optional): Deprecated. Data encoding string.
+            **kwargs (Any): Additional arguments passed to `requests.Session.request`.
+
+        Returns:
+            requests.Response: The HTTP response from the Mailjet API.
+
+        Raises:
+            TimeoutError: If the API request times out.
+            CriticalApiError: If a connection failure occurs.
+            ApiError: For other unhandled network exceptions.
+        """
+        request_data = self._prepare_payload(data, ensure_ascii, data_encoding)
+        timeout_val = timeout if timeout is not None else self.config.timeout
+
+        # Soft CWE-400 mitigation: Warn on infinite blocking, but allow it for v1.x backward compatibility
+        if not timeout_val:
+            warnings.warn(
+                "Passing 'timeout=None' allows infinite socket blocking and is deprecated (CWE-400). "
+                "Explicit timeouts will be strictly enforced in Mailjet SDK v2.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        trace_str = self._extract_telemetry(data, headers)
+
+        SecurityGuard.check_request_security(kwargs)
+
+        # Safe Defaults: Block Open Redirects and enforce TLS Verification
+        kwargs.setdefault("allow_redirects", False)
+        kwargs.setdefault("verify", True)
+
+        # Audit Hook: Alert monitoring systems if TLS is bypassed
+        if not kwargs.get("verify"):
+            sys.audit("mailjet.api.tls_disabled", url)
+            warnings.warn(
+                "Mailjet API TLS verification is disabled. This permits MITM attacks.", RuntimeWarning, stacklevel=2
+            )
+
+        # PEP 578: Emit standard audit event for outbound network egress
+        sys.audit("mailjet.api.request", method, url)
+
+        logger.debug("Sending Request: %s %s%s", method, url, trace_str)
+
+        try:
+            response = self.session.request(
+                method=method,
+                url=url,
+                params=filters,
+                data=request_data,
+                headers=headers,
+                timeout=timeout_val,
+                **kwargs,
+            )
+        except RequestsTimeout as error:
+            logger.exception("Timeout Error: %s %s%s", method, url, trace_str)
+            msg = f"Request to Mailjet API timed out: {error}"
+            raise TimeoutError(msg) from error
+        except RequestsConnectionError as error:
+            logger.critical("Connection Error: %s | URL: %s%s", error, url, trace_str)
+            msg = f"Connection to Mailjet API failed: {error}"
+            raise CriticalApiError(msg) from error
+        except RequestException as error:
+            logger.critical("Request Exception: %s | URL: %s%s", error, url, trace_str)
+            msg = f"An unexpected Mailjet API network error occurred: {error}"
+            raise ApiError(msg) from error
+
+        self._log_response(response, method, url, trace_str)
+        return response
+
+    # --- Private / Static Helpers ---
 
     @staticmethod
     def _prepare_payload(data: Any, ensure_ascii: bool | None, data_encoding: str | None) -> Any:
@@ -792,97 +907,3 @@ class Client:
                         trace_ctx.append(f"Campaign={SecurityGuard.sanitize_log_trace(val)}")
 
         return f" | Trace: [{' '.join(trace_ctx)}]" if trace_ctx else ""
-
-    def api_call(
-        self,
-        method: HttpMethod,
-        url: str,
-        filters: dict[str, Any] | None = None,
-        data: PayloadType = None,
-        headers: dict[str, str] | None = None,
-        timeout: TimeoutType = None,  # noqa: PYI041
-        ensure_ascii: bool | None = None,
-        data_encoding: str | None = None,
-        **kwargs: Any,
-    ) -> requests.Response:
-        """Perform the actual network request using the persistent HTTP session.
-
-        This method acts as the core orchestrator, handling telemetry extraction,
-        payload serialization, security guardrails, and centralized logging.
-
-        Args:
-            method (HttpMethod): The HTTP method.
-            url (str): The fully constructed API URL.
-            filters (dict[str, Any] | None, optional): Query parameters.
-            data (PayloadType, optional): Request payload.
-            headers (dict[str, str] | None, optional): Custom HTTP headers.
-            timeout (TimeoutType, optional): Request timeout.
-            ensure_ascii (bool | None, optional): Deprecated. Ensure ASCII encoding.
-            data_encoding (str | None, optional): Deprecated. Data encoding string.
-            **kwargs (Any): Additional arguments passed to `requests.Session.request`.
-
-        Returns:
-            requests.Response: The HTTP response from the Mailjet API.
-
-        Raises:
-            TimeoutError: If the API request times out.
-            CriticalApiError: If a connection failure occurs.
-            ApiError: For other unhandled network exceptions.
-        """
-        request_data = self._prepare_payload(data, ensure_ascii, data_encoding)
-        timeout_val = timeout if timeout is not None else self.config.timeout
-
-        # Soft CWE-400 mitigation: Warn on infinite blocking, but allow it for v1.x backward compatibility
-        if not timeout_val:
-            warnings.warn(
-                "Passing 'timeout=None' allows infinite socket blocking and is deprecated (CWE-400). "
-                "Explicit timeouts will be strictly enforced in Mailjet SDK v2.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
-        trace_str = self._extract_telemetry(data, headers)
-
-        SecurityGuard.check_request_security(kwargs)
-
-        # Safe Defaults: Block Open Redirects and enforce TLS Verification
-        kwargs.setdefault("allow_redirects", False)
-        kwargs.setdefault("verify", True)
-
-        # Audit Hook: Alert monitoring systems if TLS is bypassed
-        if not kwargs.get("verify"):
-            sys.audit("mailjet.api.tls_disabled", url)
-            warnings.warn(
-                "Mailjet API TLS verification is disabled. This permits MITM attacks.", RuntimeWarning, stacklevel=2
-            )
-
-        # PEP 578: Emit standard audit event for outbound network egress
-        sys.audit("mailjet.api.request", method, url)
-
-        logger.debug("Sending Request: %s %s%s", method, url, trace_str)
-
-        try:
-            response = self.session.request(
-                method=method,
-                url=url,
-                params=filters,
-                data=request_data,
-                headers=headers,
-                timeout=timeout_val,
-                **kwargs,
-            )
-        except RequestsTimeout as error:
-            logger.exception("Timeout Error: %s %s%s", method, url, trace_str)
-            msg = f"Request to Mailjet API timed out: {error}"
-            raise TimeoutError(msg) from error
-        except RequestsConnectionError as error:
-            logger.critical("Connection Error: %s | URL: %s%s", error, url, trace_str)
-            msg = f"Connection to Mailjet API failed: {error}"
-            raise CriticalApiError(msg) from error
-        except RequestException as error:
-            logger.critical("Request Exception: %s | URL: %s%s", error, url, trace_str)
-            msg = f"An unexpected Mailjet API network error occurred: {error}"
-            raise ApiError(msg) from error
-
-        self._log_response(response, method, url, trace_str)
-        return response
