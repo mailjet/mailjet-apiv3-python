@@ -37,7 +37,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "requests>=2.32.5",
+    "requests>=2.33.0",
     "typing-extensions>=4.7.1; python_version < '3.11'",
 ]
 
@@ -82,11 +82,11 @@ linting = [
     "pyright",
     "types-requests",
     "vulture",
-    "python-dotenv>=0.19.2",
+    "python-dotenv>=1.2.2",
 ]
 
 tests = [
-    "pytest>=7.0.0",
+    "pytest>=9.0.3",
     "pytest-cov",
     "pytest-xdist",
     "coverage>=4.5.4",
