@@ -135,38 +135,70 @@ def prepare_url(match: Any) -> str:
 # --- Deprecated Utilities ---
 
 
-def parse_response(response: requests.Response, debug: bool = False) -> dict[str, Any] | str:  # noqa: ARG001
-    """Deprecated: Extract JSON or text from response.
-
-    Args:
-        response (requests.Response): The HTTP response.
-        debug (bool): Deprecated debug flag.
-
-    Returns:
-        dict[str, Any] | str: The parsed JSON dictionary or raw text string.
-    """
-    msg = (
-        "parse_response is deprecated and will be removed in future releases. "
-        "Please use response.json() or response.text directly on the requests.Response object."
-    )
-    warnings.warn(msg, DeprecationWarning, stacklevel=2)
-    try:
-        return response.json()
-    except ValueError:
-        return response.text
-
-
-def logging_handler(response: requests.Response) -> None:  # noqa: ARG001
+def logging_handler(to_file: bool = False, **_kwargs: Any) -> logging.Logger:  # noqa: ARG001
     """Deprecated: Custom logging handler.
 
     Args:
-        response (requests.Response): The HTTP response.
+        to_file (bool): Deprecated flag. Output is no longer written to files natively.
+        **kwargs (Any): Absorbs any other legacy keyword arguments.
+
+    Returns:
+        logging.Logger: A legacy logger instance to prevent AttributeError in old integrations.
     """
     msg = (
         "logging_handler is deprecated and will be removed in future releases. "
         "Logging is now integrated cleanly and automatically via Python's standard `logging` library."
     )
     warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+    logger = logging.getLogger("mailjet_legacy")
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(levelname)s | %(message)s")
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    logger.addHandler(stdout_handler)
+
+    # Return a safe, isolated logger so downstream code like `logger.debug()` doesn't crash
+    return logger
+
+
+def parse_response(
+    response: requests.Response,
+    log: Any = None,
+    debug: bool = False,
+    **_kwargs: Any,
+) -> Any:
+    """Deprecated: Extract JSON or text from response.
+
+    Args:
+        response (requests.Response): The HTTP response.
+        log (Any, optional): Deprecated logging callable.
+        debug (bool): Deprecated debug flag.
+        **kwargs (Any): Absorbs any other legacy keyword arguments.
+
+    Returns:
+        Any: The parsed JSON dictionary or raw text string.
+    """
+    msg = (
+        "parse_response is deprecated and will be removed in future releases. "
+        "Please use response.json() or response.text directly on the requests.Response object."
+    )
+    warnings.warn(msg, DeprecationWarning, stacklevel=2)
+
+    try:
+        data = response.json()
+    except ValueError:
+        return response.text
+    else:
+        # Soft legacy support: run the logger if explicitly passed without crashing
+        if debug and callable(log):
+            with suppress(Exception):
+                lgr = log()
+                lgr.debug("REQUEST: %s", response.request.url)
+                lgr.debug("RESPONSE_CODE: %s", response.status_code)
+                logging.getLogger().handlers.clear()
+
+        return data
 
 
 # ==========================================
