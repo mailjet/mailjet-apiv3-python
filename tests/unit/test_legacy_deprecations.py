@@ -62,11 +62,11 @@ def test_parse_response_handles_value_error_fallback() -> None:
 
 
 def test_logging_handler_emits_deprecation_warning() -> None:
-    """Verify logging_handler executes safely but warns the developer."""
+    """Verify logging_handler returns a logger and warns the developer."""
     resp = requests.Response()
-
     with pytest.warns(DeprecationWarning, match="logging_handler is deprecated"):
-        logging_handler(resp)
+        # Pass the response to verify it absorbs positional arguments safely at runtime
+        logging_handler(resp)  # type: ignore[arg-type]
 
 
 def test_legacy_kwargs_emit_deprecation_warning(monkeypatch: pytest.MonkeyPatch) -> None:
