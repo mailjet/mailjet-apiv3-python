@@ -20,8 +20,8 @@ def test_get_version_is_none() -> None:
         sys.modules,
         {"pkg_resources": None, "importlib.metadata": None, "mailjet_rest": None},
     ):
-        with suppress(Exception):
-            get_version()
+        version = get_version()
+        assert version is None
 
 
 def test_get_version() -> None:
