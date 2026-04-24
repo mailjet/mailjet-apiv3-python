@@ -30,7 +30,7 @@ def test_get_version() -> None:
 
 def test_get_version_raises_exception() -> None:
     """Forces the version parser to hit its fallback exception blocks (ValueError, ImportError, etc.)."""
-    # By forcing a ValueError exception on the system path or modules, we hit lines 31-65.
+    # By forcing parser-related exceptions, verify get_version gracefully falls back.
     with patch(
         "mailjet_rest.utils.version.open",
         side_effect=ValueError("Forced ValueError for coverage"),
@@ -38,8 +38,7 @@ def test_get_version_raises_exception() -> None:
         with patch.dict(
             sys.modules, {"pkg_resources": None, "importlib.metadata": None}
         ):
-            with suppress(Exception):
-                get_version()
+            assert get_version() is None
 
     with patch(
         "mailjet_rest.utils.version.open",
@@ -48,5 +47,4 @@ def test_get_version_raises_exception() -> None:
         with patch.dict(
             sys.modules, {"pkg_resources": None, "importlib.metadata": None}
         ):
-            with suppress(Exception):
-                get_version()
+            assert get_version() is None
