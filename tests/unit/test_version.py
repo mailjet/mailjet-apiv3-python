@@ -10,8 +10,9 @@ from mailjet_rest.utils.version import get_version
 def test_version_length_equal_three() -> None:
     """Verifies standard version fetching returns a properly formatted string."""
     version = get_version()
-    if version:
-        assert len(version.split(".")) >= 3
+    assert version is not None
+    assert version != ""
+    assert len(version.split(".")) >= 3
 
 
 def test_get_version_is_none() -> None:
