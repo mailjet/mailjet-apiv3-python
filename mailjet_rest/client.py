@@ -13,6 +13,7 @@ import sys
 import warnings
 from contextlib import suppress
 from dataclasses import dataclass
+from dataclasses import field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 from typing import Any
@@ -206,7 +207,7 @@ def parse_response(
 # ==========================================
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class Config:
     """Configuration settings for interacting with the Mailjet API.
 
@@ -232,6 +233,7 @@ class Config:
             ValueError: If the URL scheme is insecure or timeout bounds are violated.
         """
         SecurityGuard.validate_config_url(self.api_url, allowed_root_domain=self.ALLOWED_ROOT_DOMAIN)
+
         if not self.api_url.endswith("/"):
             self.api_url += "/"
 
@@ -284,6 +286,7 @@ class Config:
 # ==========================================
 
 
+@dataclass(slots=True)
 class Endpoint:
     """A class representing a specific Mailjet API endpoint.
 
@@ -291,21 +294,16 @@ class Endpoint:
     dynamically based on the requested resource.
     """
 
-    # Prevent dynamic dict creation for ephemeral objects
-    __slots__ = ("_action_parts", "_name_lower", "_resource_lower", "client", "name")
+    client: Client
+    name: str
+    _name_lower: str = field(init=False)
+    _action_parts: list[str] = field(init=False)
+    _resource_lower: str = field(init=False)
 
-    def __init__(self, client: Client, name: str) -> None:
-        """Initialize a new Endpoint instance.
-
-        Args:
-            client (Client): The active API client managing the session.
-            name (str): The resource name (e.g., 'contact', 'send', 'contactslist_csvdata').
-        """
-        self.client = client
-        self.name = name
-        # Pre-compute routing strings ONCE instead of on every network call
-        self._name_lower = name.lower()
-        self._action_parts = name.split("_")
+    def __post_init__(self) -> None:
+        """Pre-compute routing strings ONCE instead of on every network call."""
+        self._name_lower = self.name.lower()
+        self._action_parts = self.name.split("_")
         self._resource_lower = self._action_parts[0].lower()
 
     @staticmethod
