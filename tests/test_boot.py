@@ -10,7 +10,7 @@ def boot_test() -> None:
     """ Profile the cost of initial module imports and client instantiation. """
     # Importing inside the function ensures we capture the disk-crawling overhead
     from mailjet_rest.client import Client
-    client = Client(auth=("api_key", "api_secret"))
+    Client(auth=("api_key", "api_secret"))
 
 if __name__ == "__main__":
     profiler = cProfile.Profile()
