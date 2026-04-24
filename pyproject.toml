@@ -91,6 +91,7 @@ tests = [
     "pytest-xdist",
     "coverage>=4.5.4",
     "pyfakefs",
+    "responses",
 ]
 
 profilers = [

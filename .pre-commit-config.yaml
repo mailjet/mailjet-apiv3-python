@@ -101,12 +101,6 @@ repos:
         name: "🔒 security · Detect private keys"
 
   # Git commit quality
-  - repo: https://github.com/jorisroovers/gitlint
-    rev: v0.19.1
-    hooks:
-      - id: gitlint
-        name: "🌳 git · Validate commit format"
-
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.13.10
     hooks:
@@ -169,6 +163,7 @@ repos:
           - requests>=2.32.5
           - pytest>=7.0.0
           - typing-extensions>=4.7.1
+          - responses
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.11

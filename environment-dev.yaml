@@ -19,6 +19,7 @@ dependencies:
   - pytest-benchmark
   - pytest-cov
   - pytest-xdist
+  - responses
   # linters, formatters & typing (Aligned with pre-commit-config.yaml)
   - mypy
   - pyright
