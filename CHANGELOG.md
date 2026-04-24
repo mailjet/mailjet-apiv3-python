@@ -4,6 +4,8 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-04-XX
+
 ### Security
 
 - **CWE-22 (Prevented Path Traversal):** Prevented vulnerabilities by enforcing strict URL encoding (`urllib.parse.quote`) on all dynamically injected path parameters (`id` and `action_id`).
@@ -68,6 +70,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 ### Pull Requests Merged
 
 - [PR_125](https://github.com/mailjet/mailjet-apiv3-python/pull/125) - Refactor client.
+- [PR_128](https://github.com/mailjet/mailjet-apiv3-python/pull/128) - Release 1.6.0.
 
 ## [1.5.1] - 2025-07-14
 
@@ -255,4 +258,5 @@ We [keep a changelog.](http://keepachangelog.com/)
 [1.4.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.4.0
 [1.5.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.0
 [1.5.1]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1
-[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1...HEAD
+[1.6.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0
+[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0...HEAD
