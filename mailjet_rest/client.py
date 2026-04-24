@@ -141,7 +141,7 @@ def logging_handler(to_file: bool = False, **_kwargs: Any) -> logging.Logger:  #
 
     Args:
         to_file (bool): Deprecated flag. Output is no longer written to files natively.
-        **kwargs (Any): Absorbs any other legacy keyword arguments.
+        **_kwargs (Any): Absorbs any other legacy keyword arguments.
 
     Returns:
         logging.Logger: A legacy logger instance to prevent AttributeError in old integrations.
@@ -175,7 +175,7 @@ def parse_response(
         response (requests.Response): The HTTP response.
         log (Any, optional): Deprecated logging callable.
         debug (bool): Deprecated debug flag.
-        **kwargs (Any): Absorbs any other legacy keyword arguments.
+        **_kwargs (Any): Absorbs any other legacy keyword arguments.
 
     Returns:
         Any: The parsed JSON dictionary or raw text string.

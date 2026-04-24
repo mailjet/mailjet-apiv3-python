@@ -34,7 +34,7 @@ def clean_version(version_str: str) -> tuple[int, ...]:
     except (IndexError, ValueError):
         return 0, 0, 0
     else:
-        return (major, minor, patch)
+        return major, minor, patch
 
 
 # VERSION is a tuple of integers (1, 3, 2).
