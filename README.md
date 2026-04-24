@@ -24,6 +24,7 @@
     - [conda & make](#conda--make)
   - [For development](#for-development)
     - [Using conda](#using-conda)
+    - [Management script](#management-script)
 - [Authentication](#authentication)
 - [Quick Start](#quick-start)
   - [Advanced Configuration](#advanced-configuration)
@@ -34,6 +35,8 @@
 - [Logging & Debugging](#logging--debugging)
   - [IDE Autocompletion & DX](#ide-autocompletion--dx)
   - [URL path](#url-path)
+- [Performance & Architecture](#performance--architecture)
+- [Security Guardrails](#security-guardrails)
 - [Request examples](#request-examples)
   - [Full list of supported endpoints](#full-list-of-supported-endpoints)
   - [Send API (v3.1)](#send-api-v31)
@@ -125,6 +128,26 @@ conda activate mailjet
 ```bash
 make dev-full
 conda activate mailjet-dev
+```
+
+#### Management script
+
+We provide a universal management script (`manage.sh`) to simplify local development, testing, and linting.
+
+```bash
+# 1. Setup the conda environment and pre-commit hooks
+./manage.sh env_setup
+conda activate mailjet-dev
+
+# 2. Run the test suite (Unit + Integration)
+./manage.sh test_all
+
+# 3. Run the performance profilers
+./manage.sh perf_bench
+
+# 4. Format and lint the code
+./manage.sh format
+./manage.sh lint
 ```
 
 ## Authentication
@@ -288,6 +311,23 @@ For the **Content API (v1)**, sub-actions will be correctly routed using slashes
 mailjet = Client(auth=(api_key, api_secret), version="v1")
 result = mailjet.data_images.get()
 ```
+
+## Performance & Architecture
+
+The Mailjet SDK `v1.6.0+` has been heavily optimized for high-concurrency and memory-constrained environments (like AWS Lambda).
+It utilizes `__slots__` for memory density, immutable `MappingProxyType` headers for zero-allocation merging, and O(1) dynamic endpoint caching.
+
+For a detailed breakdown of our nanosecond routing benchmarks and instructions on how to profile the SDK, please read our [Performance & Architecture Guide](PERFORMANCE.md).
+
+## Security Guardrails
+
+The SDK includes active protections against common API vulnerabilities:
+
+- **SSRF & Open Redirects:** Hard-disabled automatic redirects and enforced strict hostname validation.
+- **CRLF Injection:** Native string evaluation blocks header injection attempts via compromised Bearer tokens or custom headers.
+- **PEP 578 Audit Hooks:** The SDK emits native Python audit events (`sys.audit`) for all outbound network egress and explicitly warns if TLS verification is bypassed.
+
+See our [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy and supported versions.
 
 ## Request examples
 
