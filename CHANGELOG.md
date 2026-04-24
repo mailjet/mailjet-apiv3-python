@@ -35,7 +35,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Changed
 
-- **Performance:** Optimized dynamic routing by introducing an instance-level `_endpoint_cache`, resulting in a ~50x speedup for endpoint resolution.
+- **Performance:** Optimized dynamic routing by introducing an instance-level `_endpoint_cache`, resulting in a ~47x speedup for endpoint resolution.
 - **Performance:** Reduced RAM footprint and garbage collection overhead by implementing `__slots__` across core `Client`, `Config`, and `Endpoint` classes.
 - **Performance:** Optimized API call overhead by replacing dynamic header generation with `types.MappingProxyType` (`_JSON_HEADERS`, `_TEXT_HEADERS`) and moving the retry configuration to a `ClassVar`.
 - **Performance:** Improved cold boot initialization time by replacing regex (`re.match`) with native string manipulation (`.split()`) in `mailjet_rest/utils/version.py`.

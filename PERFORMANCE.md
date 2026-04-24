@@ -29,11 +29,14 @@ ______________________________________________________________________
 
 Our internal `pytest-benchmark` and `cProfile` suites verify these architectural gains on Python 3.14. Despite adding heavy OWASP security guardrails (PEP 578 Audit Hooks, SSRF prevention, Regex validation), the memory optimizations yielded a net performance increase.
 
-| Metric                   | v1.5.1 (Baseline) | Optimized Architecture | Delta             |
-| :----------------------- | :---------------- | :--------------------- | :---------------- |
-| **Routing Speed (Mean)** | ~7.66 µs          | **~0.15 µs (152 ns)**  | **~50x Faster**   |
-| **Request Cycle (Mean)** | ~260.94 µs        | **~243.70 µs**         | **~6.6% Faster**  |
-| **Routing Ops/Sec**      | ~130 Kops/s       | **~6,566 Kops/s**      | **Massive Boost** |
+We deliberately traded a fractional increase in one-time startup cost (to load modern typing and dataclasses) for a massive, repeatable increase in runtime routing speed and request throughput.
+
+| Metric                   | v1.5.1 (Baseline) | Optimized Architecture | Delta              |
+| :----------------------- | :---------------- | :--------------------- | :----------------- |
+| **Routing Speed (Mean)** | ~7.61 µs          | **~0.16 µs (159 ns)**  | **~47x Faster**    |
+| **Request Cycle (Mean)** | ~271.67 µs        | **~245.64 µs**         | **~9.5% Faster**   |
+| **Routing Ops/Sec**      | ~131 Kops/s       | **~6,276 Kops/s**      | **Massive Boost**  |
+| **Cold-Boot Init Time**  | **~0.099 s**      | ~0.119 s               | *+20ms (Expected)* |
 
 *Note: Benchmarks measure network-isolated internal overhead using mocked `responses`. Testing hardware: Darwin-CPython-3.14-64bit.*
 
