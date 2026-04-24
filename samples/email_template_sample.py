@@ -3,13 +3,12 @@ import os
 
 from mailjet_rest import Client
 
-
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
 )
 
 mailjet31 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
     version="v3.1",
 )
 
@@ -63,8 +62,8 @@ def use_templates_with_send_api():
 
 if __name__ == "__main__":
     result = create_a_template()
-    print(result.status_code)
+    print(f"Status Code: {result.status_code}")
     try:
         print(json.dumps(result.json(), indent=4))
-    except json.decoder.JSONDecodeError:
+    except ValueError:
         print(result.text)

@@ -2,17 +2,27 @@
 
 ## Supported Versions
 
+We currently provide security updates only for the active major version of the Mailjet Python Wrapper.
+
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.4.x   | :white_check_mark: |
-| < 1.4.0 | :x:                |
+| 1.6.x   | :white_check_mark: |
+| \<1.6.0 | :x:                |
 
 # Vulnerability Disclosure
 
-If you think you have found a potential security vulnerability in
+Please **do not** report security vulnerabilities through public GitHub issues.
+
+If you believe you have found a potential security vulnerability in
 mailjet-rest, please open a [draft Security Advisory](https://github.com/mailjet/mailjet-apiv3-python/security/advisories/new)
 via GitHub. We will coordinate verification and next steps through
 that secure medium.
+
+Please include the following details:
+
+- A description of the vulnerability.
+- Steps to reproduce the issue.
+- Possible impact.
 
 If English is not your first language, please try to describe the
 problem and its impact to the best of your ability. For greater detail,

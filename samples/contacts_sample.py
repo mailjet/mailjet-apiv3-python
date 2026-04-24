@@ -6,11 +6,11 @@ from mailjet_rest import Client
 
 
 mailjet30 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
 )
 
 mailjet31 = Client(
-    auth=(os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"]),
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
     version="v3.1",
 )
 
@@ -40,9 +40,15 @@ def edit_contact_data():
 
 def manage_contact_properties():
     """POST https://api.mailjet.com/v3/REST/contactmetadata"""
-    _id = "$contact_ID"
-    data = {"Data": [{"Name": "first_name", "Value": "John"}]}
-    return mailjet30.contactdata.update(id=_id, data=data)
+    data = {"Datatype": "str", "Name": "age", "NameSpace": "static"}
+    return mailjet30.contactmetadata.create(data=data)
+
+
+def exclude_a_contact_from_campaigns():
+    """PUT https://api.mailjet.com/v3/REST/contact/$ID_OR_EMAIL"""
+    _id = "$ID_OR_EMAIL"
+    data = {"IsExcludedFromCampaigns": "true"}
+    return mailjet30.contact.update(id=_id, data=data)
 
 
 def create_a_contact_list():
@@ -56,9 +62,9 @@ def add_a_contact_to_a_contact_list():
     data = {
         "IsUnsubscribed": "true",
         "ContactID": "987654321",
-        "ContactAlt": "passenger@mailjet.com",
+        "ContactAlt": "passenger@mailjet.com",  # pragma: allowlist secret
         "ListID": "123456",
-        "ListAlt": "abcdef123",
+        "ListAlt": "abcdef123",  # pragma: allowlist secret
     }
     return mailjet30.listrecipient.create(data=data)
 
@@ -209,13 +215,15 @@ def retrieve_a_contact():
 
 
 def delete_the_contact():
-    """DELETE https://api.mailjet.com/v4/contacts/{contact_ID}"""
+    """DELETE https://api.mailjet.com/v3/REST/contact/$CONTACT_ID"""
+    _id = "$CONTACT_ID"
+    return mailjet30.contact.delete(id=_id)
 
 
 if __name__ == "__main__":
-    result = edit_contact_data()
-    print(result.status_code)
+    result = create_a_contact()
+    print(f"Status Code: {result.status_code}")
     try:
         print(json.dumps(result.json(), indent=4))
-    except json.decoder.JSONDecodeError:
+    except ValueError:
         print(result.text)

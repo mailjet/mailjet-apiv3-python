@@ -1,58 +1,39 @@
----
 name: mailjet-dev
 channels:
   - defaults
+  - conda-forge
 dependencies:
   - python >=3.10
   # build & host deps
   - pip
   - setuptools-scm
-  - # PyPI publishing only
+  # PyPI publishing only (modern PEP 517 package builder)
   - python-build
   # runtime deps
-  - requests >=2.32.4
+  - requests >=2.33.0
+  - typing-extensions>=4.7.1  # [py<311]
   # tests
-  - conda-forge::pyfakefs
+  - pyfakefs
   - coverage >=4.5.4
-  - pytest
+  - pytest >=9.0.3
   - pytest-benchmark
   - pytest-cov
   - pytest-xdist
-  # linters & formatters
-  - autopep8
-  - black
-  - flake8
-  - isort
-  - make
-  - conda-forge::monkeytype
+  - responses
+  # linters, formatters & typing (Aligned with pre-commit-config.yaml)
   - mypy
-  - pandas-stubs
-  - pep8-naming
-  - pycodestyle
-  - pydocstyle
-  - pylint
   - pyright
-  - radon
   - ruff
-  - toml
   - types-requests
-  - yapf
   # other
   - conda
   - conda-build
   - jsonschema
   - pre-commit
-  - python-dotenv >=0.19.2
+  - python-dotenv >=1.2.2
   - types-jsonschema
   - pip:
-      - autoflake8
       - bandit
-      - docconvert
-      - monkeytype
-      - pyment >=0.3.3
-      - pytype
-      - pyupgrade
-      - refurb
       - scalene >=1.3.16
       - snakeviz
       - typos

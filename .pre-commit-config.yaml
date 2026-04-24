@@ -1,11 +1,28 @@
----
 # Apply to all files without committing:
 #   pre-commit run --all-files
 # Update this file:
 #   pre-commit autoupdate
+
+exclude: |
+  (?x)^(
+      .*\{\{.*\}\}.*|     # Exclude any files with cookiecutter variables
+      docs/site/.*|       # Exclude mkdocs compiled files
+      \.history/.*|       # Exclude history files
+      .*cache.*/.*|       # Exclude cache directories
+      .*venv.*/.*|        # Exclude virtual environment directories
+      .*/versioneer\.py|
+      .*/_version\.py|
+      .*/.*\.svg
+  )$
+
+fail_fast: true
+
+default_install_hook_types:
+  - pre-commit
+  - commit-msg
+
 default_language_version:
   python: python3
-exclude: ^(.*/versioneer\.py|.*/_version\.py|.*/.*\.svg)
 
 ci:
     autofix_commit_msg: |
@@ -19,160 +36,224 @@ ci:
     skip: []
     submodules: false
 
+# .pre-commit-config.yaml
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
+      # Python-specific checks
       - id: check-ast
+        name: "🐍 python · Validate syntax"
       - id: check-builtin-literals
-      - id: fix-byte-order-marker
-      - id: check-case-conflict
+        name: "🐍 python · Use literal syntax"
       - id: check-docstring-first
-      - id: check-vcs-permalinks
-      # Fail if staged files are above a certain size.
-      # To add a large file, use 'git lfs track <file>; git add <file> to track large files with
-      # git-lfs rather than committing them directly to the git history
-      - id: check-added-large-files
-        args: [ "--maxkb=500" ]
-      # Fails if there are any ">>>>>" lines in files due to merge conflicts.
-      - id: check-merge-conflict
-      # ensure syntaxes are valid
-      - id: check-toml
+        name: "🐍 python · Validate docstring placement"
       - id: debug-statements
-      # Makes sure files end in a newline and only a newline;
-      - id: end-of-file-fixer
-      - id: mixed-line-ending
-      # Trims trailing whitespace. Allow a single space on the end of .md lines for hard line breaks.
-      - id: trailing-whitespace
-        args: [ --markdown-linebreak-ext=md ]
-      # Sort requirements in requirements.txt files.
-      - id: requirements-txt-fixer
-      # Prevent committing directly to trunk
-      - id: no-commit-to-branch
-        args: [ "--branch=master" ]
-      # Detects the presence of private keys
-      - id: detect-private-key
+        name: "🐍 python · Detect debug statements"
+        language_version: python3
 
-  - repo: https://github.com/jorisroovers/gitlint
+      # Git workflow protection
+      - id: check-added-large-files
+        name: "🌳 git · Block large files"
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+        name: "🌳 git · Detect conflict markers"
+      - id: forbid-new-submodules
+        name: "🌳 git · Prevent submodules"
+      - id: no-commit-to-branch
+        name: "🌳 git · Protect main branches"
+        args: ["--branch", "main", "--branch", "master"]
+      - id: check-vcs-permalinks
+        name: "🌳 git · Validate VCS links"
+
+      # Filesystem and naming validation
+      - id: check-case-conflict
+        name: "📁 filesystem · Check case sensitivity"
+      - id: check-illegal-windows-names
+        name: "📁 filesystem · Validate Windows names"
+      - id: check-symlinks
+        name: "📁 filesystem · Check symlink validity"
+      - id: destroyed-symlinks
+        name: "📁 filesystem · Detect broken symlinks"
+
+      # File format validation
+      - id: check-toml
+        name: "📋 format · Validate TOML"
+      - id: check-yaml
+        name: "📋 format · Validate YAML"
+        exclude: conda.recipe/meta.yaml
+
+      # File content fixes
+      - id: fix-byte-order-marker
+        name: "✨ fix · Remove BOM markers"
+      - id: end-of-file-fixer
+        name: "✨ fix · Ensure final newline"
+      - id: mixed-line-ending
+        name: "✨ fix · Normalize line endings"
+      - id: trailing-whitespace
+        name: "✨ fix · Trim trailing whitespace"
+        args: [--markdown-linebreak-ext=md]
+      - id: requirements-txt-fixer
+        name: "✨ fix · Sort requirements"
+
+      # Security checks
+      - id: detect-private-key
+        name: "🔒 security · Detect private keys"
+
+  # Git commit quality
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.13.10
+    hooks:
+      - id: commitizen
+        name: "🌳 git · Validate commit message"
+        stages: [commit-msg]
+
+  # Security scanning (grouped together)
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: "🔒 security · Detect committed secrets"
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        name: "🔒 security · Scan for hardcoded secrets"
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        name: "🔒 security · Check Python vulnerabilities"
+        args: ["-c", "pyproject.toml", "-r", "."]
+        exclude: ^tests/
+        additional_dependencies: [".[toml]"]
+
+  - repo: https://github.com/semgrep/pre-commit
+    rev: 'v1.159.0'
+    hooks:
+      - id: semgrep
+        name: "🔒 security · Static analysis (semgrep)"
+        args: [ '--config=auto', '--error' ]
+
+  # Spelling and typos
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.45.1
+    hooks:
+      - id: typos
+        name: "📝 spelling · Check typos"
+
+  # CI/CD validation
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.1
+    hooks:
+      - id: check-dependabot
+        name: "🔧 ci/cd · Validate Dependabot config"
+      - id: check-github-workflows
+        name: "🔧 ci/cd · Validate GitHub workflows"
+        files: ^\.github/workflows/.*\.ya?ml$
+
+  - repo: https://github.com/ariebovenberg/slotscheck
     rev: v0.19.1
     hooks:
-      - id: gitlint
-
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.4.1
-    hooks:
-      - id: codespell
-        args: [--write]
-        exclude: ^tests
-
-  - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.33.2
-    hooks:
-      - id: check-github-workflows
-
-  - repo: https://github.com/hhatto/autopep8
-    rev: v2.3.2
-    hooks:
-      - id: autopep8
-        exclude: ^docs/
-
-  - repo: https://github.com/akaihola/darker
-    rev: v2.1.1
-    hooks:
-      - id: darker
-
-  - repo: https://github.com/PyCQA/autoflake
-    rev: v2.3.1
-    hooks:
-      - id: autoflake
-        args:
-          - --in-place
-          - --remove-all-unused-imports
-          - --remove-unused-variable
-          - --ignore-init-module-imports
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.3.0
-    hooks:
-    -   id: flake8
+      - id: slotscheck
+        name: "🔍 check · slotscheck"
         additional_dependencies:
-          - radon
-          - flake8-docstrings
-          - Flake8-pyproject
-        exclude: ^docs/
+          - requests>=2.32.5
+          - pytest>=7.0.0
+          - typing-extensions>=4.7.1
+          - responses
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.11
+    hooks:
+      - id: ruff-check
+        name: "🐍 lint · Check with Ruff"
+        args: [--fix, --preview]
+      - id: ruff-format
+        name: "🐍 format · Format with Ruff"
 
   - repo: https://github.com/PyCQA/pylint
-    rev: v3.3.7
+    rev: v4.0.5
     hooks:
       - id: pylint
+        name: "🐍 lint · Check code quality"
         args:
           - --exit-zero
 
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.20.0
+  - repo: https://github.com/econchick/interrogate
+    rev: 1.7.0
     hooks:
-      - id: pyupgrade
-        args: [--py310-plus, --keep-runtime-typing]
+      - id: interrogate
+        name: "📝 docs · Check docstring coverage"
+        exclude: ^(tests|.*/samples)$
+        pass_filenames: false
+        args: [ --verbose, --fail-under=43, --ignore-init-method ]
 
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    # Ruff version.
-    rev: v0.12.2
-    hooks:
-      # Run the linter.
-      - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
-      # Run the formatter.
-      - id: ruff-format
-
-  - repo: https://github.com/pycqa/pydocstyle
-    rev: 6.3.0
-    hooks:
-      - id: pydocstyle
-        args: [--select=D200,D213,D400,D415]
-        additional_dependencies: [tomli]
-
-  -   repo: https://github.com/dosisod/refurb
-      rev: v2.1.0
-      hooks:
-      -   id: refurb
-          args: [--ignore, FURB184]
-
+  # Python type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.16.1
+    rev: v1.20.1
     hooks:
-    -   id: mypy
+      - id: mypy
+        name: "🐍 types · Check with mypy"
         args: [--config-file=./pyproject.toml]
         additional_dependencies:
+          - pytest-order
           - types-requests
         exclude: ^samples/
 
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.403
+    rev: v1.1.408
     hooks:
-    - id: pyright
+      - id: pyright
+        name: "🐍 types · Check with pyright"
 
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.8.6
+  # Python project configuration
+  - repo: https://github.com/abravalheri/validate-pyproject
+    rev: v0.25
     hooks:
-      - id: bandit
-        args: ["-c", "pyproject.toml", "-r", "."]
-        # ignore all tests, not just tests data
-        exclude: ^tests/
-        additional_dependencies: [".[toml]"]
+      - id: validate-pyproject
+        name: "🐍 config · Validate pyproject.toml"
 
-  - repo: https://github.com/crate-ci/typos
-    # Important: Keep an exact version (not v1) to avoid pre-commit issues
-    # after running 'pre-commit autoupdate'
-    rev: v1.31.1
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
     hooks:
-      - id: typos
+      - id: python-check-blanket-noqa
+        name: "🐍 lint · Disallow blanket noqa"
+      - id: python-use-type-annotations
+        name: "🐍 types · Enforce type annotations"
+      - id: python-check-blanket-type-ignore
+        name: "🐍 types · Disallow blanket type:ignore"
+      - id: python-no-log-warn
+        name: "🐍 lint · Use logging.warning not warn"
+      - id: text-unicode-replacement-char
+        name: "📋 format · Detect unicode replacement char"
+      - id: python-no-eval
+        name: "🔒 security · Prevent eval() usage"
 
+  # Markdown formatting
   - repo: https://github.com/executablebooks/mdformat
-    rev: 0.7.22
+    rev: 1.0.0
     hooks:
       - id: mdformat
+        name: "📝 markdown · Format files"
+
         additional_dependencies:
-          # gfm = GitHub Flavored Markdown
           - mdformat-gfm
           - mdformat-black
+          - mdformat-ruff
+
+# TODO: Enable it for a single check
+#  - repo: https://github.com/tcort/markdown-link-check
+#    rev: v3.14.2
+#    hooks:
+#      - id: markdown-link-check
+#        name: "📝 docs · Check markdown links"
+#
+#  # Makefile linting
+#  - repo: https://github.com/checkmake/checkmake
+#    rev: v0.3.0
+#    hooks:
+#      - id: checkmake
+#        name: "🔧 build · Lint Makefile"

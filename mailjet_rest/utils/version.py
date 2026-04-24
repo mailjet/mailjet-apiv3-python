@@ -13,8 +13,6 @@ Functions:
 
 from __future__ import annotations
 
-import re
-
 from mailjet_rest._version import __version__ as package_version
 
 
@@ -27,15 +25,16 @@ def clean_version(version_str: str) -> tuple[int, ...]:
     Returns:
     tuple: A tuple representing the version of the package.
     """
-    if not version_str:
+    try:
+        parts = version_str.split(".")
+        major = int(parts[0])
+        minor = int(parts[1])
+        # Strip any trailing prerelease tags (e.g., "1rc1" -> "1")
+        patch = int("".join(c for c in parts[2] if c.isdigit()))
+    except (IndexError, ValueError):
         return 0, 0, 0
-    # Extract just the X.Y.Z part using regex
-    match = re.match(r"^(\d+\.\d+\.\d+)", version_str)
-    if match:
-        version_part = match.group(1)
-        return tuple(map(int, version_part.split(".")))
-
-    return 0, 0, 0  # type: ignore[unreachable]
+    else:
+        return (major, minor, patch)
 
 
 # VERSION is a tuple of integers (1, 3, 2).

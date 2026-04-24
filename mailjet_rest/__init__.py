@@ -14,10 +14,23 @@ Modules:
     - utils.version: Provides version management functionality.
 """
 
+from mailjet_rest.client import ApiError
 from mailjet_rest.client import Client
+from mailjet_rest.client import Config
+from mailjet_rest.client import CriticalApiError
+from mailjet_rest.client import Endpoint
+from mailjet_rest.client import TimeoutError  # noqa: A004
 from mailjet_rest.utils.version import get_version
 
 
 __version__: str = get_version()
 
-__all__ = ["Client", "get_version"]
+__all__ = [
+    "ApiError",
+    "Client",
+    "Config",
+    "CriticalApiError",
+    "Endpoint",
+    "TimeoutError",
+    "get_version",
+]

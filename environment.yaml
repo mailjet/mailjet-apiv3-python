@@ -1,4 +1,3 @@
----
 name: mailjet
 channels:
   - defaults
@@ -7,9 +6,5 @@ dependencies:
   # build & host deps
   - pip
   # runtime deps
-  - requests >=2.32.4
-  # tests
-  - pytest >=7.0.0
-  # other
-  - pre-commit
-  - toml
+  - requests >=2.33.0
+  - typing-extensions>=4.7.1  # [py<311]
