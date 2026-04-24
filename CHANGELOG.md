@@ -70,7 +70,9 @@ We [keep a changelog.](http://keepachangelog.com/)
 ### Pull Requests Merged
 
 - [PR_125](https://github.com/mailjet/mailjet-apiv3-python/pull/125) - Refactor client.
+- [PR_126](https://github.com/mailjet/mailjet-apiv3-python/pull/126) - build(deps): bump conda-incubator/setup-miniconda from 3.3.0 to 4.0.1
 - [PR_128](https://github.com/mailjet/mailjet-apiv3-python/pull/128) - Release 1.6.0.
+- [PR_129](https://github.com/mailjet/mailjet-apiv3-python/pull/129) - Use hyphen in the package name in readme.
 
 ## [1.5.1] - 2025-07-14
 
