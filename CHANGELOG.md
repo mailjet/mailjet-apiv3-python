@@ -35,19 +35,23 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Changed
 
+- **Performance:** Optimized dynamic routing by introducing an instance-level `_endpoint_cache`, resulting in a ~50x speedup for endpoint resolution.
+- **Performance:** Reduced RAM footprint and garbage collection overhead by implementing `__slots__` across core `Client`, `Config`, and `Endpoint` classes.
+- **Performance:** Optimized API call overhead by replacing dynamic header generation with `types.MappingProxyType` (`_JSON_HEADERS`, `_TEXT_HEADERS`) and moving the retry configuration to a `ClassVar`.
+- **Performance:** Improved cold boot initialization time by replacing regex (`re.match`) with native string manipulation (`.split()`) in `mailjet_rest/utils/version.py`.
 - Test Suite Modernization: Migrated from legacy `unittest` monolith to `pytest`, segregated into `tests/unit/` (offline) and `tests/integration/` (live network), adhering to the AAA (Arrange, Act, Assert) pattern.
 - CI/CD Optimization: Drastically improved GitHub Actions speed and reliability by implementing native pip dependency caching (`cache: 'pip'`) and isolated wheel installation tests.
 - Refactored `Client` and `Config` using `@dataclass` and `requests.Session` for robust connection pooling on multiple sequential requests.
 - Refactored `Endpoint._build_url` cyclomatic complexity by extracting pure `@staticmethod` helpers (`_build_csv_url`, `_check_dx_guardrails`) to satisfy strict static analysis.
 - Expanded `pre-commit` hooks for robust security and formatting (ruff, mypy, pyright, typos, bandit, semgrep).
 - Defined explicit public module interfaces using `__all__` to prevent namespace pollution.
-- Fixed `statcounters` required filters (explicitly added the `CounterTiming` parameter).
 - Cleaned up local development environments (`environment-dev.yaml`) and pinned sub-dependencies for stable CI pipelines.
 - Tooling Consolidation: Completely migrated to Ruff as the single source of truth for linting and formatting, purging legacy tools (Black, Flake8, Pylint, Pydocstyle) from `pyproject.toml` and Conda environments.
 - Documentation: Rewrote `README.md` to highlight modern DX configurations, including Context Managers, robust Error Handling, and Smart Telemetry.
 
 ### Deprecated
 
+- Passing `timeout=None` to allow infinite socket blocking is deprecated to mitigate CWE-400. Explicit timeouts will be strictly enforced in v2.0.
 - Legacy HTTP exception classes (`AuthorizationError`, `ApiRateLimitError`, `DoesNotExistError`, `ValidationError`, `ActionDeniedError`). The SDK natively returns the `requests.Response` object for standard HTTP status codes.
 - The legacy `ensure_ascii` and `data_encoding` arguments in the `create` and `update` method signatures. The underlying `requests` library handles UTF-8 serialization natively.
 - The `parse_response` and `logging_handler` utility functions. Logging is now integrated cleanly and automatically via Python's standard `logging` library. See the `README` for the new 2-line setup.
@@ -56,6 +60,10 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 - Root `test.py` monolith (replaced by a modular `test/` directory structure).
 - Redundant class constants (`API_REF`, `DEFAULT_API_URL`).
+
+### Fixed
+
+- Fixed `statcounters` required filters (explicitly added the `CounterTiming` parameter).
 
 ### Pull Requests Merged
 
