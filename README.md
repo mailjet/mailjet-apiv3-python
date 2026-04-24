@@ -63,7 +63,7 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 ## Compatibility
 
-This library `mailjet_rest` officially supports the following Python versions:
+This library `mailjet-rest` officially supports the following Python versions:
 
 - Python >= 3.10, < 3.15
 
