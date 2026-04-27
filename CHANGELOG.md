@@ -4,7 +4,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
-## [1.6.0] - 2026-04-XX
+## [1.6.0] - 2026-04-27
 
 ### Security
 
