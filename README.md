@@ -189,7 +189,7 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
 (Note:
 
 > **Note**
-> If you choose not to use the context manager, you should manually call mailjet.close() when your application shuts down).
+> If you choose not to use the context manager, you should manually call mailjet.close() when your application shuts down.
 
 ### Advanced Configuration
 
@@ -464,7 +464,7 @@ Some requests (for example [GET /contact](https://dev.mailjet.com/email/referenc
 `limit` `int` Limit the response to a select number of returned objects. Default value: `10`. Maximum value: `1000`
 `offset` `int` Retrieve a list of objects starting from a certain offset. Combine this query parameter with `limit` to retrieve a specific section of the list of objects. Default value: `0`
 `sort` `str` Sort the results by a property and select ascending (ASC) or descending (DESC) order. The default order is ascending. Keep in mind that this is not available for all properties. Default value: `ID asc`
-Next example returns 40 contacts starting from 51th record sorted by `Email` field descendally:
+Next example returns 40 contacts starting from 51st record sorted by `Email` field descendally:
 
 ```python
 filters = {
@@ -645,7 +645,7 @@ Feel free to ask anything, and contribute:
 - Create a new branch.
 - Implement your feature or bug fix.
 - Add documentation to it.
-- Commit, push, open a pull request and voila.
+- Commit, push, open a pull request and voilà.
 
 If you have suggestions on how to improve the guides, please submit an issue in our [Official API Documentation repo](https://github.com/mailjet/api-documentation).
 

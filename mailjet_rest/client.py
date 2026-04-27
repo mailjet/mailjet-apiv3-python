@@ -120,19 +120,6 @@ class ApiRateLimitError(ApiError):
 # Utilities
 # ==========================================
 
-
-def prepare_url(match: Any) -> str:
-    """Replace capital letters in the input string with a dash prefix and convert to lowercase.
-
-    Args:
-        match (Any): A regex match object containing a capital letter.
-
-    Returns:
-        str: A formatted URL string fragment (e.g., '_m').
-    """
-    return f"_{match.group(0).lower()}"
-
-
 # --- Deprecated Utilities ---
 
 
@@ -141,7 +128,7 @@ def logging_handler(to_file: bool = False, **_kwargs: Any) -> logging.Logger:  #
 
     Args:
         to_file (bool): Deprecated flag. Output is no longer written to files natively.
-        **kwargs (Any): Absorbs any other legacy keyword arguments.
+        **_kwargs (Any): Absorbs any other legacy keyword arguments.
 
     Returns:
         logging.Logger: A legacy logger instance to prevent AttributeError in old integrations.
@@ -152,15 +139,15 @@ def logging_handler(to_file: bool = False, **_kwargs: Any) -> logging.Logger:  #
     )
     warnings.warn(msg, DeprecationWarning, stacklevel=2)
 
-    logger = logging.getLogger("mailjet_legacy")
-    logger.setLevel(logging.DEBUG)
+    legacy_logger = logging.getLogger("mailjet_legacy")
+    legacy_logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter("%(levelname)s | %(message)s")
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(formatter)
-    logger.addHandler(stdout_handler)
+    legacy_logger.addHandler(stdout_handler)
 
     # Return a safe, isolated logger so downstream code like `logger.debug()` doesn't crash
-    return logger
+    return legacy_logger
 
 
 def parse_response(
@@ -175,7 +162,7 @@ def parse_response(
         response (requests.Response): The HTTP response.
         log (Any, optional): Deprecated logging callable.
         debug (bool): Deprecated debug flag.
-        **kwargs (Any): Absorbs any other legacy keyword arguments.
+        **_kwargs (Any): Absorbs any other legacy keyword arguments.
 
     Returns:
         Any: The parsed JSON dictionary or raw text string.
@@ -194,7 +181,8 @@ def parse_response(
         # Soft legacy support: run the logger if explicitly passed without crashing
         if debug and callable(log):
             with suppress(Exception):
-                lgr = log()
+                lgr = cast("logging.Logger", cast("object", log()))
+
                 lgr.debug("REQUEST: %s", response.request.url)
                 lgr.debug("RESPONSE_CODE: %s", response.status_code)
                 logging.getLogger().handlers.clear()
@@ -303,8 +291,18 @@ class Endpoint:
     def __post_init__(self) -> None:
         """Pre-compute routing strings ONCE instead of on every network call."""
         self._name_lower = self.name.lower()
-        self._action_parts = self.name.split("_")
-        self._resource_lower = self._action_parts[0].lower()
+        parts = self.name.split("_")
+
+        # Base resource ignores CamelCase-to-dash conversion (matches legacy behavior)
+        self._resource_lower = parts[0].lower()
+        self._action_parts = [self._resource_lower]
+
+        # Re-implement camelCase-to-dash conversion natively for sub-actions
+        if len(parts) > 1:
+            for part in parts[1:]:
+                # Convert 'linkClick' to 'link-click' natively
+                dashed = "".join("-" + c.lower() if c.isupper() else c for c in part)
+                self._action_parts.append(dashed.lstrip("-"))
 
     @staticmethod
     def _build_csv_url(base_url: str, version: str, resource: str, name_lower: str, id_val: int | str | None) -> str:
@@ -620,6 +618,10 @@ class Client:
         "user",
         "myprofile",
     )
+
+    config: Config
+    session: requests.Session
+    _endpoint_cache: dict[str, Endpoint]
 
     # --- Initialization & Magic Methods ---
 

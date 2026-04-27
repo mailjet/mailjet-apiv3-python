@@ -30,9 +30,8 @@ requirements:
     {% endfor %}
   run:
     - python
-    {% for dep in pyproject['project']['dependencies'] %}
-    - {{ dep.lower() }}
-    {% endfor %}
+    - requests >=2.33.0
+    - typing-extensions >=4.7.1  # [py<311]
 
 test:
   imports:

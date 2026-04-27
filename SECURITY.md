@@ -26,7 +26,7 @@ Please include the following details:
 
 If English is not your first language, please try to describe the
 problem and its impact to the best of your ability. For greater detail,
-please use your native language and we will try our best to translate it
+please use your native language, and we will try our best to translate it
 using online services.
 
 Please also include the code you used to find the problem and the

@@ -13,17 +13,15 @@ from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import RequestException
 from requests.exceptions import Timeout as RequestsTimeout
 
-from mailjet_rest._version import __version__
 from mailjet_rest.client import (
     ApiError,
     Client,
     Config,
     CriticalApiError,
     TimeoutError,
-    prepare_url,
 )
 from mailjet_rest.utils.guardrails import SecurityGuard
-from mailjet_rest.client import _JSON_HEADERS, _TEXT_HEADERS
+from mailjet_rest.client import _JSON_HEADERS, _TEXT_HEADERS  # type: ignore[attr-defined]
 
 if TYPE_CHECKING:
     # Explicitly import fixture type for MyPy in a type-checking block
@@ -253,6 +251,12 @@ def test_statcounters_endpoint_routing(client_offline: Client) -> None:
     assert url == "https://api.mailjet.com/v3/REST/statcounters"
 
 
+def test_camel_case_to_dash_routing(client_offline: Client) -> None:
+    """Verify that CamelCase endpoints correctly translate to dashed paths (e.g., linkClick -> link-click)."""
+    url = client_offline.statistics_linkClick._build_url()
+    assert "link-click" in url, f"Expected 'link-click' in URL, got {url}"
+
+
 # ==========================================
 # 4. HTTP Execution & Network Handling Tests
 # ==========================================
@@ -413,34 +417,6 @@ def test_legacy_action_id_fallback(client_offline: Client, monkeypatch: pytest.M
     # Calling with action_id but no id
     client_offline.contact.get(action_id=123)
 
-
-def test_prepare_url_headers_and_url() -> None:
-    assert prepare_url(re.search(r"[A-Z]", "MyURL")) == "_m"
-
-
-def test_prepare_url_mixed_case_input() -> None:
-    match = re.search(r"[A-Z]", "mixedCaseInput")
-    assert match is not None
-    assert prepare_url(match) == "_c"
-
-
-def test_prepare_url_empty_input() -> None:
-    match = re.search(r"[A-Z]", "")
-    assert match is None
-
-
-def test_prepare_url_with_numbers_input_bad() -> None:
-    match = re.search(r"[A-Z]", "url1With2Numbers")
-    assert match is not None
-    assert prepare_url(match) == "_w"
-
-
-def test_prepare_url_leading_trailing_underscores_input_bad() -> None:
-    match = re.search(r"[A-Z]", "_urlWithUnderscores_")
-    assert match is not None
-    assert prepare_url(match) == "_w"
-
-
 # ==========================================
 # 5. Resource Management (Context Managers)
 # ==========================================
@@ -534,7 +510,7 @@ def test_endpoint_precomputes_routing_strings(client_offline: Client) -> None:
     endpoint = getattr(client_offline, "Contact_Data")
 
     assert getattr(endpoint, "_name_lower") == "contact_data"
-    assert getattr(endpoint, "_action_parts") == ["Contact", "Data"]
+    assert getattr(endpoint, "_action_parts") == ["contact", "data"]
     assert getattr(endpoint, "_resource_lower") == "contact"
 
 
