@@ -252,7 +252,7 @@ namespace_packages = true
 pretty = true
 # 3rd party import
 ignore_missing_imports = true
-# flag to suppress Name <var> already defined on line
+# flag to suppress Name <var> already defined on a line
 allow_redefinition = false
 # Disallow dynamic typing
 disallow_any_unimported = false
