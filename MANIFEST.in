@@ -1,0 +1,19 @@
+include LICENSE
+include README.md
+include CHANGELOG.md
+include PERFORMANCE.md
+include SECURITY.md
+recursive-include mailjet_rest *.py *.pyi py.typed
+
+prune tests
+prune samples
+prune .github
+prune .clusterfuzzlite
+prune conda.recipe
+
+exclude manage.sh
+exclude Makefile
+exclude .editorconfig
+exclude .pre-commit-config.yaml
+exclude environment.yaml
+exclude environment-dev.yaml

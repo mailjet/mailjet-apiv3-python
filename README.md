@@ -35,13 +35,17 @@
 - [Logging & Debugging](#logging--debugging)
   - [IDE Autocompletion & DX](#ide-autocompletion--dx)
   - [URL path](#url-path)
+  - [Strict Payload Builders](#strict-payload-builders)
 - [Performance & Architecture](#performance--architecture)
 - [Security Guardrails](#security-guardrails)
+  - [Local-First Validation (Fail-Fast)](#local-first-validation-fail-fast)
+  - [Runtime Security (PEP 578)](#runtime-security-pep-578)
 - [Request examples](#request-examples)
   - [Full list of supported endpoints](#full-list-of-supported-endpoints)
   - [Send API (v3.1)](#send-api-v31)
     - [Send a basic email](#send-a-basic-email)
   - [Send an email using a Mailjet Template](#send-an-email-using-a-mailjet-template)
+  - [MessageBuilder (Complex Payloads)](#building-complex-payloads-messagebuilder)
   - [Standard REST Actions (GET, POST, PUT, DELETE)](#standard-rest-actions-get-post-put-delete)
     - [POST (Create)](#post-create)
     - [GET Request](#get-request)
@@ -70,11 +74,11 @@ This library `mailjet-rest` officially supports the following Python versions:
 ## Requirements
 
 - **Build backend:** `setuptools`, `wheel`, `setuptools-scm`
-- **Runtime:** `requests >= 2.32.5`
+- **Runtime:** `requests >=2.33.0`
 
 ### Test dependencies
 
-For running test you need `pytest >=7.0.0` at least.
+For running test you need `pytest >=9.0.3` at least.
 Make sure to provide the environment variables from [Authentication](#authentication).
 
 ## Installation
@@ -312,6 +316,25 @@ mailjet = Client(auth=(api_key, api_secret), version="v1")
 result = mailjet.data_images.get()
 ```
 
+### Strict Payload Builders
+
+Tired of getting 400 Bad Request because of a typo in your JSON payload? Import our TypedDict schemas to get full IDE autocomplete and static type checking.
+
+```python
+from mailjet_rest.types import SendV31Payload, SendV31Message
+
+message: SendV31Message = {
+    "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
+    "To": [{"Email": "passenger1@mailjet.com", "Name": "passenger 1"}],
+    "Subject": "Your flight plan!",
+    "TextPart": "Dear passenger, welcome to Mailjet!",
+}
+
+payload: SendV31Payload = {"Messages": [message]}
+
+mailjet.send.create(data=payload)
+```
+
 ## Performance & Architecture
 
 The Mailjet SDK `v1.6.0+` has been heavily optimized for high-concurrency and memory-constrained environments (like AWS Lambda).
@@ -321,13 +344,34 @@ For a detailed breakdown of our nanosecond routing benchmarks and instructions o
 
 ## Security Guardrails
 
-The SDK includes active protections against common API vulnerabilities:
+The SDK includes active protections against common API vulnerabilities based on Defense-in-Depth principles:
+
+Additional built-in protections:
 
 - **SSRF & Open Redirects:** Hard-disabled automatic redirects and enforced strict hostname validation.
 - **CRLF Injection:** Native string evaluation blocks header injection attempts via compromised Bearer tokens or custom headers.
-- **PEP 578 Audit Hooks:** The SDK emits native Python audit events (`sys.audit`) for all outbound network egress and explicitly warns if TLS verification is bypassed.
+- **Downgrade Attacks:** Enforced TLS 1.2+ minimum version via a custom `SecureHTTPAdapter`.
 
 See our [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy and supported versions.
+
+### Local-First Validation (Fail-Fast)
+
+Instead of waiting for server-side roundtrips, the SDK promotes "Parse, Don't Validate" at the boundary. By using strictly typed models (like `SendV31Payload`), any attempt at Mass Assignment (BOPLA) or sending invalid data formats is caught locally in microseconds.
+*(See the [Strict Payload Builders](#strict-payload-builders) section for examples).*
+
+### Runtime Security (PEP 578)
+
+For Enterprise and SecOps environments, the SDK acts as a security sensor. It emits native Python audit events (`sys.audit`) for all outbound network egress and explicit TLS bypass attempts.
+
+You can **opt-in** to have the SDK automatically listen to these events and pipe them to your `logging` infrastructure for SIEM integration:
+
+```python
+from mailjet_rest import Client, Config
+
+# Activate the PEP 578 Audit Listener
+cfg = Config(enable_security_audit=True)
+mailjet = Client(auth=(api_key, api_secret), config=cfg)
+```
 
 ## Request examples
 
@@ -397,6 +441,35 @@ data = {
 result = mailjet.send.create(data=data)
 ```
 
+### Building Complex Payloads (MessageBuilder)
+
+For complex scenarios like Send API v3.1, manually constructing nested dictionaries is error-prone.
+The `MessageBuilder` provides a fluent interface that handles structure, attachment encoding, and validation automatically.
+
+```python
+from mailjet_rest.builders import MessageBuilder
+from mailjet_rest.types import SendV31Payload
+
+# Fluently construct an email
+message = (
+    MessageBuilder()
+    .set_sender("pilot@mailjet.com", "Mailjet Pilot")
+    .add_recipient("passenger@mailjet.com", "John Doe")
+    .add_cc("copilot@mailjet.com")
+    .set_subject("Your Boarding Pass")
+    .set_content(html="<h3>Welcome aboard!</h3>")
+    .attach_file("tickets/pass.pdf")  # Automatically encodes and validates
+    .build()
+)
+
+payload: SendV31Payload = {
+    "Messages": [message],
+    "SandboxMode": True,  # Remove to send a real message.
+}
+# Send via client
+mailjet.send.create(data=payload)
+```
+
 ### Standard REST Actions (GET, POST, PUT, DELETE)
 
 #### POST (Create)
@@ -423,6 +496,19 @@ data = {
 }
 result = mailjet.contact_managecontactslists.create(id=id_, data=data)
 print(result.json())
+```
+
+##### Zero-Leak Sandbox Mode (dry_run)
+
+Developing locally? Stop accidentally sending emails to real users.
+Enable `dry_run=True` to safely intercept all network mutations (`POST`, `PUT`, `DELETE`).
+
+```python
+# Intercepts state-changing requests and injects SandboxMode where applicable
+dry_run_client = Client(auth=(API_KEY, API_SECRET), dry_run=True)
+
+# This will NOT hit the actual database, returning a mock 200 OK safely
+dry_run_client.contact.create(data={"Email": "real_user@example.com"})
 ```
 
 #### GET Request
@@ -474,6 +560,16 @@ filters = {
 }
 result = mailjet.contact.get(filters=filters)
 print(result.json())
+```
+
+##### Lazy Pagination (The .stream() method)
+
+Stop writing `while` loops to fetch thousands of contacts. Use `.stream()` to return a native Python Generator. The SDK will automatically manage `Limit`, `Offset`, and network pagination under the hood.
+
+```python
+# Fetch all contacts seamlessly. Memory-safe and clean.
+for contact in mailjet.contact.stream(chunk_size=500):
+    print(contact["Email"])
 ```
 
 #### PUT (Update / Patch specific fields)

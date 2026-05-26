@@ -8,16 +8,14 @@ from typing import Any
 import pytest
 import requests  # pyright: ignore[reportMissingModuleSource]
 
-from mailjet_rest.client import (
+from mailjet_rest.errors import (
     ActionDeniedError,
     ApiRateLimitError,
     AuthorizationError,
-    Client,
     DoesNotExistError,
     ValidationError,
-    logging_handler,
-    parse_response,
 )
+from mailjet_rest.client import Client, logging_handler, parse_response
 
 
 def test_legacy_exceptions_exist_and_inherit_properly() -> None:

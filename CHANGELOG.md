@@ -4,6 +4,27 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
+### Security
+
+- **Enterprise Runtime Security:** Added opt-in PEP 578 Audit Hooks (`sys.addaudithook`) managed via the new `Config` class attribute `enable_security_audit` to monitor runtime network events (`mailjet.security.*`) for SIEM/SecOps compliance.
+- **Supply Chain Security:** Hardened the GitHub Actions validation pipeline by implementing Google's `osv-scanner` and separating `pip-audit` into an independent strict security job.
+- **Static Analysis Hardening:** Expanded Semgrep scanning targets to include the `p/insecure-transport` extended query suite and wired internal Bandit configuration (`-c pyproject.toml`) directly into CI workflow checkpoints.
+- **Automated Fuzzing:** Integrated `Atheris` (libFuzzer engine) code coverage suite into development workflows, exposing a unified orchestration entry point (`manage.sh fuzz_all`).
+- **Secret Hygiene:** Updated repository infrastructure defaults (`.gitignore`) to strictly reject the accidental stage or commit of local private keys (`*.key`).
+
+### Added
+
+- **Domain Configuration:** Extracted configuration logic out of the monolithic client layout into a dedicated `Config` structure (`mailjet_rest/config.py`) to safely isolate runtime parameters.
+- **Testing Ecosystem:** Segmented the testing footprint into clear execution topologies: `tests/unit/` (100% offline via mock patches), `tests/integration/` (live network testing), `tests/regression/`, and `tests/fuzz/` (Atheris mutations).
+- **Error Boundaries:** Introduced a dedicated `errors.py` module containing explicit, domain-specific leave exceptions (`ValidationError`, `MailjetAuthError`, `ApiRateLimitError`, etc.) to avoid catching bare exceptions.
+- **Type Definitions:** Added a structured `types.py` layer to eliminate MyPy "Type Blindness" across private utilities and dynamic client trackers.
+
+### Changed
+
+- **Architectural Decomposition (SRP):** Refactored the bloated `client.py` component, shifting single-responsibility concerns into individual domain files (`builders.py`, `config.py`, `endpoint.py`, `errors.py`, `types.py`).
+- **Endpoint Routing Interface:** Relaxed the internal route handler signature `_route_data` inside `endpoint.py` by converting the explicit name identifier to an optional parameter (`_name: str | None = None`) to increase routing flexibility.
+- **Pre-commit Workflow Stability:** Configured hooks (Bandit, Mypy) with `pass_filenames: false` to force systematic execution over the full repository context rather than fragmented staged files.
+
 ## [1.6.0] - 2026-04-27
 
 ### Security
@@ -261,4 +282,4 @@ We [keep a changelog.](http://keepachangelog.com/)
 [1.5.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.0
 [1.5.1]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1
 [1.6.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0
-[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0...HEAD
+[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.7.0...HEAD

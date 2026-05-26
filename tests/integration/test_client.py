@@ -5,7 +5,9 @@ import uuid
 from collections.abc import Generator
 
 import pytest
+import requests
 
+from mailjet_rest import MailjetAuthError
 from mailjet_rest.client import Client
 
 # Safety guard: Prevent integration tests from running if credentials are missing
@@ -173,6 +175,42 @@ def test_live_crlf_header_injection_blocked(client_live: Client) -> None:
     with pytest.raises(ValueError, match="CRLF Injection detected in header"):
         client_live.contact.get(headers={"X-User-Agent": malicious_header})
 
+    with pytest.raises(ValueError, match="CRLF Injection detected in header"):
+        client_live.contact.get(headers={"X-Custom": "value\r\nInjected"})
+
+@pytest.mark.network
+def test_live_tls_handshake_success() -> None:
+    """
+    Verify that our SecureHTTPAdapter successfully completes a TLS 1.2+ handshake
+    with the production Mailjet API.
+    """
+    # Use dummy credentials; we only care about the socket layer / TLS handshake.
+    with Client(auth=("dummy_key", "dummy_secret")) as client:
+        try:
+            response = client.contact.get()
+            # If the TLS handshake failed, it would raise requests.exceptions.SSLError.
+            # If we get a 401 Unauthorized, the TLS transport was successful.
+            assert response.status_code == 200
+        except MailjetAuthError as e:
+            # 401 proves the TLS handshake finished and the API rejected the credentials
+            assert e.status_code == 401
+        except Exception as e:
+            pytest.fail(f"Live network call failed at the transport layer: {e}")
+
+
+@pytest.mark.network
+def test_tls_handshake_integration() -> None:
+    """Verify that production endpoints accept the enforced TLS 1.2+ configuration."""
+    with Client(auth=("dummy", "dummy")) as client:
+        try:
+            # We don't care if the API key is wrong (401 is success for TLS handshake)
+            client.contact.get()
+        except requests.exceptions.SSLError as e:
+            pytest.fail(f"TLS 1.2+ Handshake failed: {e}")
+        except Exception:
+            # Any other error means the transport layer worked
+            pass
+
 
 # --- Error Path & General Routing Tests ---
 
@@ -200,8 +238,9 @@ def test_live_content_api_bad_path(client_live: Client) -> None:
 def test_live_content_api_v1_bearer_auth() -> None:
     """Test Content API v1 endpoints with Bearer token authentication."""
     with Client(auth="fake_test_content_token_123", version="v1") as client_v1:
-        result = client_v1.templates.get()
-        assert result.status_code == 401
+        with pytest.raises(MailjetAuthError) as excinfo:
+            client_v1.templates.get()
+        assert excinfo.value.status_code == 401
 
 
 def test_live_statcounters_happy_path(client_live: Client) -> None:
@@ -230,10 +269,13 @@ def test_post_with_no_param(client_live: Client) -> None:
 def test_client_initialization_with_invalid_api_key(
     client_live_invalid_auth: Client,
 ) -> None:
-    """Tests that invalid credentials result in a 401 Unauthorized response."""
-    result = client_live_invalid_auth.contact.get()
-    assert result.status_code == 401
+    """Tests that invalid credentials result in a 401 Unauthorized response when performing an operation."""
+    # The Client() init is just a constructor.
+    # The Auth failure happens when we attempt the network request.
+    with pytest.raises(MailjetAuthError) as excinfo:
+        client_live_invalid_auth.contact.get()
 
+    assert excinfo.value.status_code == 401
 
 def test_csv_import_flow(client_live: Client) -> None:
     """End-to-End test for uploading CSV data and triggering an import job."""
@@ -317,10 +359,15 @@ def test_live_contact_crud_lifecycle(client_live: Client) -> None:
 
     finally:
         # 4. Clean up (Delete)
-        delete_resp = client_live.contact.delete(id=contact_id)
-        # Mailjet often blocks contact deletion with 401 "Operation not allowed"
-        # depending on account compliance settings. We accept this as a safe state.
-        assert delete_resp.status_code in (200, 204, 401, 405)
+        try:
+            delete_resp = client_live.contact.delete(id=contact_id)
+            assert delete_resp.status_code in (200, 204)
+        except MailjetAuthError as e:
+            # Mailjet often blocks contact deletion with 401 "Operation not allowed"
+            # depending on account compliance settings. We accept this as a safe state.
+            assert e.status_code == 401
+        except Exception as e:
+            pytest.fail(f"Live network call failed at the transport layer: {e}")
 
 def test_live_template_crud_lifecycle(client_live: Client) -> None:
     """Integration test for Template shell creation, content modification, and deletion."""
@@ -371,14 +418,8 @@ def test_live_readonly_endpoints(client_live: Client) -> None:
 
 
 def test_live_auth_failure_handling(client_live_invalid_auth: Client) -> None:
-    """Verify that invalid credentials reliably raise an HTTP 401 Unauthorized."""
-    resp = client_live_invalid_auth.contact.get(filters={"limit": 1})
-    assert resp.status_code == 401
-
-    # Mailjet's edge nodes sometimes return an empty body for 401s.
-    # Only attempt to parse JSON if the response actually contains text.
-    if resp.text.strip():
-        try:
-            assert "Unauthorized" in resp.text or resp.json().get("ErrorMessage")
-        except ValueError:
-            assert "Unauthorized" in resp.text
+    """Verify that invalid credentials raise MailjetAuthError."""
+    # Catch the new exception instead of checking status_code
+    with pytest.raises(MailjetAuthError) as excinfo:
+        client_live_invalid_auth.contact.get(filters={"limit": 1})
+    assert excinfo.value.status_code == 401

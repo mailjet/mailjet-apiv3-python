@@ -34,20 +34,25 @@ jobs:
 
       - name: Extract version
         id: get_version
+        # Use an intermediate environment variable to avoid shell injection
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           # Get clean version from the tag or release
-          if [[ "${{ github.event_name }}" == "release" ]]; then
+          if [[ "$EVENT_NAME" == "release" ]]; then
             # For releases, get the version from the release tag
-            TAG_NAME="${{ github.event.release.tag_name }}"
+            TAG_NAME="$RELEASE_TAG"
           else
             # For tags, get version from the tag
-            TAG_NAME="${{ github.ref_name }}"
+            TAG_NAME="$REF_NAME"
           fi
 
           # Remove 'v' prefix
           VERSION=$(echo $TAG_NAME | sed 's/^v//')
 
-          # Check if this is a stable version (no rc, alpha, beta, dev, etc.)
+          # Check if this is a stable version
           if [[ $TAG_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "IS_STABLE=true" >> $GITHUB_ENV
           else

@@ -37,10 +37,10 @@ test:
   imports:
     - mailjet_rest
     - mailjet_rest.utils
-    - samples
   source_files:
     - tests/unit/
   requires:
+    - hypothesis
     - pip
     - pytest
   commands:

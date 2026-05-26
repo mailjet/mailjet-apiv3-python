@@ -1,0 +1,52 @@
+name: Security
+
+on:
+  push: { branches: [main] }
+  pull_request:
+  schedule: [{ cron: "0 5 * * *" }] # Daily security sweep
+
+jobs:
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install ruff bandit mypy pip-audit
+      # Fast checks
+      - run: ruff check .
+      - run: bandit -c pyproject.toml -r mailjet_rest
+      - run: mypy --strict mailjet_rest
+
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/python
+            p/owasp-top-ten
+            p/supply-chain
+            p/command-injection
+            p/insecure-transport
+          error: true # Fails CI if issues found
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.13" }
+      - run: pip install pip-audit
+      - run: pip-audit --strict
+
+  osv-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google/osv-scanner-action/osv-scanner-action@v2
+        with:
+          scan-args: |-
+            --recursive
+            --skip-git
