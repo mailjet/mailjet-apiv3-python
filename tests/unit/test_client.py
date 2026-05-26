@@ -751,8 +751,6 @@ def test_builder_sandbox_flag(monkeypatch: Any) -> None:
 # 8. Security, Resilience & Audit Tests
 # ==========================================
 
-# tests/unit/test_client.py
-
 @patch("sys.audit")
 def test_pep578_audit_hooks_emitted(
     mock_audit: MagicMock,
