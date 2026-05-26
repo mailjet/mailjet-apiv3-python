@@ -26,7 +26,7 @@ from mailjet_rest.errors import (
     CriticalApiError,
     TimeoutError,
 )
-from mailjet_rest.utils.guardrails import SecurityGuard, SecureHTTPAdapter
+from mailjet_rest.utils.guardrails import SecureHTTPAdapter
 from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, SendV31Payload, \
     SendV31Message
 
