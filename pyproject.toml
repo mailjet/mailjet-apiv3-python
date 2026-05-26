@@ -352,4 +352,5 @@ exclude_lines = [
 # Register custom marks to avoid warnings
 markers = [
     "network: marks tests as integration tests that require live network access",
+    "property_heavy: Heavy Hypothesis property-based tests skipped on CI",
 ]
