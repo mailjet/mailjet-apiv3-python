@@ -21,6 +21,7 @@ def fuzz_config(fdp: atheris.FuzzedDataProvider) -> None:
             timeout=fdp.ConsumeInt(100) if fdp.ConsumeBool() else fdp.ConsumeUnicodeNoSurrogates(10)
         )
     except ValueError:
+        # Invalid fuzzed config values are expected; ignore and continue fuzzing.
         pass
 
 def fuzz_routing(fdp: atheris.FuzzedDataProvider) -> None:
