@@ -709,8 +709,10 @@ def test_stream_lazy_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
 
         if call_count == 0:
             resp._content = b'{"Total": 3, "Data": [{"id": 1}, {"id": 2}]}'
-        else:
+        elif call_count == 1:
             resp._content = b'{"Total": 3, "Data": [{"id": 3}]}'
+        else:
+            resp._content = b'{"Total": 3, "Data": []}'
 
         call_count += 1
         return resp
@@ -722,7 +724,7 @@ def test_stream_lazy_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(items) == 3
     assert items[0]["id"] == 1
     assert items[2]["id"] == 3
-    assert call_count == 2
+    assert call_count == 3
 
 
 def test_builder_sandbox_flag(monkeypatch: Any) -> None:
@@ -838,7 +840,7 @@ def test_property_path_sanitization_is_always_safe(custom_id: str) -> None:
 
 @pytest.mark.property_heavy
 @given(
-    url=st.from_regex(r"^https://[a-zA-Z0-9.-]+\.mailjet\\.com$", fullmatch=True),
+    url=st.from_regex(r"^https://[a-zA-Z0-9.-]+\.mailjet\.com$", fullmatch=True),
     audit_flag=st.booleans()
 )
 def test_property_config_invariants(url: str, audit_flag: bool) -> None:
