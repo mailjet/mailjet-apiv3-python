@@ -302,21 +302,6 @@ class Client:
         """
         self.close()
 
-    def __del__(self) -> None:
-        """Emit a ResourceWarning if the client is garbage collected without being closed (CWE-772)."""
-        # Ensure session exists and hasn't been closed/cleared already
-        if hasattr(self, "session") and self.session is not None and self.session.adapters:
-            warnings.warn(
-                f"Unclosed Mailjet Client {self!r}. Please use the context manager "
-                f"(`with Client(...) as client:`) or explicitly call `client.close()`.",
-                ResourceWarning,
-                source=self,
-                stacklevel=2,
-            )
-            # Safely attempt to close the lingering session
-            with suppress(Exception):
-                self.close()
-
     def __getattr__(self, name: str) -> Endpoint:
         """Dynamically access API endpoints as attributes.
 

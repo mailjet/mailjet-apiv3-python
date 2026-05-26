@@ -548,45 +548,6 @@ def test_client_context_manager_exception_safety(monkeypatch: pytest.MonkeyPatch
     assert close_called is True, "Exception inside context manager bypassed cleanup!"
 
 
-def test_client_unclosed_resource_warning() -> None:
-    """Verify CWE-772 mitigation: GC on an unclosed client emits a ResourceWarning."""
-    orphan_client = Client(auth=("test", "test"))
-
-    with pytest.warns(ResourceWarning, match="Unclosed Mailjet Client"):
-        del orphan_client
-        gc.collect()
-
-def test_client_context_manager_clean_exit() -> None:
-    """Verify that using the context manager safely closes the session without warnings."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", ResourceWarning)
-        with Client(auth=("test", "test")) as safe_client:
-            pass # Do nothing
-
-        del safe_client
-        gc.collect()
-
-
-def test_client_leakage_triggers_resource_warning() -> None:
-    """Verify that an unclosed client triggers a ResourceWarning."""
-    client = Client(auth=("test", "test"))
-
-    with pytest.warns(ResourceWarning, match="Please use the context manager"):
-        del client
-        gc.collect()
-
-
-def test_client_cleanup_no_warning() -> None:
-    """Verify that an explicitly closed client does NOT trigger a warning."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", ResourceWarning)
-        client = Client(auth=("test", "test"))
-        client.close()
-
-        del client
-        gc.collect()
-
-
 # ==========================================
 # 6. Performance & Memory Optimization Tests
 # ==========================================
