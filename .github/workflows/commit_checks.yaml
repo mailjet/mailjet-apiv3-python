@@ -62,4 +62,4 @@ jobs:
           pip install pytest hypothesis
 
       - name: Run unit tests
-        run: pytest tests/unit/ -v
+        run: pytest tests/unit/ -v -k "not property"

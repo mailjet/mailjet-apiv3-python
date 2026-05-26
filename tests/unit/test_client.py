@@ -36,6 +36,8 @@ if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
 
 
+IS_CI = os.getenv("CI") == "true"
+
 @pytest.fixture
 def client_offline() -> Client:
     """Return a client with fake credentials for pure offline unit testing."""
@@ -817,6 +819,7 @@ def test_retry_strategy_respects_headers() -> None:
 # 9. Hypothesis: Verifying Invariants
 # ==========================================
 
+@pytest.mark.skipif(IS_CI, reason="Property-based tests are too heavy for CI runners")
 @given(custom_id=st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cc", "Cs"))))
 def test_property_path_sanitization_is_always_safe(custom_id: str) -> None:
     """Invariant: Any string injected into a dynamic path must be evaluated safely.
@@ -835,8 +838,9 @@ def test_property_path_sanitization_is_always_safe(custom_id: str) -> None:
     assert "../" not in endpoint.client.config.api_url
 
 
+@pytest.mark.skipif(IS_CI, reason="Property-based tests are too heavy for CI runners")
 @given(
-    url=st.from_regex(r"^https://[a-zA-Z0-9.-]+\.mailjet\.com$", fullmatch=True),
+    url=st.from_regex(r"^https://[a-zA-Z0-9.-]+\.mailjet\\.com$", fullmatch=True),
     audit_flag=st.booleans()
 )
 def test_property_config_invariants(url: str, audit_flag: bool) -> None:

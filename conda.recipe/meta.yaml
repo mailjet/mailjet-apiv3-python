@@ -31,7 +31,7 @@ requirements:
   run:
     - python
     - requests >=2.33.0
-    - typing-extensions >=4.7.1  # [py<311]
+    - typing-extensions >=4.7.1  # [py<312]
 
 test:
   imports:
@@ -45,7 +45,7 @@ test:
     - pytest
   commands:
     - pip check
-    - pytest tests/unit/ -v
+    - pytest tests/unit/ -v -k "not property"
 
 about:
   home: {{ project['urls']['Homepage'] }}

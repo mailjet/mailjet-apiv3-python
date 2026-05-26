@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from requests.adapters import HTTPAdapter
 
 
-if sys.version_info >= (3, 11):
+if sys.version_info >= (3, 12):
     from typing import override
 else:
     from typing_extensions import override
