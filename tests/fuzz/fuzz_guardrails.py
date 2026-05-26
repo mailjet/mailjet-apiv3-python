@@ -1,8 +1,8 @@
 import atheris
 import sys
 
-from pathlib import Path
 from mailjet_rest.utils.guardrails import SecurityGuard
+
 
 with atheris.instrument_imports():
     pass

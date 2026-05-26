@@ -3,9 +3,6 @@
 import atheris
 import sys
 
-from mailjet_rest import MailjetAuthError, ValidationError
-from mailjet_rest.client import Client
-
 # Instrument imports allows Atheris to track code coverage during fuzzing
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder

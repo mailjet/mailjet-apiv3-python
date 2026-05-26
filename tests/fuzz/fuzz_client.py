@@ -4,7 +4,7 @@ from typing import Any
 from unittest.mock import patch
 
 import requests
-from mailjet_rest.errors import MailjetAuthError, ValidationError
+from mailjet_rest.errors import MailjetAuthError
 
 
 # Instrument the client to watch for crashes
