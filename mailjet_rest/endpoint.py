@@ -58,7 +58,7 @@ def _route_rest(base: str, ver: str, parts: list[str], id_val: str, action: str,
     return f"{base}/{ver}/REST/{parts[0]}{id_val}{sub_action}{action}"
 
 
-ROUTE_STRATEGY: dict[str, Callable] = {
+ROUTE_STRATEGY: dict[str, Callable[..., str]] = {
     "send": _route_send,
     "csv": _route_csv,
     "data": _route_data,

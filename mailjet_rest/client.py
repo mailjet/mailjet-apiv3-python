@@ -253,7 +253,7 @@ class Client:
 
         if auth is not None:
             if isinstance(auth, tuple):
-                if len(auth) != 2:  # type: ignore[unreachable]
+                if len(auth) != 2:
                     msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."
                     raise ValueError(msg)
                 self.session.auth = (str(auth[0]).strip(), str(auth[1]).strip())
@@ -268,7 +268,7 @@ class Client:
                 self.session.headers.update({"Authorization": f"Bearer {clean_token}"})
             else:
                 msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"
-                raise TypeError(msg)  # type: ignore[unreachable]
+                raise TypeError(msg)
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
 

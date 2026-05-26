@@ -51,7 +51,6 @@ class Config:
 
         if self.timeout is not None:
             if isinstance(self.timeout, tuple):
-                # type: ignore[unreachable]
                 if len(self.timeout) != 2:
                     msg = f"Timeout tuple must contain exactly two elements, got {self.timeout}."
                     raise ValueError(msg)
