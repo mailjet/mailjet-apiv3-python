@@ -5,6 +5,9 @@ on:
   pull_request:
   schedule: [{ cron: "0 5 * * *" }] # Daily security sweep
 
+permissions:
+  contents: read
+
 jobs:
   static-analysis:
     runs-on: ubuntu-latest
