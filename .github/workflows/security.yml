@@ -11,7 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.13" }
+        with:
+          python-version: "3.13"
+          cache: 'pip'
       - run: pip install ruff bandit mypy pip-audit
       # Fast checks
       - run: ruff check .
@@ -41,12 +43,14 @@ jobs:
       - run: pip install pip-audit
       - run: pip-audit --strict
 
-  osv-scanner:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: google/osv-scanner-action/osv-scanner-action@v2
-        with:
-          scan-args: |-
-            --recursive
-            --skip-git
+  osv-scan:
+    permissions:
+      actions: read
+      security-events: write # For Security Tab
+      contents: read
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8"
+    with:
+      # Explicit root scanning
+      scan-args: |-
+        --recursive
+        ./
