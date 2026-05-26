@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import gc
 import os
 import re
 import ssl
@@ -549,13 +550,11 @@ def test_client_context_manager_exception_safety(monkeypatch: pytest.MonkeyPatch
 
 def test_client_unclosed_resource_warning() -> None:
     """Verify CWE-772 mitigation: GC on an unclosed client emits a ResourceWarning."""
-    # We instantiate a client without using the 'with' context manager
     orphan_client = Client(auth=("test", "test"))
 
-    # Manually trigger the finalizer to simulate garbage collection
     with pytest.warns(ResourceWarning, match="Unclosed Mailjet Client"):
-        orphan_client.__del__()
-
+        del orphan_client
+        gc.collect()
 
 def test_client_context_manager_clean_exit() -> None:
     """Verify that using the context manager safely closes the session without warnings."""
@@ -563,17 +562,18 @@ def test_client_context_manager_clean_exit() -> None:
         warnings.simplefilter("error", ResourceWarning)
         with Client(auth=("test", "test")) as safe_client:
             pass # Do nothing
-        # The __exit__ block should call .close(), so __del__ won't warn.
-        safe_client.__del__()
+
+        del safe_client
+        gc.collect()
 
 
 def test_client_leakage_triggers_resource_warning() -> None:
     """Verify that an unclosed client triggers a ResourceWarning."""
-    # Create client, use it, then delete it without calling .close()
     client = Client(auth=("test", "test"))
 
     with pytest.warns(ResourceWarning, match="Please use the context manager"):
-        client.__del__()
+        del client
+        gc.collect()
 
 
 def test_client_cleanup_no_warning() -> None:
@@ -582,7 +582,9 @@ def test_client_cleanup_no_warning() -> None:
         warnings.simplefilter("error", ResourceWarning)
         client = Client(auth=("test", "test"))
         client.close()
-        client.__del__()  # Should not raise ResourceWarning
+
+        del client
+        gc.collect()
 
 
 # ==========================================
