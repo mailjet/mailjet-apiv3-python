@@ -190,10 +190,8 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
     print(result.status_code)
 ```
 
-(Note:
-
-> **Note**
-> If you choose not to use the context manager, you should manually call mailjet.close() when your application shuts down.
+> [!WARNING]
+> **Resource Management:** If you choose not to use the context manager, you **must** manually call `mailjet.close()` when your application shuts down to release the underlying sockets.
 
 ### Advanced Configuration
 
@@ -201,15 +199,14 @@ You can pass configuration overrides directly when initializing the `Client` or 
 
 ```python
 # Set custom base URL, timeout, and API version
-mailjet = Client(
+with Client(
     auth=(api_key, api_secret),
     version="v3.1",
     api_url="https://api.us.mailjet.com/",
     timeout=30,
-)
-
-# Override timeout for a single, heavy request
-result = mailjet.contact.get(timeout=60)
+) as mailjet:
+    # Override timeout for a single, heavy request
+    result = mailjet.contact.get(timeout=60)
 ```
 
 #### API Versioning
@@ -224,7 +221,11 @@ Since most Email API endpoints are located under `v3`, it is set as the default 
 For the others you need to specify the version using `version`. For example, if using Send API `v3.1`:
 
 ```python
-mailjet = Client(auth=(api_key, api_secret), version="v3.1")
+with Client(
+    auth=(api_key, api_secret),
+    version="v3.1",
+) as mailjet:
+    pass  # Your requests here
 ```
 
 For additional information refer to our [API Reference](https://dev.mailjet.com/reference/overview/versioning/).
@@ -234,7 +235,11 @@ For additional information refer to our [API Reference](https://dev.mailjet.com/
 The default base domain name for the Mailjet API is `api.mailjet.com`. You can modify this base URL by setting a value for `api_url` in your call:
 
 ```python
-mailjet = Client(auth=(api_key, api_secret), api_url="https://api.us.mailjet.com/")
+with Client(
+    auth=(api_key, api_secret),
+    api_url="https://api.us.mailjet.com/",
+) as mailjet:
+    pass  # Your requests here
 ```
 
 If your account has been moved to Mailjet's **US architecture**, the URL value you need to set is `https://api.us.mailjet.com`.
@@ -301,19 +306,19 @@ For example, to reach `statistics/link-click` path you should call `statistics_l
 
 ```python
 # GET `statistics/link-click`
-mailjet = Client(auth=(api_key, api_secret))
-filters = {"CampaignId": "xxxxxxx"}
-result = mailjet.statistics_linkClick.get(filters=filters)
-print(result.status_code)
-print(result.json())
+with Client(auth=(api_key, api_secret)) as mailjet:
+    filters = {"CampaignId": "xxxxxxx"}
+    result = mailjet.statistics_linkClick.get(filters=filters)
+    print(result.status_code)
+    print(result.json())
 ```
 
 For the **Content API (v1)**, sub-actions will be correctly routed using slashes (e.g. contents/lock). Additionally, the SDK maps the `data_images` resource specifically to `/v1/data/images` to support media uploads.
 
 ```python
 # GET '/v1/data/images'
-mailjet = Client(auth=(api_key, api_secret), version="v1")
-result = mailjet.data_images.get()
+with Client(auth=(api_key, api_secret), version="v1") as mailjet:
+    result = mailjet.data_images.get()
 ```
 
 ### Strict Payload Builders
@@ -370,7 +375,8 @@ from mailjet_rest import Client, Config
 
 # Activate the PEP 578 Audit Listener
 cfg = Config(enable_security_audit=True)
-mailjet = Client(auth=(api_key, api_secret), config=cfg)
+with Client(auth=(api_key, api_secret), config=cfg) as mailjet:
+    pass  # Your secure requests here
 ```
 
 ## Request examples
@@ -401,7 +407,6 @@ import os
 
 api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
 api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
-mailjet = Client(auth=(api_key, api_secret), version="v3.1")
 
 data = {
     "Messages": [
@@ -414,9 +419,11 @@ data = {
         }
     ]
 }
-result = mailjet.send.create(data=data)
-print(result.status_code)
-print(result.json())
+
+with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
+    result = mailjet.send.create(data=data)
+    print(result.status_code)
+    print(result.json())
 ```
 
 ### Send an email using a Mailjet Template
@@ -424,8 +431,6 @@ print(result.json())
 When using `TemplateLanguage`, ensure that you pass a standard Python dictionary to the `Variables` parameter.
 
 ```python
-mailjet = Client(auth=(api_key, api_secret), version="v3.1")
-
 data = {
     "Messages": [
         {
@@ -438,7 +443,8 @@ data = {
         }
     ]
 }
-result = mailjet.send.create(data=data)
+with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
+    result = mailjet.send.create(data=data)
 ```
 
 ### Building Complex Payloads (MessageBuilder)
@@ -471,6 +477,9 @@ mailjet.send.create(data=payload)
 ```
 
 ### Standard REST Actions (GET, POST, PUT, DELETE)
+
+> [!NOTE]\
+> All examples in this section assume that you have already opened a session using the context manager, for example: with Client(auth=(api_key, api_secret)) as mailjet:.
 
 #### POST (Create)
 
@@ -505,10 +514,9 @@ Enable `dry_run=True` to safely intercept all network mutations (`POST`, `PUT`, 
 
 ```python
 # Intercepts state-changing requests and injects SandboxMode where applicable
-dry_run_client = Client(auth=(API_KEY, API_SECRET), dry_run=True)
-
-# This will NOT hit the actual database, returning a mock 200 OK safely
-dry_run_client.contact.create(data={"Email": "real_user@example.com"})
+with Client(auth=(api_key, api_secret), dry_run=True) as dry_run_client:
+    # This will NOT hit the actual database, returning a mock 200 OK safely
+    dry_run_client.contact.create(data={"Email": "real_user@example.com"})
 ```
 
 #### GET Request
@@ -645,22 +653,20 @@ Retrieve performance counters using `statcounters` or location-based statistics 
 from mailjet_rest import Client
 import os
 
-mailjet = Client(
-    auth=(
-        os.environ.get("MJ_APIKEY_PUBLIC", ""),
-        os.environ.get("MJ_APIKEY_PRIVATE", ""),
-    )
+auth = (
+    os.environ.get("MJ_APIKEY_PUBLIC", ""),
+    os.environ.get("MJ_APIKEY_PRIVATE", ""),
 )
-
-filters = {
-    "CounterSource": "APIKey",
-    "CounterTiming": "Message",
-    "CounterResolution": "Lifetime",
-}
-# Getting general statistics
-result = mailjet.statcounters.get(filters=filters)
-print(result.status_code)
-print(result.json())
+with Client(auth=auth) as mailjet:
+    filters = {
+        "CounterSource": "APIKey",
+        "CounterTiming": "Message",
+        "CounterResolution": "Lifetime",
+    }
+    # Getting general statistics
+    result = mailjet.statcounters.get(filters=filters)
+    print(result.status_code)
+    print(result.json())
 ```
 
 ### Content API
@@ -673,11 +679,10 @@ The Content API (`v1`) allows managing templates, generating API tokens, and upl
 
 ```python
 # Tokens endpoint requires Basic Auth initially
-client = Client(auth=(api_key, api_secret), version="v1")
-data = {"Name": "My Access Token", "Permissions": ["read_template", "create_template"]}
-
-result = client.token.create(data=data)
-print(result.json())
+with Client(auth=(api_key, api_secret), version="v1") as client:
+    data = {"Name": "My Access Token", "Permissions": ["read_template", "create_template"]}
+    result = client.token.create(data=data)
+    print(result.json())
 ```
 
 #### Uploading an Image via Multipart Form-Data
