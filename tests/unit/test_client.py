@@ -815,3 +815,46 @@ def test_property_config_invariants(url: str, audit_flag: bool) -> None:
     # Verify configuration normalizes trailing slashes properly
     assert cfg.api_url == f"{url}/"
     assert cfg.enable_security_audit is audit_flag
+
+
+# ==========================================
+# 10. Telemetry
+# ==========================================
+
+
+def test_extract_telemetry_v3_root_level() -> None:
+    """Verify telemetry extraction from the root level of the payload (API v3)."""
+    # Use exact keys monitored within the allowed set: CustomID and TemplateID
+    payload = {"CustomID": "trace-root-123", "TemplateID": 112233}
+    trace_str, struct_data = Client._extract_telemetry(payload, None)
+
+    assert "CustomID=trace-root-123" in trace_str
+    assert "TemplateID=112233" in trace_str
+    assert struct_data["mailjet.customid"] == "trace-root-123"
+    assert struct_data["mailjet.templateid"] == "112233"
+
+def test_extract_telemetry_v31_nested_level() -> None:
+    """Verify telemetry extraction from the nested Messages array (API v3.1)."""
+    payload = {
+        "Messages": [
+            {"CustomID": "trace-nested-456", "TemplateID": 98765}
+        ]
+    }
+    trace_str, struct_data = Client._extract_telemetry(payload, None)
+
+    assert "CustomID=trace-nested-456" in trace_str
+    assert "TemplateID=98765" in trace_str
+    assert struct_data["mailjet.customid"] == "trace-nested-456"
+    assert struct_data["mailjet.templateid"] == "98765"
+
+def test_extract_telemetry_safe_fallback() -> None:
+    """Verify safe handling of invalid or empty data (no exceptions raised)."""
+    # Test empty array
+    trace_str, struct_data = Client._extract_telemetry([], None)
+    assert trace_str == ""
+    assert struct_data == {}
+
+    # Test missing Messages payload
+    trace_str, struct_data = Client._extract_telemetry({"Messages": []}, None)
+    assert trace_str == ""
+    assert struct_data == {}

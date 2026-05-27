@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import mimetypes
 import sys
 from typing import TYPE_CHECKING
@@ -182,7 +183,7 @@ class MessageBuilder:
         if "TextPart" not in self._msg and "HTMLPart" not in self._msg and "TemplateID" not in self._msg:
             msg = "Message validation failed: TextPart, HTMLPart, or TemplateID is required."
             raise ValueError(msg)
-        if "Variables" in self._msg and sys.getsizeof(str(self._msg["Variables"])) > 1024 * 1024:
+        if "Variables" in self._msg and len(json.dumps(self._msg["Variables"])) > 1024 * 1024:
             msg = "Security Violation: Variables payload too large."
             raise ValueError(msg)
 

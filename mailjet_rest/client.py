@@ -601,9 +601,11 @@ class Client:
         structured_data = {}
         with suppress(Exception):
             if isinstance(data, dict):
-                # Only extract fields that are mathematically non-PII
+                messages = data.get("Messages", [{}])
+                target_dict = messages[0] if isinstance(messages, list) and messages else data
+
                 for field in _ALLOWED_TRACE_FIELDS:
-                    if val := data.get(field):
+                    if val := target_dict.get(field) or data.get(field):
                         clean_val = SecurityGuard.sanitize_log_trace(val)
                         trace_ctx.append(f"{field}={clean_val}")
                         structured_data[f"mailjet.{field.lower()}"] = clean_val
