@@ -31,12 +31,12 @@ ______________________________________________________________________
 
 We deliberately traded a fractional increase in execution time to introduce robust OWASP security guardrails (SSRF prevention, Header Injection checks) and Smart Telemetry, while maintaining lightning-fast baseline performance.
 
-| Metric                   | v1.6.0 (Baseline) | v1.7.0 (Current)      | Impact Context        |
-| :----------------------- | :---------------- | :-------------------- | :-------------------- |
-| **Routing Speed (Mean)** | ~0.15 µs (157 ns) | **~0.23 µs (234 ns)** | *+77 ns (Guardrails)* |
-| **Request Cycle (Mean)** | ~219 µs           | **~312 µs**           | *+93 µs (Telemetry)*  |
-| **Routing Ops/Sec**      | ~6,339 Kops/s     | **~4,261 Kops/s**     | *Extremely Fast*      |
-| **Cold-Boot Init Time**  | ~0.078 s          | **~0.089 s**          | *+11 ms*              |
+| Metric                   | v1.6.0            | v1.7.0 (Current)      | Impact Context                   |
+| :----------------------- | :---------------- | :-------------------- | :------------------------------- |
+| **Routing Speed (Mean)** | ~0.21 µs (214 ns) | **~0.21 µs (215 ns)** | *Virtually Identical*            |
+| **Request Cycle (Mean)** | ~282 µs           | **~504 µs**           | *+222 µs (Security & Telemetry)* |
+| **Routing Ops/Sec**      | ~4,659 Kops/s     | **~4,645 Kops/s**     | *Extremely Fast*                 |
+| **Cold-Boot Init Time**  | ~0.126 s          | **~0.123 s**          | *Stable*                         |
 
 *Note: Benchmarks measure network-isolated internal overhead using mocked `responses`. Testing hardware: Darwin-CPython-3.12-64bit.*
 
