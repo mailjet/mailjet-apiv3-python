@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import gc
 import os
 import re
 import ssl
