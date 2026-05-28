@@ -118,6 +118,18 @@ class MessageBuilder:
             self._msg["HTMLPart"] = html
         return self
 
+    def set_headers(self, headers: dict[str, str]) -> Self:
+        """Set custom headers (e.g., Reply-To, X-Custom).
+
+        Args:
+            headers (dict[str, str]): Custom key-value string pairs.
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        self._msg["Headers"] = headers
+        return self
+
     def set_template(self, template_id: int, enable_language: bool = True) -> Self:
         """Use a pre-defined Mailjet Template.
 
@@ -188,3 +200,77 @@ class MessageBuilder:
             raise ValueError(msg)
 
         return self._msg  # type: ignore[return-value]
+
+
+class TemplateContentBuilder:
+    """Builder for /template/{id}/contents API payloads."""
+
+    __slots__ = ("_data",)
+
+    def __init__(self) -> None:
+        """Initialize an empty template contents data payload descriptor."""
+        self._data: dict[str, Any] = {}
+
+    def set_meta(self, author: str | None = None, name: str | None = None, locale: str = "en_US") -> Self:
+        """Set core template identity and structural configuration attributes.
+
+        Args:
+            author (str | None): Optional author identifier name.
+            name (str | None): Optional unique template layout identifier name.
+            locale (str): Language and country locale definition (default: "en_US").
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        if author:
+            self._data["Author"] = author
+        if name:
+            self._data["Name"] = name
+        self._data["Locale"] = locale
+        return self
+
+    def set_content(self, text: str | None = None, html: str | None = None, mjml: str | None = None) -> Self:
+        """Set content keys as per API documentation.
+
+        Args:
+            text (str | None): Plain text part component.
+            html (str | None): Rendered raw HTML layout sequence.
+            mjml (str | None): Semantic responsive MJML markup representation.
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        if text:
+            self._data["TextPart"] = text
+        if html:
+            self._data["HTMLPart"] = html
+        if mjml:
+            self._data["MJMLPart"] = mjml
+        return self
+
+    def set_headers(self, headers: dict[str, str]) -> Self:
+        """Sets the Headers JSON object structure crossing the ingress gate.
+
+        Args:
+            headers (dict[str, str]): Custom key-value structural protocol attributes.
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        self._data["Headers"] = headers
+        return self
+
+    def build(self) -> dict[str, Any]:
+        """Validate and return the completed templates engine schema dictionary.
+
+        Returns:
+            dict[str, Any]: Fully validated parsed dynamic payload payload mapping.
+
+        Raises:
+            ValueError: If no valid text, html or mjml boundary tokens are passed.
+        """
+        if not any(k in self._data for k in ("TextPart", "HTMLPart", "MJMLPart")):
+            msg = "Template validation failed: At least one of text, html, or mjml content is required."
+            raise ValueError(msg)
+
+        return self._data

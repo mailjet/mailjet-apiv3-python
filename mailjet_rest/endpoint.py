@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import warnings
 from dataclasses import dataclass
 from dataclasses import field
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from urllib.parse import quote
 
+from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.types import _JSON_HEADERS
 from mailjet_rest.types import _TEXT_HEADERS
 from mailjet_rest.types import HttpMethod
@@ -118,15 +120,53 @@ class Endpoint:
         return url
 
     def _build_url(self, id_val: int | str | None = None, action_id: int | str | None = None) -> str:
-        """Construct the URL for the specific API request.
+        """Constructs the fully qualified API URL.
+
+        Leverages immutable static registry routing mappings with URI template
+        safe injection gates to fail-closed against cross-boundary vulnerabilities.
 
         Args:
-            id_val (int | str | None): The primary resource ID.
-            action_id (int | str | None): The sub-action ID.
+            id_val (int | str | None): The resource ID.
+            action_id (int | str | None): Additional specific resource action id.
 
         Returns:
-            str: The fully qualified URL.
+            str: The fully qualified, sanitized secure URL.
         """
+        # 1. Registry-First Routing (Express Lane Orchestrator)
+        if self.name in ROUTE_MAP:
+            route = ROUTE_MAP[self.name]
+            base_url = self.client.config.api_url.rstrip("/")
+            version = route.version if route.version is not None else self.client.config.version
+
+            # Validate structural DX constraints prior to assembly
+            SecurityGuard.validate_dx_routing(version, self._name_lower, self._resource_lower)
+
+            path = route.path
+
+            # Enforce centralized sanitization layer directly on URI template parameters
+            if id_val is not None and "{" in path:
+                safe_id = SecurityGuard.sanitize_segment(id_val)
+                path = re.sub(r"\{[^}]+\}", safe_id, path, count=1)
+                id_val = None  # Parameter fully consumed by the template boundary
+
+            if action_id is not None and "{" in path:
+                safe_action = SecurityGuard.sanitize_segment(action_id)
+                path = re.sub(r"\{[^}]+\}", safe_action, path, count=1)
+                action_id = None  # Parameter fully consumed by the template boundary
+
+            # Assemble clean path matrix
+            url = f"{base_url}/{version}/{path}"
+
+            # Append any unconsumed trailing parameters safely
+            if id_val is not None:
+                url += f"/{SecurityGuard.sanitize_segment(id_val)}"
+            if action_id is not None:
+                url += f"/{SecurityGuard.sanitize_segment(action_id)}"
+
+            return url
+
+        # 2. Existing Fallback (Legacy Support)
+        # This keeps  original routing logic running for everything else
         base_url = self.client.config.api_url.rstrip("/")
         version = self.client.config.version
 

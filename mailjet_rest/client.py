@@ -34,6 +34,7 @@ from mailjet_rest.errors import DoesNotExistError
 from mailjet_rest.errors import MailjetAuthError
 from mailjet_rest.errors import TimeoutError  # noqa: A004
 from mailjet_rest.errors import ValidationError
+from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.types import _ALLOWED_TRACE_FIELDS
 from mailjet_rest.utils.guardrails import RedactingFilter
 from mailjet_rest.utils.guardrails import SecureHTTPAdapter
@@ -171,50 +172,6 @@ class Client:
         respect_retry_after_header=True,  # To prevent aggressive polling
     )
 
-    _DYNAMIC_ENDPOINTS: ClassVar[tuple[str, ...]] = (
-        "send",
-        "contact",
-        "contactdata",
-        "contactmetadata",
-        "contactslist",
-        "contact_managemanycontacts",
-        "contactfilter",
-        "csvimport",
-        "listrecipient",
-        "campaign",
-        "campaigndraft",
-        "campaigndraft_schedule",
-        "campaigndraft_send",
-        "campaigndraft_test",
-        "campaigndraft_detailcontent",
-        "newsletter",
-        "message",
-        "messagehistory",
-        "messageinformation",
-        "template",
-        "templates",
-        "template_detailcontent",
-        "templates_contents",
-        "token",
-        "data_images",
-        "statcounters",
-        "contactstatistics",
-        "liststatistics",
-        "statistics_linkClick",
-        "statistics_recipientEsp",
-        "geostatistics",
-        "toplinkclicked",
-        "eventcallbackurl",
-        "parseroute",
-        "dns",
-        "dns_check",
-        "sender",
-        "sender_validate",
-        "apikey",
-        "user",
-        "myprofile",
-    )
-
     config: Config
     session: requests.Session
     _endpoint_cache: dict[str, Endpoint]
@@ -311,10 +268,20 @@ class Client:
         Returns:
             Endpoint: An Endpoint instance for the requested resource.
         """
-        SecurityGuard.validate_attribute_access(self.__class__.__qualname__, name)
+        # 1. Check Cache
+        if name in self._endpoint_cache:
+            return self._endpoint_cache[name]
 
-        if name not in self._endpoint_cache:
-            self._endpoint_cache[name] = Endpoint(self, name)
+        # 2. Registry Check & Security Validation
+        # If it's not in the registry, we validate it via SecurityGuard.
+        # This keeps the "fail-fast" security behavior for unknown attributes.
+        if name not in ROUTE_MAP:
+            SecurityGuard.validate_attribute_access(self.__class__.__qualname__, name)
+
+        # 3. Instantiate and Cache
+        # Endpoint._build_url handles the URL resolution internally
+        # using the ROUTE_MAP or dynamic fallback strategies.
+        self._endpoint_cache[name] = Endpoint(self, name)
 
         return self._endpoint_cache[name]
 
@@ -341,7 +308,7 @@ class Client:
             list[str]: A sorted list of all standard attributes and dynamic API endpoints.
         """
         standard_attrs = list(super().__dir__())
-        return sorted(set(standard_attrs + list(self._DYNAMIC_ENDPOINTS)))
+        return sorted(set(standard_attrs + list(ROUTE_MAP.keys())))
 
     # --- Public API ---
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from typing import ClassVar
 from typing import Final
+from urllib.parse import quote
 from urllib.parse import urlparse
 
 from requests.adapters import HTTPAdapter
@@ -254,3 +255,20 @@ class SecurityGuard:
         if size > max_size_bytes:
             msg = f"Security Violation: File '{path.name}' ({size} bytes) exceeds the safe threshold of {max_size_bytes} bytes."
             raise ValueError(msg)
+
+    @staticmethod
+    def sanitize_segment(segment: Any) -> str:
+        """Poka-yoke: Safely encode path segments preventing CWE-22 (Path Traversal).
+
+        Args:
+            segment: Dynamic ID or action value crossing the trust boundary.
+
+        Returns:
+            str: URL-encoded path component string.
+        """
+        if segment is None:
+            return ""
+
+        clean_str = str(segment).replace("\r", "").replace("\n", "")
+        # Safe is empty string to strictly encode EVERYTHING, including slashes
+        return quote(clean_str, safe="")

@@ -25,6 +25,7 @@ from mailjet_rest.errors import (
     CriticalApiError,
     TimeoutError,
 )
+from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.utils.guardrails import SecureHTTPAdapter
 from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, SendV31Payload, \
     SendV31Message
@@ -858,3 +859,161 @@ def test_extract_telemetry_safe_fallback() -> None:
     trace_str, struct_data = Client._extract_telemetry({"Messages": []}, None)
     assert trace_str == ""
     assert struct_data == {}
+
+# ==========================================
+# 11. Route Map
+# ==========================================
+
+def test_getattr_uses_route_map_registry(client_offline: Client) -> None:
+    """Verify that accessing a registered endpoint bypasses dynamic fallback logic."""
+    # 'contact' is in your ROUTE_MAP
+    assert "contact" in ROUTE_MAP
+
+    endpoint = client_offline.contact
+    assert endpoint is not None
+    # Verify the endpoint was cached
+    assert "contact" in client_offline._endpoint_cache
+
+def test_getattr_dynamic_fallback_still_works(client_offline: Client) -> None:
+    """Verify that unregistered endpoints still work via dynamic fallback."""
+    # Assuming 'unknown_resource' is not in ROUTE_MAP
+    endpoint = client_offline.unknown_resource
+    assert endpoint is not None
+    assert "unknown_resource" in client_offline._endpoint_cache
+
+
+# ==========================================
+# 12. Full Registry O(1) Routing Tests
+# ==========================================
+
+@pytest.mark.parametrize(
+    ("endpoint_name", "kwargs", "expected_url"),
+    [
+        # ==========================================
+        # Send API & Batching
+        # ==========================================
+        ("send", {}, "https://api.mailjet.com/v3/send"),
+        ("batch", {}, "https://api.mailjet.com/v3/batch"),
+        ("batchjob", {}, "https://api.mailjet.com/v3/REST/batchjob"),
+
+        # ==========================================
+        # Contacts & Contact Lists
+        # ==========================================
+        ("contact", {}, "https://api.mailjet.com/v3/REST/contact"),
+        ("contact", {"id_val": 123}, "https://api.mailjet.com/v3/REST/contact/123"), # Dynamic fallback append
+        ("contactdata", {}, "https://api.mailjet.com/v3/REST/contactdata"),
+        ("contactmetadata", {}, "https://api.mailjet.com/v3/REST/contactmetadata"),
+        ("contactslist", {}, "https://api.mailjet.com/v3/REST/contactslist"),
+        ("contactfilter", {}, "https://api.mailjet.com/v3/REST/contactfilter"),
+        ("contactslistsignup", {}, "https://api.mailjet.com/v3/REST/contactslistsignup"),
+        ("csvimport", {}, "https://api.mailjet.com/v3/REST/csvimport"),
+        ("listrecipient", {}, "https://api.mailjet.com/v3/REST/listrecipient"),
+
+        # Contact Actions (URI Interpolation)
+        ("contact_managemanycontacts", {}, "https://api.mailjet.com/v3/REST/contact/managemanycontacts"),
+        ("contactslist_managemanycontacts", {"id_val": 456}, "https://api.mailjet.com/v3/REST/contactslist/456/managemanycontacts"),
+        ("contact_getcontactslists", {"id_val": 789}, "https://api.mailjet.com/v3/REST/contact/789/getcontactslists"),
+
+        # ==========================================
+        # Campaigns & Newsletters
+        # ==========================================
+        ("campaign", {}, "https://api.mailjet.com/v3/REST/campaign"),
+        ("newsletter", {}, "https://api.mailjet.com/v3/REST/newsletter"),
+        ("campaigndraft", {}, "https://api.mailjet.com/v3/REST/campaigndraft"),
+
+        # Campaign Actions
+        ("campaigndraft_schedule", {"id_val": 10}, "https://api.mailjet.com/v3/REST/campaigndraft/10/schedule"),
+        ("campaigndraft_send", {"id_val": 11}, "https://api.mailjet.com/v3/REST/campaigndraft/11/send"),
+        ("campaigndraft_test", {"id_val": 12}, "https://api.mailjet.com/v3/REST/campaigndraft/12/test"),
+        ("campaigndraft_detailcontent", {"id_val": 13}, "https://api.mailjet.com/v3/REST/campaigndraft/13/detailcontent"),
+
+        # ==========================================
+        # Messages & History
+        # ==========================================
+        ("message", {}, "https://api.mailjet.com/v3/REST/message"),
+        ("messagehistory", {}, "https://api.mailjet.com/v3/REST/messagehistory"),
+        ("messageinformation", {}, "https://api.mailjet.com/v3/REST/messageinformation"),
+        ("messagestate", {}, "https://api.mailjet.com/v3/REST/messagestate"),
+
+        # ==========================================
+        # Templates (Mixed v1 / v3 versions)
+        # ==========================================
+        ("template", {}, "https://api.mailjet.com/v3/REST/template"),
+        ("templates", {}, "https://api.mailjet.com/v3/REST/templates"),
+        ("template_update", {"id_val": 99}, "https://api.mailjet.com/v3/REST/template/99"),
+        ("template_detailcontent", {"id_val": 99}, "https://api.mailjet.com/v3/REST/template/99/detailcontent"),
+        ("templates_contents", {"id_val": 99}, "https://api.mailjet.com/v3/REST/templates/99/contents"),
+
+        # Content API Template Actions (Forces v1)
+        ("template_contents", {"id_val": 100}, "https://api.mailjet.com/v1/REST/templates/100/contents"),
+        ("template_content_by_type", {"id_val": 100, "action_id": "html"}, "https://api.mailjet.com/v1/REST/templates/100/contents/types/html"),
+
+        # ==========================================
+        # Statistics & Analytics
+        # ==========================================
+        ("statcounters", {}, "https://api.mailjet.com/v3/REST/statcounters"),
+        ("contactstatistics", {}, "https://api.mailjet.com/v3/REST/contactstatistics"),
+        ("liststatistics", {}, "https://api.mailjet.com/v3/REST/liststatistics"),
+        ("bouncestatistics", {}, "https://api.mailjet.com/v3/REST/bouncestatistics"),
+        ("clickstatistics", {}, "https://api.mailjet.com/v3/REST/clickstatistics"),
+        ("openinformation", {}, "https://api.mailjet.com/v3/REST/openinformation"),
+        ("senderstatistics", {}, "https://api.mailjet.com/v3/REST/senderstatistics"),
+        ("domainstatistics", {}, "https://api.mailjet.com/v3/REST/domainstatistics"),
+        ("campaignstatistics", {}, "https://api.mailjet.com/v3/REST/campaignstatistics"),
+        ("statistics_linkClick", {}, "https://api.mailjet.com/v3/REST/statistics/link-click"),
+        ("statistics_recipientEsp", {}, "https://api.mailjet.com/v3/REST/statistics/recipient-esp"),
+        ("geostatistics", {}, "https://api.mailjet.com/v3/REST/geostatistics"),
+        ("toplinkclicked", {}, "https://api.mailjet.com/v3/REST/toplinkclicked"),
+
+        # ==========================================
+        # Account, Senders & Domains
+        # ==========================================
+        ("myprofile", {}, "https://api.mailjet.com/v3/REST/myprofile"),
+        ("user", {}, "https://api.mailjet.com/v3/REST/user"),
+        ("apikey", {}, "https://api.mailjet.com/v3/REST/apikey"),
+        ("apikeyaccess", {}, "https://api.mailjet.com/v3/REST/apikeyaccess"),
+        ("apikeytotals", {}, "https://api.mailjet.com/v3/REST/apikeytotals"),
+        ("sender", {}, "https://api.mailjet.com/v3/REST/sender"),
+        ("metasender", {}, "https://api.mailjet.com/v3/REST/metasender"),
+        ("sender_validate", {"id_val": 1}, "https://api.mailjet.com/v3/REST/sender/1/validate"),
+        ("dns", {}, "https://api.mailjet.com/v3/REST/dns"),
+        ("dns_check", {"id_val": 5}, "https://api.mailjet.com/v3/REST/dns/5/check"),
+
+        # ==========================================
+        # Webhooks & Parse API
+        # ==========================================
+        ("eventcallbackurl", {}, "https://api.mailjet.com/v3/REST/eventcallbackurl"),
+        ("webhook", {}, "https://api.mailjet.com/v3/REST/webhook"),
+        ("parseroute", {}, "https://api.mailjet.com/v3/REST/parseroute"),
+
+        # ==========================================
+        # Content API (v1) - Assets, Labels & Tokens
+        # ==========================================
+        ("tokens", {}, "https://api.mailjet.com/v1/REST/tokens"),
+        ("labels", {}, "https://api.mailjet.com/v1/REST/labels"),
+        ("images", {}, "https://api.mailjet.com/v1/REST/images"),
+        ("data_images", {}, "https://api.mailjet.com/v1/DATA/images"),
+    ]
+)
+def test_all_registry_routes(client_offline: Client, endpoint_name: str, kwargs: dict[str, Any], expected_url: str) -> None:
+    """Verify that every endpoint in the registry constructs the correct URL and handles URI templating."""
+    # Act
+    endpoint = getattr(client_offline, endpoint_name)
+    url = endpoint._build_url(**kwargs)
+
+    # Assert
+    assert url == expected_url
+
+
+def test_registry_uri_interpolation_path_traversal_cwe22(client_offline: Client) -> None:
+    """Verify that malicious dynamic values injected into URI templates are safely URL-encoded (CWE-22)."""
+    # Attempting to break out of the resource tree via path traversal
+    malicious_id = "../delete"
+
+    # Act
+    endpoint = client_offline.template_update
+    url = endpoint._build_url(id_val=malicious_id)
+
+    # Assert - The '../' must be URL encoded to '..%2F' preventing it from traversing up the path
+    assert url == "https://api.mailjet.com/v3/REST/template/..%2Fdelete"
+    assert "../" not in url
