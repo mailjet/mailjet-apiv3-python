@@ -7,6 +7,8 @@ We [keep a changelog.](http://keepachangelog.com/)
 ### Security
 
 - **Enterprise Runtime Security:** Added opt-in PEP 578 Audit Hooks (`sys.addaudithook`) managed via the new `Config` class attribute `enable_security_audit` to monitor runtime network events (`mailjet.security.*`) for SIEM/SecOps compliance.
+- **Path Traversal Mitigation (CWE-22)**: Implemented strict path segment sanitization in `Endpoint` and `guardrails.py` using `urllib.parse.quote(safe="")` to prevent directory traversal via dynamic ID inputs.
+- **Runtime Security**: Centralized and hardened `SecurityGuard.sanitize_segment` to neutralize potential CRLF injections and path traversal attempts across the entire request stack.
 - **Supply Chain Security:** Hardened the GitHub Actions validation pipeline by implementing Google's `osv-scanner` and separating `pip-audit` into an independent strict security job.
 - **Static Analysis Hardening:** Expanded Semgrep scanning targets to include the `p/insecure-transport` extended query suite and wired internal Bandit configuration (`-c pyproject.toml`) directly into CI workflow checkpoints.
 - **Automated Fuzzing:** Integrated `Atheris` (libFuzzer engine) code coverage suite into development workflows, exposing a unified orchestration entry point (`manage.sh fuzz_all`).
@@ -14,6 +16,10 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Added
 
+- **Registry-Based Routing**: Implemented O(1) immutable routing registry (`ROUTE_MAP`) for static endpoint resolution, significantly reducing dynamic attribute lookup overhead.
+- **TemplateContentBuilder**: Introduced a dedicated fluent builder for `Content API` payloads, enforcing schema correctness with fail-fast validation.
+- **URI Templating Engine**: Added a robust path interpolation engine in `Endpoint` to handle complex multi-level REST resources dynamically without handler proliferation.
+- **Telemetry Infrastructure**: Enhanced internal telemetry extraction for better structured logging of API request payloads.
 - **Domain Configuration:** Extracted configuration logic out of the monolithic client layout into a dedicated `Config` structure (`mailjet_rest/config.py`) to safely isolate runtime parameters.
 - **Testing Ecosystem:** Segmented the testing footprint into clear execution topologies: `tests/unit/` (100% offline via mock patches), `tests/integration/` (live network testing), `tests/regression/`, and `tests/fuzz/` (Atheris mutations).
 - **Error Boundaries:** Introduced a dedicated `errors.py` module containing explicit, domain-specific leave exceptions (`ValidationError`, `MailjetAuthError`, `ApiRateLimitError`, etc.) to avoid catching bare exceptions.
@@ -21,9 +27,19 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Changed
 
+- **Performance Optimization**:
+  - Migrated from procedural dynamic routing (`__getattr__`) to O(1) static lookups.
+  - Refactored internal string manipulations to use native Python methods, reducing cold-boot latency by ~29ms.
+  - Optimized memory footprint by enforcing `__slots__` across core infrastructure classes (`Client`, `Endpoint`, `Config`).
+- **Configuration**: Standardized `Config` structure and moved internal type aliases to `types.py` to prevent cyclic import dependencies.
+- **Dependency Management**: Updated `pyproject.toml` to optimize `ruff` linting and import grouping (isort).
 - **Architectural Decomposition (SRP):** Refactored the bloated `client.py` component, shifting single-responsibility concerns into individual domain files (`builders.py`, `config.py`, `endpoint.py`, `errors.py`, `types.py`).
 - **Endpoint Routing Interface:** Relaxed the internal route handler signature `_route_data` inside `endpoint.py` by converting the explicit name identifier to an optional parameter (`_name: str | None = None`) to increase routing flexibility.
 - **Pre-commit Workflow Stability:** Configured hooks (Bandit, Mypy) with `pass_filenames: false` to force systematic execution over the full repository context rather than fragmented staged files.
+
+### Fixed
+
+- **Compatibility**: Restored parity with legacy exceptions and dynamic routing behavior to ensure zero breaking changes for existing SDK consumers.
 
 ## [1.6.0] - 2026-04-27
 

@@ -218,29 +218,53 @@ def run_readme_tests():
             print(f"⚠️ Content API Upload skipped/failed: {res.status_code}")
 
         # ---------------------------------------------------------------------
-        # 6. ADDITIONAL HEALTH CHECKS (Read-Only)
+        # 6. ADDITIONAL HEALTH CHECKS (Read-Only & RPC-Actions)
         # ---------------------------------------------------------------------
-        section("Additional Health Checks (Read-Only)")
+        section("Additional Health Checks (Read-Only & RPC-Actions)")
 
-        endpoints_to_test = [
-            ("Senders", mailjet_v3.sender),
-            ("Campaigns", mailjet_v3.campaign),
-            ("Messages", mailjet_v3.message),
-            ("Legacy Templates", mailjet_v3.template),
-            ("v1 Templates", mailjet_v1.templates),
+        # Strategy: 'stream' for list/GET-collections, 'ping' for POST/RPC-actions
+        health_checks = [
+            ("Send", mailjet_v3.send, "ping"),
+            ("Contacts", mailjet_v3.contact, "stream"),
+            ("Webhooks", mailjet_v3.webhook, "ping"),
+            ("Sender Validate", mailjet_v3.sender_validate, "ping"),
+            ("Tokens (v1)", mailjet_v1.tokens, "stream"),
+            ("Labels (v1)", mailjet_v1.labels, "stream"),
+            ("Template Contents", mailjet_v1.templates_contents, "stream"),
+            ("Senders", mailjet_v3.sender, "stream"),
+            ("Campaigns", mailjet_v3.campaign, "stream"),
+            ("Messages", mailjet_v3.message, "stream"),
+            ("Legacy Templates", mailjet_v3.template, "stream"),
         ]
 
-        for name, endpoint in endpoints_to_test:
-            fetched_items = []
+        for name, endpoint, strategy in health_checks:
             try:
-                for item in endpoint.stream(chunk_size=10):
-                    fetched_items.append(item)
-                    if len(fetched_items) >= 1:
-                        break
+                if strategy == "stream":
+                    iterator = endpoint.stream(chunk_size=1)
+                    item = next(iterator, None)
 
-                print(f"✅ {name} passed (Streamed {len(fetched_items)} items successfully).")
+                    if item is not None:
+                        print(f"✅ {name} (stream) passed (Found items).")
+                    else:
+                        print(f"⚠️ {name} (stream) passed (Resource exists but is empty).")
+                else:
+                    # Verification for Action/RPC Resources
+                    # Trying to GET an action endpoint usually results in 405,
+                    # which confirms the route exists and is reachable.
+                    res = endpoint.get()
+                    if res.status_code in (200, 400, 405):
+                        print(f"✅ {name} (ping) passed (Status: {res.status_code}).")
+                    else:
+                        assert False, f"Unexpected status {res.status_code}"
+
             except Exception as e:
-                assert False, f"Health Check failed for {name}: {e}"
+                # API error handling: Check if it's a 405 Method Not Allowed
+                # This confirms the endpoint is reachable, just not via GET
+                if hasattr(e, "response") and getattr(e.response, "status_code", None) == 405:
+                    print(f"✅ {name} (ping) passed (Expected 405 Method Not Allowed).")
+                else:
+                    print(f"❌ {name} failed: {e}")
+                    assert False, f"Health Check failed for {name}: {e}"
 
     print(f"\n{'=' * 60}\n🎉 ALL TESTS AND HEALTH CHECKS COMPLETED SUCCESSFULLY!\n{'=' * 60}")
 

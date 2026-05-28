@@ -4,8 +4,8 @@ import os
 import tempfile
 from pathlib import Path
 
-from mailjet_rest.builders import MessageBuilder
-from mailjet_rest import Client, ApiError, CriticalApiError, TimeoutError
+from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
+from mailjet_rest import Client, ApiError, CriticalApiError, TimeoutError, DoesNotExistError
 from mailjet_rest.types import SendV31Payload, SendV31Message
 
 # Optional: Enable built-in SDK logging to see request/response details
@@ -26,7 +26,7 @@ mailjet31 = Client(
     ),
     version="v3.1",
     # Don't send real messages in samples
-    dry_run=True,
+    # dry_run=True,
 )
 
 
@@ -135,8 +135,43 @@ def create_segmentation_filter():
     return mailjet30.contactfilter.create(data=data)
 
 
+def manage_contacts_bulk():
+    """
+    POST /REST/contactslist/{id}/managemanycontacts
+    Demonstrates O(1) route resolution with URI template interpolation.
+    """
+    data = {"Action": "addnoforce", "Contacts": [{"Email": "passenger1@mailjet.com"}]}
+    # The SDK automatically interpolates '123' into the registry path
+    return mailjet30.contactslist_managemanycontacts.create(id=123, data=data)
+
+
+# Example 2: Content API Template Management
+def update_template_content():
+    """
+    POST /REST/templates/{id}/contents
+    Demonstrates the new TemplateContentBuilder with fail-fast validation.
+    """
+    builder = TemplateContentBuilder()
+    payload = (
+        builder.set_content(html="<h1>Welcome to the Flight!</h1>")
+        .set_headers({"X-Custom-Header": "Flight-Update", "X-Priority": "1"})
+        .build()
+    )
+
+    try:
+        # Resolves to v1/REST/templates/999/contents
+        return mailjet30.templates_contents.create(id=999, data=payload)
+    except DoesNotExistError:
+        print("⚠️ Resource 999 not found. Please verify the Template ID exists.")
+        return None
+
+
 if __name__ == "__main__":
     try:
+        print("Running Template Content Update...")
+        res = update_template_content()
+        print(f"Status Code: {res.status_code}")
+
         # We use send_messages() here as a safe, SandboxMode-enabled test
         result = send_messages()
         print(f"1. Status Code: {result.status_code}")
