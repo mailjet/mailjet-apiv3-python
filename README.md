@@ -680,7 +680,10 @@ The Content API (`v1`) allows managing templates, generating API tokens, and upl
 ```python
 # Tokens endpoint requires Basic Auth initially
 with Client(auth=(api_key, api_secret), version="v1") as client:
-    data = {"Name": "My Access Token", "Permissions": ["read_template", "create_template"]}
+    data = {
+        "Name": "My Access Token",
+        "Permissions": ["read_template", "create_template"],
+    }
     result = client.token.create(data=data)
     print(result.json())
 ```
