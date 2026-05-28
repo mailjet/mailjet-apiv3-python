@@ -4,25 +4,18 @@ from __future__ import annotations
 
 import re
 import warnings
-from dataclasses import dataclass
-from dataclasses import field
-from typing import TYPE_CHECKING
-from typing import Any
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from mailjet_rest.routes import ROUTE_MAP
-from mailjet_rest.types import _JSON_HEADERS
-from mailjet_rest.types import _TEXT_HEADERS
-from mailjet_rest.types import HttpMethod
-from mailjet_rest.types import PayloadType
-from mailjet_rest.types import TimeoutType
+from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, HttpMethod, PayloadType, TimeoutType
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 # Prevent circular import at runtime
 if TYPE_CHECKING:
-    from collections.abc import Callable
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
 
     import requests
 

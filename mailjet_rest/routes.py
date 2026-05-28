@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import Final
-from typing import NamedTuple
+from typing import Final, NamedTuple
 
 
 class Route(NamedTuple):

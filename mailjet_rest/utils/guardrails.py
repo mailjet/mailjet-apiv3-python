@@ -5,12 +5,10 @@ import re
 import ssl
 import sys
 import warnings
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
-from typing import ClassVar
-from typing import Final
-from urllib.parse import quote
-from urllib.parse import urlparse
+from typing import Any, ClassVar, Final
+from urllib.parse import quote, urlparse
 
 from requests.adapters import HTTPAdapter
 
@@ -23,10 +21,18 @@ else:
 
 _CRLF_RE: Final = re.compile(r"[\r\n]")
 
+
 # Regex to catch Authorization headers and common API key patterns
-_SECRET_PATTERN = re.compile(
-    r"(?i)(Authorization|api[_-]key|api[_-]secret|token)([:\s=]+(?:Bearer\s+|Basic\s+|Token\s+)?)([^\s'\"]+)"
-)
+@lru_cache(maxsize=1)
+def _get_secret_pattern() -> re.Pattern[str]:
+    """Lazy-compile strict patterns to minimize cold-boot overhead.
+
+    Returns:
+        re.Pattern[str]: Compiled regular expression for secret pattern matching.
+    """
+    return re.compile(
+        r"(?i)(Authorization|api[_-]key|api[_-]secret|token)([:\s=]+(?:Bearer\s+|Basic\s+|Token\\s+)?)([^\s'\"]+)"
+    )
 
 
 class SecureHTTPAdapter(HTTPAdapter):
@@ -54,14 +60,14 @@ class RedactingFilter(logging.Filter):
             bool
         """
         if isinstance(record.msg, str):
-            record.msg = _SECRET_PATTERN.sub(r"\1\2********", record.msg)
+            record.msg = _get_secret_pattern().sub(r"\1\2********", record.msg)
 
         # Redact arguments
         if record.args:
             new_args: list[Any] = []
             for arg in record.args:
                 if isinstance(arg, str):
-                    new_args.append(_SECRET_PATTERN.sub(r"\1\2********", arg))
+                    new_args.append(_get_secret_pattern().sub(r"\1\2********", arg))
                 else:
                     new_args.append(arg)
             record.args = tuple(new_args)

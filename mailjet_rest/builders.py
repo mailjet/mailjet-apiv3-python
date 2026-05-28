@@ -6,8 +6,7 @@ import base64
 import json
 import mimetypes
 import sys
-from typing import TYPE_CHECKING
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 
 if sys.version_info >= (3, 11):

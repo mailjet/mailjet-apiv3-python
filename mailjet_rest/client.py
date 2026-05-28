@@ -12,41 +12,34 @@ import logging
 import sys
 import warnings
 from contextlib import suppress
-from typing import TYPE_CHECKING
-from typing import Any
-from typing import ClassVar
-from typing import cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import requests  # pyright: ignore[reportMissingModuleSource]
-from requests.exceptions import ConnectionError as RequestsConnectionError
-from requests.exceptions import RequestException
-from requests.exceptions import Timeout as RequestsTimeout
+from requests.exceptions import ConnectionError as RequestsConnectionError, RequestException, Timeout as RequestsTimeout
 from urllib3.util.retry import Retry
 
 from mailjet_rest.config import Config
 from mailjet_rest.endpoint import Endpoint
-from mailjet_rest.errors import ActionDeniedError
-from mailjet_rest.errors import ApiError
-from mailjet_rest.errors import ApiRateLimitError
-from mailjet_rest.errors import AuthorizationError
-from mailjet_rest.errors import CriticalApiError
-from mailjet_rest.errors import DoesNotExistError
-from mailjet_rest.errors import MailjetAuthError
-from mailjet_rest.errors import TimeoutError  # noqa: A004
-from mailjet_rest.errors import ValidationError
+from mailjet_rest.errors import (
+    ActionDeniedError,
+    ApiError,
+    ApiRateLimitError,
+    AuthorizationError,
+    CriticalApiError,
+    DoesNotExistError,
+    MailjetAuthError,
+    TimeoutError,  # noqa: A004
+    ValidationError,
+)
 from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.types import _ALLOWED_TRACE_FIELDS
-from mailjet_rest.utils.guardrails import RedactingFilter
-from mailjet_rest.utils.guardrails import SecureHTTPAdapter
-from mailjet_rest.utils.guardrails import SecurityGuard
+from mailjet_rest.utils.guardrails import RedactingFilter, SecureHTTPAdapter, SecurityGuard
 
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from mailjet_rest.types import HttpMethod
-    from mailjet_rest.types import PayloadType
-    from mailjet_rest.types import TimeoutType
+    from mailjet_rest.types import HttpMethod, PayloadType, TimeoutType
 
 
 if sys.version_info >= (3, 11):

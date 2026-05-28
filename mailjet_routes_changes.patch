@@ -1,0 +1,301 @@
+diff --git a/mailjet_rest/__init__.py b/mailjet_rest/__init__.py
+index 5be2d2..4d31314 100644
+--- a/mailjet_rest/__init__.py
++++ b/mailjet_rest/__init__.py
+@@ -1,18 +1,19 @@
+ """Mailjet REST API Python Wrapper."""
+
+-from mailjet_rest.client import Client
+-from mailjet_rest.client import Config
+-from mailjet_rest.errors import ActionDeniedError
+-from mailjet_rest.errors import ApiError
+-from mailjet_rest.errors import ApiRateLimitError
+-from mailjet_rest.errors import AuthorizationError
+-from mailjet_rest.errors import CriticalApiError
+-from mailjet_rest.errors import DoesNotExistError
+-from mailjet_rest.errors import MailjetApiError
+-from mailjet_rest.errors import MailjetAuthError
+-from mailjet_rest.errors import MailjetNetworkError
+-from mailjet_rest.errors import TimeoutError  # noqa: A004
+-from mailjet_rest.errors import ValidationError
++from mailjet_rest.client import Client, Config
++from mailjet_rest.errors import (
++    ActionDeniedError,
++    ApiError,
++    ApiRateLimitError,
++    AuthorizationError,
++    CriticalApiError,
++    DoesNotExistError,
++    MailjetApiError,
++    MailjetAuthError,
++    MailjetNetworkError,
++    TimeoutError,  # noqa: A004
++    ValidationError,
++)
+ from mailjet_rest.utils.version import get_version
+
+
+diff --git a/mailjet_rest/_version.py b/mailjet_rest/_version.py
+index 524a8a2..9573ff8 100644
+--- a/mailjet_rest/_version.py
++++ b/mailjet_rest/_version.py
+@@ -1 +1 @@
+-__version__ = "1.6.0.post1.dev20"
++__version__ = "1.6.0.post1.dev22"
+diff --git a/mailjet_rest/builders.py b/mailjet_rest/builders.py
+index befc059..d6ed15d 100644
+--- a/mailjet_rest/builders.py
++++ b/mailjet_rest/builders.py
+@@ -2,12 +2,10 @@
+
+ from __future__ import annotations
+
+-import base64
+ import json
+ import mimetypes
+ import sys
+-from typing import TYPE_CHECKING
+-from typing import Any
++from typing import TYPE_CHECKING, Any
+
+
+ if sys.version_info >= (3, 11):
+@@ -159,6 +157,8 @@ class MessageBuilder:
+         Returns:
+             The builder instance for method chaining.
+         """
++        import base64
++
+         # 1. Security Check: Path Traversal & Existence
+         path = SecurityGuard.validate_attachment_path(file_path, safe_base_dir)
+
+diff --git a/mailjet_rest/client.py b/mailjet_rest/client.py
+index 46772ac..e374a54 100644
+--- a/mailjet_rest/client.py
++++ b/mailjet_rest/client.py
+@@ -12,41 +12,34 @@ import logging
+ import sys
+ import warnings
+ from contextlib import suppress
+-from typing import TYPE_CHECKING
+-from typing import Any
+-from typing import ClassVar
+-from typing import cast
++from typing import TYPE_CHECKING, Any, ClassVar, cast
+
+ import requests  # pyright: ignore[reportMissingModuleSource]
+-from requests.exceptions import ConnectionError as RequestsConnectionError
+-from requests.exceptions import RequestException
+-from requests.exceptions import Timeout as RequestsTimeout
++from requests.exceptions import ConnectionError as RequestsConnectionError, RequestException, Timeout as RequestsTimeout
+ from urllib3.util.retry import Retry
+
+ from mailjet_rest.config import Config
+ from mailjet_rest.endpoint import Endpoint
+-from mailjet_rest.errors import ActionDeniedError
+-from mailjet_rest.errors import ApiError
+-from mailjet_rest.errors import ApiRateLimitError
+-from mailjet_rest.errors import AuthorizationError
+-from mailjet_rest.errors import CriticalApiError
+-from mailjet_rest.errors import DoesNotExistError
+-from mailjet_rest.errors import MailjetAuthError
+-from mailjet_rest.errors import TimeoutError  # noqa: A004
+-from mailjet_rest.errors import ValidationError
++from mailjet_rest.errors import (
++    ActionDeniedError,
++    ApiError,
++    ApiRateLimitError,
++    AuthorizationError,
++    CriticalApiError,
++    DoesNotExistError,
++    MailjetAuthError,
++    TimeoutError,  # noqa: A004
++    ValidationError,
++)
+ from mailjet_rest.routes import ROUTE_MAP
+ from mailjet_rest.types import _ALLOWED_TRACE_FIELDS
+-from mailjet_rest.utils.guardrails import RedactingFilter
+-from mailjet_rest.utils.guardrails import SecureHTTPAdapter
+-from mailjet_rest.utils.guardrails import SecurityGuard
++from mailjet_rest.utils.guardrails import RedactingFilter, SecureHTTPAdapter, SecurityGuard
+
+
+ if TYPE_CHECKING:
+     from types import TracebackType
+
+-    from mailjet_rest.types import HttpMethod
+-    from mailjet_rest.types import PayloadType
+-    from mailjet_rest.types import TimeoutType
++    from mailjet_rest.types import HttpMethod, PayloadType, TimeoutType
+
+
+ if sys.version_info >= (3, 11):
+diff --git a/mailjet_rest/config.py b/mailjet_rest/config.py
+index fa66eb5..25fdc8c 100644
+--- a/mailjet_rest/config.py
++++ b/mailjet_rest/config.py
+@@ -1,14 +1,10 @@
+ """Configuration settings for the Mailjet SDK."""
+
+ from dataclasses import dataclass
+-from typing import ClassVar
+-from typing import cast
++from typing import ClassVar, cast
+
+ from mailjet_rest._version import __version__
+-from mailjet_rest.types import _DEFAULT_TIMEOUT
+-from mailjet_rest.types import _JSON_HEADERS
+-from mailjet_rest.types import _TEXT_HEADERS
+-from mailjet_rest.types import TimeoutType
++from mailjet_rest.types import _DEFAULT_TIMEOUT, _JSON_HEADERS, _TEXT_HEADERS, TimeoutType
+ from mailjet_rest.utils.guardrails import SecurityGuard
+
+
+diff --git a/mailjet_rest/endpoint.py b/mailjet_rest/endpoint.py
+index 5117cea..fd9db81 100644
+--- a/mailjet_rest/endpoint.py
++++ b/mailjet_rest/endpoint.py
+@@ -4,25 +4,18 @@ from __future__ import annotations
+
+ import re
+ import warnings
+-from dataclasses import dataclass
+-from dataclasses import field
+-from typing import TYPE_CHECKING
+-from typing import Any
++from dataclasses import dataclass, field
++from typing import TYPE_CHECKING, Any
+ from urllib.parse import quote
+
+ from mailjet_rest.routes import ROUTE_MAP
+-from mailjet_rest.types import _JSON_HEADERS
+-from mailjet_rest.types import _TEXT_HEADERS
+-from mailjet_rest.types import HttpMethod
+-from mailjet_rest.types import PayloadType
+-from mailjet_rest.types import TimeoutType
++from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, HttpMethod, PayloadType, TimeoutType
+ from mailjet_rest.utils.guardrails import SecurityGuard
+
+
+ # Prevent circular import at runtime
+ if TYPE_CHECKING:
+-    from collections.abc import Callable
+-    from collections.abc import Generator
++    from collections.abc import Callable, Generator
+
+     import requests
+
+diff --git a/mailjet_rest/routes.py b/mailjet_rest/routes.py
+index 76a2f36..9d6acde 100644
+--- a/mailjet_rest/routes.py
++++ b/mailjet_rest/routes.py
+@@ -3,8 +3,7 @@
+ from __future__ import annotations
+
+ from types import MappingProxyType
+-from typing import Final
+-from typing import NamedTuple
++from typing import Final, NamedTuple
+
+
+ class Route(NamedTuple):
+diff --git a/mailjet_rest/types.py b/mailjet_rest/types.py
+index 24ec262..a3710e1 100644
+--- a/mailjet_rest/types.py
++++ b/mailjet_rest/types.py
+@@ -1,12 +1,10 @@
+ """Type definitions and constants for the Mailjet SDK."""
+
++from __future__ import annotations
++
+ import sys
+ from types import MappingProxyType
+-from typing import Any
+-from typing import Final
+-from typing import Literal
+-from typing import TypeAlias
+-from typing import TypedDict
++from typing import Any, Final, Literal, TypeAlias, TypedDict
+
+
+ if sys.version_info >= (3, 11):
+diff --git a/mailjet_rest/utils/guardrails.py b/mailjet_rest/utils/guardrails.py
+index 27afdca..861110f 100644
+--- a/mailjet_rest/utils/guardrails.py
++++ b/mailjet_rest/utils/guardrails.py
+@@ -2,15 +2,12 @@
+
+ import logging
+ import re
+-import ssl
+ import sys
+ import warnings
++from functools import lru_cache
+ from pathlib import Path
+-from typing import Any
+-from typing import ClassVar
+-from typing import Final
+-from urllib.parse import quote
+-from urllib.parse import urlparse
++from typing import Any, ClassVar, Final
++from urllib.parse import quote, urlparse
+
+ from requests.adapters import HTTPAdapter
+
+@@ -23,10 +20,14 @@ else:
+
+ _CRLF_RE: Final = re.compile(r"[\r\n]")
+
++
+ # Regex to catch Authorization headers and common API key patterns
+-_SECRET_PATTERN = re.compile(
+-    r"(?i)(Authorization|api[_-]key|api[_-]secret|token)([:\s=]+(?:Bearer\s+|Basic\s+|Token\s+)?)([^\s'\"]+)"
+-)
++@lru_cache(maxsize=1)
++def _get_secret_pattern() -> re.Pattern[str]:
++    """Lazy-compile strict patterns to minimize cold-boot overhead."""
++    return re.compile(
++        r"(?i)(Authorization|api[_-]key|api[_-]secret|token)([:\s=]+(?:Bearer\s+|Basic\s+|Token\\s+)?)([^\s'\"]+)"
++    )
+
+
+ class SecureHTTPAdapter(HTTPAdapter):
+@@ -34,6 +35,8 @@ class SecureHTTPAdapter(HTTPAdapter):
+
+     def init_poolmanager(self, connections: int, maxsize: int, block: bool = False, **pool_kwargs: Any) -> None:
+         """Initialize the pool manager with enforced TLS 1.2+ configuration."""
++        import ssl
++
+         context = ssl.create_default_context()
+         # Enforce TLS 1.2+ to prevent downgrade attacks (aligns with NIST SP 800-52)
+         context.minimum_version = ssl.TLSVersion.TLSv1_2
+@@ -54,14 +57,14 @@ class RedactingFilter(logging.Filter):
+             bool
+         """
+         if isinstance(record.msg, str):
+-            record.msg = _SECRET_PATTERN.sub(r"\1\2********", record.msg)
++            record.msg = _get_secret_pattern().sub(r"\1\2********", record.msg)
+
+         # Redact arguments
+         if record.args:
+             new_args: list[Any] = []
+             for arg in record.args:
+                 if isinstance(arg, str):
+-                    new_args.append(_SECRET_PATTERN.sub(r"\1\2********", arg))
++                    new_args.append(_get_secret_pattern().sub(r"\1\2********", arg))
+                 else:
+                     new_args.append(arg)
+             record.args = tuple(new_args)
+diff --git a/pyproject.toml b/pyproject.toml
+index bfa6a81..8844883 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -230,7 +230,8 @@ line-ending = "auto"
+ #"path/to/file.py" = ["E402"]
+
+ [tool.ruff.lint.isort]
+-force-single-line = true
++force-single-line = false
++combine-as-imports = true
+ force-sort-within-sections = false
+ lines-after-imports = 2

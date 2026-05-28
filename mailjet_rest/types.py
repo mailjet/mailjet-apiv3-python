@@ -1,12 +1,10 @@
 """Type definitions and constants for the Mailjet SDK."""
 
+from __future__ import annotations
+
 import sys
 from types import MappingProxyType
-from typing import Any
-from typing import Final
-from typing import Literal
-from typing import TypeAlias
-from typing import TypedDict
+from typing import Any, Final, Literal, TypeAlias, TypedDict
 
 
 if sys.version_info >= (3, 11):

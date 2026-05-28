@@ -230,7 +230,8 @@ line-ending = "auto"
 #"path/to/file.py" = ["E402"]
 
 [tool.ruff.lint.isort]
-force-single-line = true
+force-single-line = false
+combine-as-imports = true
 force-sort-within-sections = false
 lines-after-imports = 2
 

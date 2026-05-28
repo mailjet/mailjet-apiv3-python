@@ -1,14 +1,10 @@
 """Configuration settings for the Mailjet SDK."""
 
 from dataclasses import dataclass
-from typing import ClassVar
-from typing import cast
+from typing import ClassVar, cast
 
 from mailjet_rest._version import __version__
-from mailjet_rest.types import _DEFAULT_TIMEOUT
-from mailjet_rest.types import _JSON_HEADERS
-from mailjet_rest.types import _TEXT_HEADERS
-from mailjet_rest.types import TimeoutType
+from mailjet_rest.types import _DEFAULT_TIMEOUT, _JSON_HEADERS, _TEXT_HEADERS, TimeoutType
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
