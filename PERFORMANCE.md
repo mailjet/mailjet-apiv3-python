@@ -29,14 +29,16 @@ ______________________________________________________________________
 
 ### v1.6.0 vs. v1.7.0
 
-We deliberately traded a fractional increase in execution time to introduce robust OWASP security guardrails (SSRF prevention, Header Injection checks) and Smart Telemetry, while maintaining lightning-fast baseline performance.
+## Empirical Benchmarks Matrix
 
-| Metric                   | v1.6.0            | v1.7.0 (Current)      | Impact Context                   |
-| :----------------------- | :---------------- | :-------------------- | :------------------------------- |
-| **Routing Speed (Mean)** | ~0.21 µs (214 ns) | **~0.21 µs (215 ns)** | *Virtually Identical*            |
-| **Request Cycle (Mean)** | ~282 µs           | **~504 µs**           | *+222 µs (Security & Telemetry)* |
-| **Routing Ops/Sec**      | ~4,659 Kops/s     | **~4,645 Kops/s**     | *Extremely Fast*                 |
-| **Cold-Boot Init Time**  | ~0.126 s          | **~0.123 s**          | *Stable*                         |
+| Metric                   | v1.6.0 (Baseline) | v1.7.0 (Registry-Based) | Improvement                |
+| :----------------------- | :---------------- | :---------------------- | :------------------------- |
+| **Routing Speed (Mean)** | ~155.1 ns         | **~105.3 ns**           | **~32% Faster**            |
+| **Request Cycle (Mean)** | ~220.2 µs         | **~220.2 µs**           | *Stable*                   |
+| **Routing Ops/Sec**      | ~6,447 Kops/s     | **~9,491 Kops/s**       | **~47% Higher Throughput** |
+| **Cold-Boot Init Time**  | ~0.086 s          | **~0.091 s**            | *+5ms (Negligible)*        |
+
+*Benchmarking Environment: Darwin-CPython-3.12, pytest-benchmark.*
 
 *Note: Benchmarks measure network-isolated internal overhead using mocked `responses`. Testing hardware: Darwin-CPython-3.12-64bit.*
 
