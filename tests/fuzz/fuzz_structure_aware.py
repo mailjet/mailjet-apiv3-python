@@ -118,6 +118,7 @@ def TestOneInput(data: bytes) -> None:
             )
             t_builder.build()
         except (ValueError, ValidationError, TypeError):
+            # Expected for malformed fuzz inputs; ignore so the fuzzer can continue exploring.
             pass
 
 def main() -> None:
