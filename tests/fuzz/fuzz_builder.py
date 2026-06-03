@@ -99,6 +99,7 @@ def TestOneInput(data: bytes) -> None:
 
         t_builder.build()
     except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
+        # Expected for malformed fuzz inputs; keep fuzzing instead of failing the harness.
         pass
 
 def main() -> None:
