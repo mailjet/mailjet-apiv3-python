@@ -20,6 +20,7 @@ def fuzz_path_jailing(fdp: atheris.FuzzedDataProvider) -> None:
         path_input = fdp.ConsumeUnicodeNoSurrogates(50)
         SecurityGuard.validate_attachment_path(path_input, safe_base_dir="/tmp/safe")
     except (ValueError, FileNotFoundError):
+        # Expected for malformed or nonexistent fuzzed paths; continue fuzzing this target.
         pass
 
 def fuzz_crlf_headers(fdp: atheris.FuzzedDataProvider) -> None:
