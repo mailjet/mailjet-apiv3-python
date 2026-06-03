@@ -62,6 +62,7 @@ def TestOneInput(data: bytes) -> None:
             endpoint.delete(id=id_val, action_id=action_id)
 
     except (ValueError, TypeError, AttributeError, KeyError, ValidationError):
+        # Invalid/malformed fuzz inputs are expected here; ignore and continue fuzzing.
         pass
 
 def main() -> None:
