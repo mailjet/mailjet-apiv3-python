@@ -5,7 +5,8 @@ import logging
 from unittest.mock import patch
 
 from mailjet_rest import Client
-from mailjet_rest.utils.guardrails import SecurityGuard, RedactingFilter
+from mailjet_rest.utils.guardrails import SecurityGuard, RedactingFilter, \
+    SecureHTTPAdapter
 
 
 @pytest.fixture
@@ -133,3 +134,58 @@ def test_enable_audit_logging_registers_hook(mock_add_hook: Any) -> None:
     mock_add_hook.reset_mock()
     SecurityGuard.enable_audit_logging()
     mock_add_hook.assert_not_called()
+
+def test_validate_config_url_http() -> None:
+    """Rejects cleartext HTTP."""
+    # Updated the match string to reflect the actual error thrown by guardrails.py
+    with pytest.raises(ValueError, match="Security Violation: api_url scheme must be 'HTTPS'"):
+        SecurityGuard.validate_config_url("http://api.mailjet.com/v3")
+def test_check_file_size_exceeded(tmp_path: Any) -> None:
+    """Rejects files larger than max_size_bytes."""
+    test_file = tmp_path / "large_file.txt"
+    test_file.write_bytes(b"x" * 1024)
+    with pytest.raises(ValueError, match="exceeds the safe threshold"):
+        SecurityGuard.check_file_size(test_file, max_size_bytes=500)
+
+def test_sanitize_segment_none() -> None:
+    """Handles None gracefully."""
+    assert SecurityGuard.sanitize_segment(None) == ""
+
+def test_redacting_filter_hides_authorization() -> None:
+    """Secret hiding inside logging formatter."""
+    filter_instance = RedactingFilter()
+    record = logging.LogRecord(
+        name="test_logger", level=logging.INFO, pathname="", lineno=0,
+        msg="Attempting to auth with Header Authorization: Bearer secret_12345_token",
+        args=(), exc_info=None
+    )
+    filter_instance.filter(record)
+    assert "secret_12345_token" not in record.msg
+    assert "***" in record.msg
+
+def test_redacting_filter_ignores_non_strings() -> None:
+    """Ignore filtering on non-string dict messages."""
+    filter_instance = RedactingFilter()
+    record = logging.LogRecord(
+        name="test_logger", level=logging.INFO, pathname="", lineno=0,
+        msg={"dict": "payload"}, args=(), exc_info=None
+    )
+    assert filter_instance.filter(record) is True
+
+def test_sanitize_log_trace_non_string() -> None:
+    # Ensure non-string values pass through correctly
+    assert SecurityGuard.sanitize_log_trace(123) == "123"
+    assert SecurityGuard.sanitize_log_trace({"a": 1}) == "{'a': 1}"
+
+def test_validate_config_url_valid() -> None:
+    # Ensure valid URLs don't trigger exception branches
+    SecurityGuard.validate_config_url("https://api.mailjet.com/v3")
+
+def test_validate_attribute_access_valid() -> None:
+    SecurityGuard.validate_attribute_access("Client", "valid_attribute")
+
+def test_secure_http_adapter_coverage() -> None:
+    adapter = SecureHTTPAdapter()
+    assert adapter is not None
+    # We just need to trigger the init_poolmanager method to cover the lines
+    adapter.init_poolmanager(connections=1, maxsize=1)

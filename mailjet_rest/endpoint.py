@@ -32,7 +32,11 @@ def _route_send(base: str, ver: str, _parts: list[str], _id_val: str, _action: s
 
 
 def _route_csv(base: str, ver: str, parts: list[str], id_val: str, _action: str, name: str) -> str:
-    url = f"{base}/{ver}/DATA/{parts[0]}"
+    # 1. quote() encodes slashes and spaces (CWE-20)
+    # 2. replace() explicitly encodes dots to prevent strict ".." evaluation (CWE-22)
+    safe_part = quote(parts[0], safe="").replace(".", "%2E")
+
+    url = f"{base}/{ver}/DATA/{safe_part}"
     if id_val:  # Only append suffix if an ID was passed
         suffix = "CSVData/text:plain" if name.endswith("_csvdata") else "CSVError/text:csv"
         url += f"{id_val}/{suffix}"

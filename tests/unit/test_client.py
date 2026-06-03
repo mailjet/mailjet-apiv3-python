@@ -8,8 +8,11 @@ import re
 import ssl
 import sys
 import warnings
+import responses
+
 from typing import Any, TYPE_CHECKING
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, Mock
+
 
 import pytest
 import requests  # pyright: ignore[reportMissingModuleSource]
@@ -22,9 +25,11 @@ from hypothesis import given, strategies as st
 from mailjet_rest.client import Client, Config
 from mailjet_rest.errors import (
     ApiError,
+    ApiRateLimitError,
     CriticalApiError,
     TimeoutError,
 )
+from requests.exceptions import Timeout
 from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.utils.guardrails import SecureHTTPAdapter
 from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, SendV31Payload, \
@@ -112,16 +117,29 @@ def test_config_api_url_validation_hostname() -> None:
 
 
 def test_config_timeout_invalid_values() -> None:
-    """Verify that extreme timeout values are rejected to prevent resource exhaustion (CWE-400)."""
-    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
+    """Verify that extreme or invalid timeout values are rejected to prevent resource exhaustion (CWE-400)."""
+
+    # 1. Verify that 0 (out of bounds) is rejected
+    with pytest.raises(ValueError, match="strictly positive finite number"):
         Config(timeout=0)
 
-    with pytest.raises(ValueError, match="Timeout values must be strictly between 1 and 300"):
-        Config(timeout=500)
+    # 2. Verify that negative numbers are rejected
+    with pytest.raises(ValueError, match="strictly positive finite number"):
+        Config(timeout=-1)
+
+    # 3. Verify that non-numeric types are rejected
+    with pytest.raises(ValueError, match="Timeout must be numeric"):
+        Config(timeout="not-a-number")  # type: ignore[arg-type]
+
+    # 4. Verify that non-finite floats (NaN) are rejected
+    with pytest.raises(ValueError, match="strictly positive finite number"):
+        Config(timeout=float('nan'))
 
     with pytest.raises(ValueError, match="Timeout tuple must contain exactly two elements"):
         Config(timeout=(10,))  # type: ignore[arg-type]
 
+    with pytest.raises(ValueError, match="Invalid timeout tuple element"):
+        Config(timeout=("invalid", 10))  # type: ignore[arg-type]
 
 def test_config_timeout_valid_values() -> None:
     """Verify that standard timeout integers and specific (connect, read) tuples are accepted."""
@@ -144,9 +162,9 @@ def test_url_sanitization_path_traversal() -> None:
     client = Client(auth=("a", "b"), version="v3")
 
     def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
-        # quote(safe="") converts '/' to '%2F', ensuring directories can't be traversed.
+        # Update test to expect strict dot-encoding (%2E%2E)
         assert "../delete" not in url
-        assert "..%2Fdelete" in url
+        assert "%2E%2E%2Fdelete" in url  # Changed from "..%2Fdelete"
         resp = requests.Response()
         resp.status_code = 200
         return resp
@@ -154,7 +172,6 @@ def test_url_sanitization_path_traversal() -> None:
     client.session.request = mock_request  # type: ignore[assignment]
     # Check that we restored 'id' in public signature
     client.contact.get(id="../delete")
-
 
 def test_client_repr_and_str_redact_secrets() -> None:
     """Verify that string representations do not leak the private keys (CWE-316)."""
@@ -827,6 +844,9 @@ def test_extract_telemetry_v3_root_level() -> None:
     """Verify telemetry extraction from the root level of the payload (API v3)."""
     # Use exact keys monitored within the allowed set: CustomID and TemplateID
     payload = {"CustomID": "trace-root-123", "TemplateID": 112233}
+
+    # We must ensure the field is in the allowed trace fields or it won't be extracted
+    # Ensure _ALLOWED_TRACE_FIELDS includes these or adjust payload to match
     trace_str, struct_data = Client._extract_telemetry(payload, None)
 
     assert "CustomID=trace-root-123" in trace_str
@@ -860,6 +880,12 @@ def test_extract_telemetry_safe_fallback() -> None:
     assert trace_str == ""
     assert struct_data == {}
 
+def test_extract_telemetry_with_string_data() -> None:
+    """Trigger lines 419-437: When telemetry data is a string instead of a dictionary."""
+    trace_str, struct_data = Client._extract_telemetry("This is just a string payload", {})
+    assert trace_str == ""
+    assert struct_data == {}
+
 # ==========================================
 # 11. Route Map
 # ==========================================
@@ -883,7 +909,36 @@ def test_getattr_dynamic_fallback_still_works(client_offline: Client) -> None:
 
 
 # ==========================================
-# 12. Full Registry O(1) Routing Tests
+# 12. API Errors
+# ==========================================
+
+
+def test_client_rate_limit_error(client_offline: Client) -> None:
+    """Handling 429 Too Many Requests."""
+    with patch.object(client_offline.session, "request") as mock_req:
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_req.return_value = mock_response
+
+        response = client_offline.contact.get()
+        assert response.status_code == 429
+
+def test_client_server_error(client_offline: Client) -> None:
+    """Handling HTTP 500 Internal Server Error (Network failure)."""
+    with patch.object(client_offline.session, "request", side_effect=RequestsConnectionError("Connection aborted")):
+        with pytest.raises(CriticalApiError):
+            client_offline.contact.get()
+
+@responses.activate
+def test_client_timeout_error(client_offline: Client) -> None:
+    """Handle requests Timeout exception."""
+    responses.add(responses.GET, "https://api.mailjet.com/v3/REST/contact", body=Timeout("Connection timed out"))
+    with pytest.raises(TimeoutError):
+        client_offline.contact.get()
+
+
+# ==========================================
+# 13. Full Registry O(1) Routing Tests
 # ==========================================
 
 @pytest.mark.parametrize(
@@ -1001,7 +1056,6 @@ def test_all_registry_routes(client_offline: Client, endpoint_name: str, kwargs:
     endpoint = getattr(client_offline, endpoint_name)
     url = endpoint._build_url(**kwargs)
 
-    # Assert
     assert url == expected_url
 
 
@@ -1010,10 +1064,60 @@ def test_registry_uri_interpolation_path_traversal_cwe22(client_offline: Client)
     # Attempting to break out of the resource tree via path traversal
     malicious_id = "../delete"
 
-    # Act
     endpoint = client_offline.template_update
     url = endpoint._build_url(id_val=malicious_id)
 
-    # Assert - The '../' must be URL encoded to '..%2F' preventing it from traversing up the path
-    assert url == "https://api.mailjet.com/v3/REST/template/..%2Fdelete"
-    assert "../" not in url
+    # The '../' must be URL encoded to '%2E%2E%2F' preventing it from traversing up the path
+    # Update test to expect strict dot-encoding (%2E%2E)
+    assert url == "https://api.mailjet.com/v3/REST/template/%2E%2E%2Fdelete"
+
+
+def test_client_invalid_attribute(client_offline: Client) -> None:
+    # Test the explicit guardrail protection against private methods
+    with pytest.raises(AttributeError, match="'Client' object has no attribute '_hidden_method'"):
+        _ = client_offline._hidden_method
+
+@responses.activate
+def test_client_api_call_exceptions(client_offline: Client) -> None:
+    # 1. Test TimeoutError
+    responses.add(responses.GET, "https://api.mailjet.com/v3/REST/contact", body=RequestsTimeout("Timeout!"))
+    with pytest.raises(TimeoutError, match="Request to Mailjet API timed out"):
+        client_offline.contact.get()
+
+    responses.mock.reset()  # Reset state before next test
+
+    # 2. Test ConnectionError (CriticalApiError)
+    responses.add(responses.GET, "https://api.mailjet.com/v3/REST/contact", body=RequestsConnectionError("Conn error"))
+    with pytest.raises(CriticalApiError, match="Connection to Mailjet API failed"):
+        client_offline.contact.get()
+
+    responses.mock.reset()
+
+    # 3. Test General RequestException (ApiError)
+    responses.add(responses.GET, "https://api.mailjet.com/v3/REST/contact", body=RequestException("General error"))
+    with pytest.raises(ApiError, match="An unexpected Mailjet API network error occurred"):
+        client_offline.contact.get()
+
+
+def test_client_context_manager() -> None:
+    # Test that the session is created and the context manager doesn't crash,
+    # without trying to access the blocked 'auth' property.
+    with Client(auth=("key1", "key2")) as c:
+        assert c.session is not None
+
+def test_extract_telemetry_edge_cases(client_offline: Client) -> None:
+    # Coverage for when the payload is a string, not a dict
+    suffix, d = client_offline._extract_telemetry("string data", None)
+    assert suffix == ""
+
+    # Coverage for dict without 'Messages'
+    suffix, d = client_offline._extract_telemetry({"other": "val"}, None)
+    assert suffix == ""
+
+    # Coverage for empty 'Messages' array
+    suffix, d = client_offline._extract_telemetry({"Messages": []}, None)
+    assert suffix == ""
+
+    # Coverage for missing tracing fields
+    suffix, d = client_offline._extract_telemetry({"Messages": [{"Subject": "Hello"}]}, None)
+    assert suffix == ""

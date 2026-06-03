@@ -406,6 +406,10 @@ class Client:
         Returns:
             requests.Response: The HTTP response from the Mailjet API.
         """
+        # Prevent CRLF header injection (CWE-113)
+        if req_kwargs.get("headers"):
+            SecurityGuard.validate_crlf_headers(req_kwargs["headers"])
+
         logger.debug(
             "Sending Request: %s %s%s",
             method,

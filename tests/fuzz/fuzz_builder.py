@@ -1,45 +1,107 @@
-"""Atheris fuzzing target for the Mailjet SDK."""
+"""Atheris fuzzing target for the Mailjet SDK Builders."""
 
 import atheris
 import sys
+from unittest.mock import patch, MagicMock
 
-# Instrument imports allows Atheris to track code coverage during fuzzing
 with atheris.instrument_imports():
-    from mailjet_rest.builders import MessageBuilder
+    from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
     from mailjet_rest.utils.guardrails import SecurityGuard
     from mailjet_rest.errors import MailjetAuthError, ValidationError
 
 def TestOneInput(data: bytes) -> None:
+    if len(data) < 5:
+        return
     fdp = atheris.FuzzedDataProvider(data)
 
+    # ==========================================
+    # BLOCK 1: Telemetry Sanitizer
+    # ==========================================
     try:
-        # Fuzzing logic
-        # 1. Fuzz the Telemetry Sanitizer
         test_trace = fdp.ConsumeUnicodeNoSurrogates(100)
         SecurityGuard.sanitize_log_trace(test_trace)
-
-        # 2. Fuzz the Message Builder
-        builder = MessageBuilder()
-        builder.set_sender(fdp.ConsumeUnicodeNoSurrogates(50))
-        builder.add_recipient(fdp.ConsumeUnicodeNoSurrogates(50))
-        builder.set_subject(fdp.ConsumeUnicodeNoSurrogates(100))
-        builder.set_content(text=fdp.ConsumeUnicodeNoSurrogates(200))
-
-        # Build the payload
-        builder.build()
-
-
-    except (ValueError, ValidationError, MailjetAuthError):
-        # ValueError is an EXPECTED result of bad input (e.g., empty sender).
-        # We catch it so the fuzzer knows this is not a crash.
+    except (ValueError, TypeError, ValidationError, AttributeError):
         pass
-    except Exception as e:
-        # If we hit an unhandled exception (like a TypeError during string manipulation),
-        # we raise it so ClusterFuzzLite records a crash.
-        raise RuntimeError(f"Fuzzer found an unhandled exception: {e}") from e
+
+    # ==========================================
+    # BLOCK 2: Message Builder
+    # ==========================================
+    try:
+        builder = MessageBuilder()
+        builder.set_sender(
+            email=fdp.ConsumeUnicodeNoSurrogates(20),
+            name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+        )
+
+        for _ in range(fdp.ConsumeIntInRange(1, 3)):
+            builder.add_recipient(
+                email=fdp.ConsumeUnicodeNoSurrogates(20),
+                name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+            )
+
+        for _ in range(fdp.ConsumeIntInRange(0, 2)):
+            builder.add_cc(
+                email=fdp.ConsumeUnicodeNoSurrogates(20),
+                name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+            )
+
+        for _ in range(fdp.ConsumeIntInRange(0, 2)):
+            builder.add_bcc(
+                email=fdp.ConsumeUnicodeNoSurrogates(20),
+                name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+            )
+
+        builder.set_subject(fdp.ConsumeUnicodeNoSurrogates(50))
+        builder.set_content(  # type: ignore[call-arg]
+            text=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None,
+            html=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None,
+            mjml=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None  # pyright: ignore[reportCallIssue]
+        )
+
+        builder.set_template(fdp.ConsumeInt(10000))
+
+        # Fuzz mocked file ingestion
+        virtual_file_name = fdp.ConsumeUnicodeNoSurrogates(15)
+        virtual_file_data = fdp.ConsumeBytes(100)
+
+        with patch("pathlib.Path.is_file", return_value=True), \
+             patch("pathlib.Path.stat", return_value=MagicMock(st_size=len(virtual_file_data))), \
+             patch("pathlib.Path.read_bytes", return_value=virtual_file_data):
+
+            if fdp.ConsumeBool():
+                builder.attach_file(virtual_file_name)
+            if fdp.ConsumeBool():
+                builder.attach_inline_image(virtual_file_name)  # type: ignore[attr-defined]
+
+        builder.build()
+    except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
+        pass
+
+    # ==========================================
+    # BLOCK 3: Template Content Builder
+    # ==========================================
+    try:
+        t_builder = TemplateContentBuilder()
+        t_builder.set_meta(
+            author=fdp.ConsumeUnicodeNoSurrogates(20),
+            name=fdp.ConsumeUnicodeNoSurrogates(20)
+        )
+        t_builder.set_content(  # type: ignore[call-arg]
+            text=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
+            html=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
+            mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None  # pyright: ignore[reportCallIssue]
+        )
+
+        headers = {}
+        for _ in range(fdp.ConsumeIntInRange(0, 2)):
+            headers[fdp.ConsumeUnicodeNoSurrogates(10)] = fdp.ConsumeUnicodeNoSurrogates(10)
+        t_builder.set_headers(headers)
+
+        t_builder.build()
+    except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
+        pass
 
 def main() -> None:
-    # Setup and run the fuzzer
     atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()

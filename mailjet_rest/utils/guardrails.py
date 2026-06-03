@@ -27,11 +27,17 @@ _CRLF_RE: Final = re.compile(r"[\r\n]")
 def _get_secret_pattern() -> re.Pattern[str]:
     """Lazy-compile strict patterns to minimize cold-boot overhead.
 
+    ReDoS prevented by eliminating overlapping quantifiers (+)
+    and enforcing strict finite bounds ({1,5} and {1,200}).
+
     Returns:
         re.Pattern[str]: Compiled regular expression for secret pattern matching.
     """
+    # Group 1: The key/header name (e.g., Authorization)
+    # Group 2: The separator and scheme (e.g., ': Bearer ')
+    # Group 3: The actual secret (matched but NOT included in the substitution)
     return re.compile(
-        r"(?i)(Authorization|api[_-]key|api[_-]secret|token)([:\s=]+(?:Bearer\s+|Basic\s+|Token\\s+)?)([^\s'\"]+)"
+        r"(?i)(Authorization|api[_-]key|api[_-]secret|token)([:\s=]{1,5}(?:(?:Bearer|Basic|Token)\s{1,5})?)([^\s'\"]{1,200})"
     )
 
 
@@ -48,7 +54,7 @@ class SecureHTTPAdapter(HTTPAdapter):
 
 
 class RedactingFilter(logging.Filter):
-    """Filters out sensitive patterns from log messages and arguments."""
+    """Filter that intercepts and masks sensitive credentials in log records."""
 
     @override
     def filter(self, record: logging.LogRecord) -> bool:
@@ -62,20 +68,28 @@ class RedactingFilter(logging.Filter):
         if isinstance(record.msg, str):
             record.msg = _get_secret_pattern().sub(r"\1\2********", record.msg)
 
-        # Redact arguments
-        if record.args:
-            new_args: list[Any] = []
+        if isinstance(record.args, tuple) and record.args:
+            new_args = []
             for arg in record.args:
                 if isinstance(arg, str):
                     new_args.append(_get_secret_pattern().sub(r"\1\2********", arg))
                 else:
-                    new_args.append(arg)
+                    new_args.append(arg)  # type: ignore[arg-type]
             record.args = tuple(new_args)
+        elif isinstance(record.args, dict) and record.args:
+            new_dict_args = {}
+            for k, v in record.args.items():
+                if isinstance(v, str):
+                    new_dict_args[k] = _get_secret_pattern().sub(r"\1\2********", v)
+                else:
+                    new_dict_args[k] = v
+            record.args = new_dict_args
+
         return True
 
 
 class SecurityGuard:
-    """Centralized OWASP API security guardrails."""
+    """Centralized security validation and sanitization (Defense in Depth)."""
 
     _audit_hook_installed: ClassVar[bool] = False
 
@@ -132,11 +146,14 @@ class SecurityGuard:
         Returns:
             str: The sanitized string value.
         """
-        s = str(val)
-        # If the input contains control characters, reject/scrub to prevent injection.
-        if _CRLF_RE.search(s):
-            return "[INVALID_DATA_REDACTED]"
-        return s
+        # CAST TO STRING FIRST to prevent TypeError on ints/floats
+        val_str = str(val)
+
+        # Fail-fast on insanely large strings (CWE-400 Resource Exhaustion)
+        if len(val_str) > 1000:
+            val_str = val_str[:1000] + "... [TRUNCATED]"
+
+        return _CRLF_RE.sub("", val_str)
 
     @staticmethod
     def check_request_security(kwargs: dict[str, Any]) -> None:
@@ -220,8 +237,8 @@ class SecurityGuard:
         """
         for key, value in custom_headers.items():
             if _CRLF_RE.search(str(value)):
-                err_msg = f"CRLF Injection detected in header '{key}'"
-                raise ValueError(err_msg)
+                msg = f"Security Violation: CRLF Injection detected in header '{key}'."
+                raise ValueError(msg)
 
     @staticmethod
     def validate_attachment_path(file_path: str | Path, safe_base_dir: str | Path | None = None) -> Path:
@@ -276,5 +293,6 @@ class SecurityGuard:
             return ""
 
         clean_str = str(segment).replace("\r", "").replace("\n", "")
-        # Safe is empty string to strictly encode EVERYTHING, including slashes
-        return quote(clean_str, safe="")
+        # quote() ignores dots. We explicitly encode them to prevent
+        # strict ".." traversal when injected into middle of URI templates.
+        return quote(clean_str, safe="").replace(".", "%2E")

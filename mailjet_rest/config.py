@@ -1,7 +1,8 @@
 """Configuration settings for the Mailjet SDK."""
 
+import math
 from dataclasses import dataclass
-from typing import ClassVar, cast
+from typing import ClassVar
 
 from mailjet_rest._version import __version__
 from mailjet_rest.types import _DEFAULT_TIMEOUT, _JSON_HEADERS, _TEXT_HEADERS, TimeoutType
@@ -40,20 +41,41 @@ class Config:
         if not self.api_url.endswith("/"):
             self.api_url += "/"
 
-        def _validate_timeout(t: float) -> None:
-            if t <= 0 or t > 300:
-                err_msg = f"Timeout values must be strictly between 1 and 300 seconds, got {t}."
-                raise ValueError(err_msg)
-
         if self.timeout is not None:
             if isinstance(self.timeout, tuple):
                 if len(self.timeout) != 2:
-                    msg = f"Timeout tuple must contain exactly two elements, got {self.timeout}."
+                    msg = "Timeout tuple must contain exactly two elements (connect, read)."
                     raise ValueError(msg)
-                for t_val in self.timeout:
-                    _validate_timeout(t_val)
+                clean_tuple = []
+                for t in self.timeout:
+                    # 1. Scope type coercion strictly
+                    try:
+                        val = float(t)
+                    except (ValueError, TypeError) as e:
+                        msg = f"Invalid timeout tuple element: {t}"
+                        raise ValueError(msg) from e
+
+                    # 2. Scope invariant validation separately
+                    if math.isnan(val) or math.isinf(val) or val <= 0:
+                        msg = f"Timeout tuple values must be positive finite numbers, got {val}"
+                        raise ValueError(msg)
+
+                    clean_tuple.append(val)
+                self.timeout = tuple(clean_tuple)  # type: ignore[assignment]
             else:
-                _validate_timeout(cast("float", self.timeout))
+                # 1. Scope type coercion strictly
+                try:
+                    val = float(self.timeout)  # type: ignore[arg-type]
+                except (ValueError, TypeError) as e:
+                    msg = f"Security Violation: Timeout must be numeric, got {type(self.timeout).__name__}."
+                    raise ValueError(msg) from e
+
+                # 2. Scope invariant validation separately
+                if math.isnan(val) or math.isinf(val) or val <= 0:
+                    msg = f"Timeout must be a strictly positive finite number, got {val}"
+                    raise ValueError(msg)
+
+                self.timeout = val
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the base API endpoint URL and default headers for a given key.

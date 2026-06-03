@@ -9,6 +9,8 @@ import requests
 
 from mailjet_rest import MailjetAuthError
 from mailjet_rest.client import Client
+from mailjet_rest.routes import ROUTE_MAP
+
 
 # Safety guard: Prevent integration tests from running if credentials are missing
 pytestmark = pytest.mark.skipif(
@@ -196,6 +198,26 @@ def test_live_tls_handshake_success() -> None:
             assert e.status_code == 401
         except Exception as e:
             pytest.fail(f"Live network call failed at the transport layer: {e}")
+
+@pytest.mark.parametrize("route_key", ROUTE_MAP.keys())
+def test_registry_parity_and_integrity(client_live: Client, route_key: str) -> None:
+    """Ensure every route in the registry is resolvable and safe."""
+    endpoint = getattr(client_live, route_key)
+
+    url = endpoint._build_url(id_val="123") if "{" in ROUTE_MAP[route_key].path else endpoint._build_url()
+
+    assert "//" not in url.replace("https://", ""), f"Malformed URL in {route_key}: {url}"
+    assert url.startswith("https://api.mailjet.com"), f"Invalid base URL in {route_key}"
+
+@pytest.mark.parametrize("malicious_id", ["../admin", "id/../../", "123; DROP TABLE"])
+def test_registry_security_cwe22(client_live: Client, malicious_id: str) -> None:
+    """Security-focused integration: verify that CWE-22 payloads are neutralized."""
+    endpoint = client_live.contact
+
+    url = endpoint._build_url(id_val=malicious_id)
+
+    assert "%2F" in url or ".." not in url, "Security violation: Path traversal not sanitized."
+
 
 
 @pytest.mark.network
