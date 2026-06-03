@@ -28,6 +28,7 @@ def fuzz_crlf_headers(fdp: atheris.FuzzedDataProvider) -> None:
         fuzzed_dict = {fdp.ConsumeUnicodeNoSurrogates(10): fdp.ConsumeUnicodeNoSurrogates(30)}
         SecurityGuard.validate_crlf_headers(fuzzed_dict)
     except ValueError:
+        # Expected for malformed fuzzed header values; keep fuzzing without failing this case.
         pass
 
 def fuzz_attribute_access(fdp: atheris.FuzzedDataProvider) -> None:
