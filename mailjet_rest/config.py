@@ -65,7 +65,7 @@ class Config:
             else:
                 # 1. Scope type coercion strictly
                 try:
-                    val = float(self.timeout)  # type: ignore[arg-type]
+                    val = float(self.timeout)
                 except (ValueError, TypeError) as e:
                     msg = f"Security Violation: Timeout must be numeric, got {type(self.timeout).__name__}."
                     raise ValueError(msg) from e
