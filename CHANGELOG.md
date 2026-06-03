@@ -6,40 +6,37 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ### Security
 
-- **Enterprise Runtime Security:** Added opt-in PEP 578 Audit Hooks (`sys.addaudithook`) managed via the new `Config` class attribute `enable_security_audit` to monitor runtime network events (`mailjet.security.*`) for SIEM/SecOps compliance.
-- **Path Traversal Mitigation (CWE-22)**: Implemented strict path segment sanitization in `Endpoint` and `guardrails.py` using `urllib.parse.quote(safe="")` to prevent directory traversal via dynamic ID inputs.
-- **Runtime Security**: Centralized and hardened `SecurityGuard.sanitize_segment` to neutralize potential CRLF injections and path traversal attempts across the entire request stack.
-- **Supply Chain Security:** Hardened the GitHub Actions validation pipeline by implementing Google's `osv-scanner` and separating `pip-audit` into an independent strict security job.
-- **Static Analysis Hardening:** Expanded Semgrep scanning targets to include the `p/insecure-transport` extended query suite and wired internal Bandit configuration (`-c pyproject.toml`) directly into CI workflow checkpoints.
-- **Automated Fuzzing:** Integrated `Atheris` (libFuzzer engine) code coverage suite into development workflows, exposing a unified orchestration entry point (`manage.sh fuzz_all`).
-- **Secret Hygiene:** Updated repository infrastructure defaults (`.gitignore`) to strictly reject the accidental stage or commit of local private keys (`*.key`).
+- **Enterprise Runtime Security:** Added opt-in PEP 578 Audit Hooks (`sys.addaudithook`) via `Config.enable_security_audit` to track runtime network events.
+- **Path Traversal Mitigation:** Implemented strict input sanitization using `urllib.parse.quote(safe="")` across endpoints to block directory traversal attacks.
+- **Centralized Security Control:** Centralized path and string checks inside `SecurityGuard.sanitize_segment` to stop CRLF injection and traversal attempts across all requests.
+- Pipeline validation: Added Google's `osv-scanner` and turned `pip-audit` into a strict, standalone task inside the GitHub Actions pipeline.
+- Static analysis: Expanded Semgrep scans to cover insecure transports and connected the custom Bandit configuration file straight into CI gates.
+- Fuzz testing: Integrated the `Atheris` coverage-guided fuzzing tool into development routines via a unified `manage.sh fuzz_all` script.
 
 ### Added
 
-- **Registry-Based Routing**: Implemented O(1) immutable routing registry (`ROUTE_MAP`) for static endpoint resolution, significantly reducing dynamic attribute lookup overhead.
-- **TemplateContentBuilder**: Introduced a dedicated fluent builder for `Content API` payloads, enforcing schema correctness with fail-fast validation.
-- **URI Templating Engine**: Added a robust path interpolation engine in `Endpoint` to handle complex multi-level REST resources dynamically without handler proliferation.
-- **Telemetry Infrastructure**: Enhanced internal telemetry extraction for better structured logging of API request payloads.
-- **Domain Configuration:** Extracted configuration logic out of the monolithic client layout into a dedicated `Config` structure (`mailjet_rest/config.py`) to safely isolate runtime parameters.
-- **Testing Ecosystem:** Segmented the testing footprint into clear execution topologies: `tests/unit/` (100% offline via mock patches), `tests/integration/` (live network testing), `tests/regression/`, and `tests/fuzz/` (Atheris mutations).
-- **Error Boundaries:** Introduced a dedicated `errors.py` module containing explicit, domain-specific leave exceptions (`ValidationError`, `MailjetAuthError`, `ApiRateLimitError`, etc.) to avoid catching bare exceptions.
-- **Type Definitions:** Added a structured `types.py` layer to eliminate MyPy "Type Blindness" across private utilities and dynamic client trackers.
+- **Static O(1) Routing:** Replaced procedural dynamic routing with an immutable `ROUTE_MAP` registry to process endpoints instantly and remove lookup overhead.
+- **Zero-Leak Sandbox Mode:** Introduced a `dry_run=True` client initialization parameter to safely mock mutations locally without sending real network traffic.
+- **Lazy Pagination:** Added a `.stream()` generator method on endpoints to handle records automatically without manual pagination loops.
+- Fluent payload builders: Introduced `MessageBuilder` and `TemplateContentBuilder` to easily construct and validate complex API requests.
+- Custom domain exceptions: Created a dedicated error layer with clear exceptions like `ValidationError` and `MailjetAuthError` to eliminate broad exception silencing.
+- Explicit type safety: Developed a complete `types.py` definition layer to remove MyPy type blindness across internal utilities.
+- URL templating engine: Added a dynamic path interpolation engine to handle multi-level REST endpoints smoothly.
+- Testing topology: Split tests into separate, dedicated environments for unit (fully offline), integration (live), regression, and fuzzing suites.
+- Structured telemetry: Enhanced internal logging to record structured API request payloads clearly.
 
 ### Changed
 
-- **Performance Optimization**:
-  - Migrated from procedural dynamic routing (`__getattr__`) to O(1) static lookups.
-  - Refactored internal string manipulations to use native Python methods, reducing cold-boot latency by ~29ms.
-  - Optimized memory footprint by enforcing `__slots__` across core infrastructure classes (`Client`, `Endpoint`, `Config`).
-- **Configuration**: Standardized `Config` structure and moved internal type aliases to `types.py` to prevent cyclic import dependencies.
-- **Dependency Management**: Updated `pyproject.toml` to optimize `ruff` linting and import grouping (isort).
-- **Architectural Decomposition (SRP):** Refactored the bloated `client.py` component, shifting single-responsibility concerns into individual domain files (`builders.py`, `config.py`, `endpoint.py`, `errors.py`, `types.py`).
-- **Endpoint Routing Interface:** Relaxed the internal route handler signature `_route_data` inside `endpoint.py` by converting the explicit name identifier to an optional parameter (`_name: str | None = None`) to increase routing flexibility.
-- **Pre-commit Workflow Stability:** Configured hooks (Bandit, Mypy) with `pass_filenames: false` to force systematic execution over the full repository context rather than fragmented staged files.
+- **Architectural Refactoring:** Split the monolithic core file into single-responsibility modules and deployed `__slots__` across core objects to optimize the overall memory footprint.
+- Internal performance tuning: Refactored core string operations to reduce cold-boot overhead by roughly 29ms.
+- Signature flexibility: Relaxed internal route handler parameters to support optional name identifiers.
+- Pipeline workflows: Configured pre-commit hooks to force validation over the entire repository context instead of only checking staged file fragments.
+- Infrastructure updates: Upgraded core GitHub Actions dependencies to modern release versions and aligned workspace triggers.
+- Development docs: Updated optimization benchmarks and performance profiling instructions.
 
 ### Fixed
 
-- **Compatibility**: Restored parity with legacy exceptions and dynamic routing behavior to ensure zero breaking changes for existing SDK consumers.
+- Legacy compatibility: Restored parity with old exceptions and dynamic routing mechanics to keep integration completely seamless for existing users.
 
 ## [1.6.0] - 2026-04-27
 
