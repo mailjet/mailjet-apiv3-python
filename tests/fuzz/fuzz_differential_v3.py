@@ -40,7 +40,9 @@ def TestOneInput(data: bytes) -> None:
     try:
         client_v3.send.create(data=payload_v3)
         success_v3 = True
-    except (ValueError, TypeError): pass
+    except (ValueError, TypeError):
+        # Expected during fuzzing: invalid payloads should be treated as unsuccessful sends.
+        pass
 
     try:
         client_v31.send.create(data=payload_v31)

@@ -1,6 +1,5 @@
 from typing import Any
 import sys
-import json
 import base64
 import atheris
 

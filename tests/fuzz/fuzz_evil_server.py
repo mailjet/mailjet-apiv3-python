@@ -8,7 +8,6 @@ import requests
 
 with atheris.instrument_imports():
     from mailjet_rest import Client
-    from mailjet_rest.errors import ApiError, MailjetNetworkError
 
 # Globally disable all SDK logging during fuzzing
 logging.disable(logging.CRITICAL)

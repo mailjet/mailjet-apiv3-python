@@ -1,7 +1,6 @@
 """Atheris target for Stateful/Temporal execution manipulation."""
 import atheris
 import sys
-from typing import Any
 from unittest.mock import MagicMock
 
 with atheris.instrument_imports():
