@@ -17,7 +17,6 @@ import atheris
 
 with atheris.instrument_imports():
     from mailjet_rest import Client
-    from mailjet_rest.errors import ApiError, ValidationError
 
 
 # Initialize Clients globally to reduce instantiation overhead during fuzzing

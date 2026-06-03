@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
     from mailjet_rest.utils.guardrails import SecurityGuard
-    from mailjet_rest.errors import MailjetAuthError, ValidationError
+    from mailjet_rest.errors import ValidationError
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -21,6 +21,7 @@ def TestOneInput(data: bytes) -> None:
         test_trace = fdp.ConsumeUnicodeNoSurrogates(100)
         SecurityGuard.sanitize_log_trace(test_trace)
     except (ValueError, TypeError, ValidationError, AttributeError):
+        # Expected under fuzzed/random inputs; ignore to continue fuzzing.
         pass
 
     # ==========================================
@@ -52,10 +53,9 @@ def TestOneInput(data: bytes) -> None:
             )
 
         builder.set_subject(fdp.ConsumeUnicodeNoSurrogates(50))
-        builder.set_content(  # type: ignore[call-arg]
+        builder.set_content(
             text=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None,
             html=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None,
-            mjml=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None  # pyright: ignore[reportCallIssue]
         )
 
         builder.set_template(fdp.ConsumeInt(10000))

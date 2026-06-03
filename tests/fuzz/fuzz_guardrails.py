@@ -40,6 +40,7 @@ def fuzz_attribute_access(fdp: atheris.FuzzedDataProvider) -> None:
             name=fdp.ConsumeUnicodeNoSurrogates(15)
         )
     except AttributeError:
+        # Expected for invalid/malformed fuzzed attribute targets; continue fuzzing.
         pass
 
 def TestOneInput(data: bytes) -> None:

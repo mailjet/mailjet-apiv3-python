@@ -106,6 +106,7 @@ def TestOneInput(data: bytes) -> None:
 
             builder.build()
         except (ValueError, ValidationError, TypeError):
+            # Expected for malformed fuzzed inputs; keep fuzzing subsequent cases.
             pass
     else:
         t_builder = TemplateContentBuilder()

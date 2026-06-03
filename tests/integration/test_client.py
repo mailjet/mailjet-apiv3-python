@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Generator
+from urllib.parse import urlparse
 
 import pytest
 import requests
@@ -205,9 +206,11 @@ def test_registry_parity_and_integrity(client_live: Client, route_key: str) -> N
     endpoint = getattr(client_live, route_key)
 
     url = endpoint._build_url(id_val="123") if "{" in ROUTE_MAP[route_key].path else endpoint._build_url()
+    parsed = urlparse(url)
 
     assert "//" not in url.replace("https://", ""), f"Malformed URL in {route_key}: {url}"
-    assert url.startswith("https://api.mailjet.com"), f"Invalid base URL in {route_key}"
+    assert parsed.scheme == "https", f"Invalid URL scheme in {route_key}: {url}"
+    assert parsed.hostname == "api.mailjet.com", f"Invalid base URL in {route_key}: {url}"
 
 @pytest.mark.parametrize("malicious_id", ["../admin", "id/../../", "123; DROP TABLE"])
 def test_registry_security_cwe22(client_live: Client, malicious_id: str) -> None:
