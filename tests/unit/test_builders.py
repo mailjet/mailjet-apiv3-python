@@ -55,7 +55,7 @@ def test_template_content_builder_mapping() -> None:
     # Check for correct hyphenated keys required by the Template API
     assert payload.get("TextPart") == "Plain text"
     assert payload.get("HTMLPart") == "<h1>Hello</h1>"
-    assert payload.get("MJMLPart") == "<mjml></mjml>"
+    assert payload.get("MJMLContent") == "<mjml></mjml>"
     assert payload.get("Headers") == {"Reply-To": "support@example.com"}
 
 
@@ -66,7 +66,7 @@ def test_template_content_builder_partial_data() -> None:
 
     assert "TextPart" in payload
     assert "HTMLPart" not in payload
-    assert "MJMLPart" not in payload
+    assert "MJMLContent" not in payload
 
 
 def test_message_builder_validation_fails() -> None:
@@ -168,7 +168,7 @@ def test_template_content_builder_exhaustive() -> None:
     res = builder.build()
     assert res.get("TextPart") == "Text"
     assert res.get("HTMLPart") == "HTML"
-    assert res.get("MJMLPart") == "MJML"
+    assert res.get("MJMLContent") == "MJML"
     assert res.get("Headers", {}).get("Key") == "Val"
 
 def test_message_builder_attachments_branches() -> None:
@@ -263,4 +263,4 @@ def test_template_content_builder_partial_content() -> None:
     assert "HTMLPart" in builder2.build()
 
     builder3 = TemplateContentBuilder().set_content(mjml="mjml")
-    assert "MJMLPart" in builder3.build()
+    assert "MJMLContent" in builder3.build()

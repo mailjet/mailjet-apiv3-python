@@ -244,7 +244,7 @@ class TemplateContentBuilder:
         if html:
             self._data["HTMLPart"] = html
         if mjml:
-            self._data["MJMLPart"] = mjml
+            self._data["MJMLContent"] = mjml
         return self
 
     def set_headers(self, headers: dict[str, str]) -> Self:
@@ -268,7 +268,7 @@ class TemplateContentBuilder:
         Raises:
             ValueError: If no valid text, html or mjml boundary tokens are passed.
         """
-        if not any(k in self._data for k in ("TextPart", "HTMLPart", "MJMLPart")):
+        if not any(k in self._data for k in ("TextPart", "HTMLPart", "MJMLContent")):
             msg = "Template validation failed: At least one of text, html, or mjml content is required."
             raise ValueError(msg)
 
