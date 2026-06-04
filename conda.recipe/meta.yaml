@@ -31,21 +31,22 @@ requirements:
   run:
     - python
     - requests >=2.33.0
-    - typing-extensions >=4.7.1  # [py<311]
+    - typing-extensions >=4.7.1  # [py<312]
 
 test:
   imports:
     - mailjet_rest
     - mailjet_rest.utils
-    - samples
   source_files:
     - tests/unit/
   requires:
+    - hypothesis
     - pip
     - pytest
+    - responses
   commands:
     - pip check
-    - pytest tests/unit/ -v
+    - pytest tests/unit/ -v -m "not property_heavy"
 
 about:
   home: {{ project['urls']['Homepage'] }}

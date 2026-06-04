@@ -4,6 +4,40 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
+### Security
+
+- **Enterprise Runtime Security:** Added opt-in PEP 578 Audit Hooks (`sys.addaudithook`) via `Config.enable_security_audit` to track runtime network events.
+- **Path Traversal Mitigation:** Implemented strict input sanitization using `urllib.parse.quote(safe="")` across endpoints to block directory traversal attacks.
+- **Centralized Security Control:** Centralized path and string checks inside `SecurityGuard.sanitize_segment` to stop CRLF injection and traversal attempts across all requests.
+- Pipeline validation: Added Google's `osv-scanner` and turned `pip-audit` into a strict, standalone task inside the GitHub Actions pipeline.
+- Static analysis: Expanded Semgrep scans to cover insecure transports and connected the custom Bandit configuration file straight into CI gates.
+- Fuzz testing: Integrated the `Atheris` coverage-guided fuzzing tool into development routines via a unified `manage.sh fuzz_all` script.
+
+### Added
+
+- **Static O(1) Routing:** Replaced procedural dynamic routing with an immutable `ROUTE_MAP` registry to process endpoints instantly and remove lookup overhead.
+- **Zero-Leak Sandbox Mode:** Introduced a `dry_run=True` client initialization parameter to safely mock mutations locally without sending real network traffic.
+- **Lazy Pagination:** Added a `.stream()` generator method on endpoints to handle records automatically without manual pagination loops.
+- Fluent payload builders: Introduced `MessageBuilder` and `TemplateContentBuilder` to easily construct and validate complex API requests.
+- Custom domain exceptions: Created a dedicated error layer with clear exceptions like `ValidationError` and `MailjetAuthError` to eliminate broad exception silencing.
+- Explicit type safety: Developed a complete `types.py` definition layer to remove MyPy type blindness across internal utilities.
+- URL templating engine: Added a dynamic path interpolation engine to handle multi-level REST endpoints smoothly.
+- Testing topology: Split tests into separate, dedicated environments for unit (fully offline), integration (live), regression, and fuzzing suites.
+- Structured telemetry: Enhanced internal logging to record structured API request payloads clearly.
+
+### Changed
+
+- **Architectural Refactoring:** Split the monolithic core file into single-responsibility modules and deployed `__slots__` across core objects to optimize the overall memory footprint.
+- Internal performance tuning: Refactored core string operations to reduce cold-boot overhead by roughly 29ms.
+- Signature flexibility: Relaxed internal route handler parameters to support optional name identifiers.
+- Pipeline workflows: Configured pre-commit hooks to force validation over the entire repository context instead of only checking staged file fragments.
+- Infrastructure updates: Upgraded core GitHub Actions dependencies to modern release versions and aligned workspace triggers.
+- Development docs: Updated optimization benchmarks and performance profiling instructions.
+
+### Fixed
+
+- Legacy compatibility: Restored parity with old exceptions and dynamic routing mechanics to keep integration completely seamless for existing users.
+
 ## [1.6.0] - 2026-04-27
 
 ### Security
@@ -261,4 +295,4 @@ We [keep a changelog.](http://keepachangelog.com/)
 [1.5.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.0
 [1.5.1]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1
 [1.6.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0
-[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0...HEAD
+[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.7.0...HEAD

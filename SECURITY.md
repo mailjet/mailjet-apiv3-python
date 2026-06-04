@@ -6,8 +6,8 @@ We currently provide security updates only for the active major version of the M
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.6.x   | :white_check_mark: |
-| \<1.6.0 | :x:                |
+| 1.7.x   | :white_check_mark: |
+| \<1.7.0 | :x:                |
 
 # Vulnerability Disclosure
 

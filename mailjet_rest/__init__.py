@@ -1,36 +1,37 @@
-"""The `mailjet_rest` package provides a Python client for interacting with the Mailjet API.
+"""Mailjet REST API Python Wrapper."""
 
-This package includes the main `Client` class for handling API requests, along with
-utility functions for version management. The package exposes a consistent interface
-for Mailjet API operations.
-
-Attributes:
-    __version__ (str): The current version of the `mailjet_rest` package.
-    __all__ (list): Specifies the public API of the package, including `Client`
-        for API interactions and `get_version` for retrieving version information.
-
-Modules:
-    - client: Defines the main API client.
-    - utils.version: Provides version management functionality.
-"""
-
-from mailjet_rest.client import ApiError
-from mailjet_rest.client import Client
-from mailjet_rest.client import Config
-from mailjet_rest.client import CriticalApiError
-from mailjet_rest.client import Endpoint
-from mailjet_rest.client import TimeoutError  # noqa: A004
+from mailjet_rest.client import Client, Config
+from mailjet_rest.errors import (
+    ActionDeniedError,
+    ApiError,
+    ApiRateLimitError,
+    AuthorizationError,
+    CriticalApiError,
+    DoesNotExistError,
+    MailjetApiError,
+    MailjetAuthError,
+    MailjetNetworkError,
+    TimeoutError,  # noqa: A004
+    ValidationError,
+)
 from mailjet_rest.utils.version import get_version
 
 
 __version__: str = get_version()
 
 __all__ = [
+    "ActionDeniedError",
     "ApiError",
+    "ApiRateLimitError",
+    "AuthorizationError",
     "Client",
     "Config",
     "CriticalApiError",
-    "Endpoint",
+    "DoesNotExistError",
+    "MailjetApiError",
+    "MailjetAuthError",
+    "MailjetNetworkError",
     "TimeoutError",
+    "ValidationError",
     "get_version",
 ]

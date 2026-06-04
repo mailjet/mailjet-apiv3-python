@@ -1,62 +1,135 @@
-# Generic
+# ==============================================================================
+# 1. PYTHON CORE, CACHES & RUNTIME
+# ==============================================================================
 __pycache__
 __pycache__/
-__pypackages__/
-!.elasticbeanstalk/*.cfg.yml
-!.elasticbeanstalk/*.global.yml
-../../../mentor/kupriienko/airtable-notify/.env
-.anvil/*
-.cache
-.eggs/
-.elasticbeanstalk/*
+**/__pycache__/*.pyc
+*/__pycache__/
+*/__pycache__/*.pyc
+*/*/__pycache__/
+*/*/*/__pycache__/
+*$py.class
+*.pyc
+*.py[cod]
+*.py,cover
+*.so
+.Python
+
+# ==============================================================================
+# 2. VIRTUAL ENVIRONMENTS
+# ==============================================================================
+.venv
+venv
+venv/
+venv.bak/
+venv.bak
+pythonenv*
+myvenv
+env
+env/
+ENV/
+env.bak/
+env.bak
 .env
 .env-mysql
-.history
-.hypothesis/
-.installed.cfg
-.ipynb_checkpoints
-.mr.developer.cfg
-.nox/
-.pdm.toml
-.prof
-.project
-.pybuilder/
-.pydevproject
-.pyre/
-.Python
-.python-version
-.pytype/
-.ropeproject
-.scrapy
-.spyderproject
-.spyproject
-.tox
-.tox/
-.vagrant/
-.venv
-.webassets-cache
-*.code-workspace
-*.cover
-*.egg
-*.egg-info/
-*.gz
-*.iml
-*.iws
-*.lock
-*.log
+
+# ==============================================================================
+# 3. PACKAGING, PYTHON BUILDERS & DISTRIBUTIONS
+# ==============================================================================
+build
+build/
+dist
+dist/
+sdist
+sdist/
+wheels/
+wheels
+out/
+/out/
+MANIFEST
 *.manifest
-*.mo
-*.pot
-*.py,cover
-*.py[cod]
-*.pyc
-*.rar
-*.sage.py
-*.so
-*.spec
-*.sqlite
-*.zip
-**/__pycache__/*.pyc
+*.egg-info/
+*.egg
+*.gem
+develop-eggs
+develop-eggs/
+eggs
+eggs/
+.eggs/
+.installed.cfg
+.mr.developer.cfg
+.pybuilder/
+share/python-wheels/
+pip-delete-this-directory.txt
+pip-wheel-metadata/
+
+# ==============================================================================
+# 4. DEPENDENCY MANAGERS & COMPILERS
+# ==============================================================================
+.pdm.toml
+poetry.toml
+__pypackages__/
+node_modules
+node_modules/
+target/
+cmake-build-*/
+cython_debug/
+/bin
+bin
+/include
+/lib
+lib
+lib/
+lib64
+lib64/
+/site
+/src
+
+# ==============================================================================
+# 5. TESTING FRAMEWORKS, FAZZING & CACHES
+# ==============================================================================
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+.pytest_cache/
+.hypothesis/
+.nox/
+.cache
+.pyre/
+.pytype/
+.webassets-cache
+pytestdebug.log
+pyrightconfig.json
+.overcommit.yml
+
+# Atheris / ClusterFuzzLite
+tests/fuzz/corpus/
+.clusterfuzzlite/
+
+# ==============================================================================
+# 6. TESTING METRICS & CODE COVERAGE
+# ==============================================================================
+.coverage
+.coverage.*
+.coverage*
+cover/
+htmlcov
+htmlcov/
+coverage.xml
+nosetests.xml
+junit*
+*.cover
+tdd
+
+# ==============================================================================
+# 7. IDEs & TEXT EDITORS
+# ==============================================================================
+# JetBrains / PyCharm / CLion
+.idea/
+.idea_modules/
+.idea/*
+.idea/*.iml
+.idea/caches/build_file_checksums.ser
 **/.idea/dataSources.ids
 **/.idea/dataSources.local.xml
 **/.idea/dataSources.xml
@@ -68,118 +141,6 @@ __pypackages__/
 **/.idea/uiDesigner.xml
 **/.idea/vcs.xml
 **/.idea/workspace.xml
-**/staticfiles/
-*/__pycache__/
-*/__pycache__/*.pyc
-*/*/__pycache__/
-*/*/*/__pycache__/
-*/staticfiles/
-*$py.class
-/bin
-/include
-/lib
-/out/
-/site
-/src
-
-atlassian-ide-plugin.xml
-bin
-build
-build/
-celerybeat-schedule
-celerybeat.pid
-cmake-build-*/
-com_crashlytics_export_strings.xml
-crashlytics-build.properties
-crashlytics.properties
-cython_debug/
-db.sqlite3
-db.sqlite3-journal
-develop-eggs
-develop-eggs/
-dist
-dist/
-docs/_build/
-downloads/
-eggs
-eggs/
-env.bak/
-env/
-ENV/
-fabric.properties
-htmlcov/
-instance/
-ipython_config.py
-lib
-lib/
-lib64
-lib64/
-local_settings.py
-MANIFEST
-media
-myvenv
-node_modules
-node_modules/
-nosetests.xml
-parts
-parts/
-pip-delete-this-directory.txt
-pip-log.txt
-pip-wheel-metadata/
-poetry.toml
-profile_default/
-projects/static/
-pyrightconfig.json
-pythonenv*
-sdist
-sdist/
-secret_key.txt
-share/python-wheels/
-static/build/
-static/local/
-static/media
-static/rev-manifest.json
-staticfiles/
-target/
-tdd
-temp/
-Thumbs.db
-tmp/
-uploads/
-var
-var/
-venv
-venv.bak/
-venv/
-wheels/
-
-*~
-\#*\#
-/.emacs.desktop
-/.emacs.desktop.lock
-*.elc
-auto-save-list
-tramp
-.\#*
-
-.projectile
-.overcommit.yml
-
-junit*
-
-# Coverage Files
-htmlcov
-cover/
-.coverage.*
-.coverage
-.coverage*
-coverage.xml
-
-# IDEs
-.idea/
-.idea_modules/
-.idea/*
-.idea/*.iml
 .idea/**/contentModel.xml
 .idea/**/dataSources.ids
 .idea/**/dataSources.local.xml
@@ -196,7 +157,6 @@ coverage.xml
 .idea/**/uiDesigner.xml
 .idea/**/usage.statistics.xml
 .idea/**/workspace.xml
-.idea/caches/build_file_checksums.ser
 .idea/dataSources.ids
 .idea/dataSources.local.xml
 .idea/dataSources.xml
@@ -215,22 +175,88 @@ coverage.xml
 .idea/uiDesigner.xml
 .idea/vcs.xml
 .idea/workspace.xml
-# VS Code
-.vscode/
-# pycharm
-queue.json
 dev/
+queue.json
 
-# Operating Systems
+# Visual Studio Code & Microsoft Ecosystem
+.vscode/
+*.code-workspace
+.history
+.project
+.pydevproject
+.ropeproject
+.spyderproject
+.spyproject
+atlassian-ide-plugin.xml
+profile_default/
+ipython_config.py
+.projectile
+
+# GNU Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ==============================================================================
+# 8. SYSTEM GARBAGE, TEMPORARY FILES & COMPRESSION
+# ==============================================================================
 .DS_Store
+Thumbs.db
+downloads/
+temp/
+tmp/
+Downloads/
+*.gz
+*.rar
+*.zip
 
-# ruff cache
-.ruff_cache/
+# ==============================================================================
+# 9. CLOUD INFRASTRUCTURE & BACKEND WORKFLOWS (AWS & Celery)
+# ==============================================================================
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+.anvil/*
+celerybeat-schedule
+celerybeat.pid
+instance/
+var
+var/
+.scrapy
 
-# mypy cache
-.dmypy.json
-.mypy_cache/
+# ==============================================================================
+# 10. METADATA, LOGS, DATABASES & SECRETS
+# ==============================================================================
+*.log
+pip-log.txt
+db.sqlite3
+db.sqlite3-journal
+*.sqlite
+local_settings.py
+secret_key.txt
+*.key
+*.mo
+*.pot
+*.sage.py
 
-# pytest cache
-.pytest_cache/
-pytestdebug.log
+# ==============================================================================
+# 11. STATIC ASSETS, MEDIA & INTEGRATIONS
+# ==============================================================================
+media
+uploads/
+**/staticfiles/
+*/staticfiles/
+projects/static/
+static/build/
+static/local/
+static/media
+static/rev-manifest.json
+com_crashlytics_export_strings.xml
+crashlytics-build.properties
+crashlytics.properties
+fabric.properties

@@ -11,7 +11,7 @@ import logging
 import warnings
 import time
 
-from mailjet_rest import Client
+from mailjet_rest import Client, MailjetAuthError
 
 
 # Enable logging to see the Smart Telemetry and Guardrails in action!
@@ -38,12 +38,12 @@ def safe_cleanup(action, name, **kwargs):
 
         if res.status_code in (200, 204):
             print(f"✅ CLEANUP: {name} deleted successfully.")
-        elif res.status_code == 401:
-            print(f"⚠️ CLEANUP: {name} skipped (Permission denied: Operation not allowed).")
         elif res.status_code == 404:
             print(f"⚠️ CLEANUP: {name} skipped (Not found: likely eventual consistency delay).")
         else:
             print(f"❌ CLEANUP: {name} failed with status {res.status_code}.")
+    except MailjetAuthError:
+        print(f"⚠️ CLEANUP: {name} skipped (Permission denied: Operation not allowed).")
     except Exception as e:
         print(f"❌ CLEANUP: {name} raised unexpected exception: {e}")
 
@@ -89,19 +89,20 @@ def run_readme_tests():
         # ---------------------------------------------------------------------
         section("Security Guardrails (Active Protection)")
 
-        # CRLF Injection blocking
+        # 1. Test CRLF Injection
         try:
-            mailjet_v3.contact.get(headers={"X-Injected": "Value\r\nAttack: Payload"})
-            print("❌ Security Failure: CRLF Injection was not blocked!")
+            mailjet_v3.contact.get(headers={"X-Injected": "value\r\nBadHeader: true"})
+            assert False, "SDK failed to block CRLF injection."
         except ValueError as e:
             print(f"✅ Guardrail Success: Blocked Header Injection - '{e}'")
 
-        # Insecure TLS Warning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
+        # 2. Test TLS Bypass (MITM Prevention)
+        try:
+            # We explicitly test that the SDK refuses insecure connections
             mailjet_v3.contact.get(verify=False)
-            if any("verify=False" in str(msg.message) for msg in w):
-                print("✅ Guardrail Success: Insecure TLS Warning emitted.")
+            assert False, "SDK allowed insecure TLS connection."
+        except ValueError as e:
+            print(f"✅ Guardrail Success: Blocked Insecure TLS - '{e}'")
 
         # ---------------------------------------------------------------------
         # 3. STANDARD REST ACTIONS (Contact Lifecycle)
@@ -217,22 +218,53 @@ def run_readme_tests():
             print(f"⚠️ Content API Upload skipped/failed: {res.status_code}")
 
         # ---------------------------------------------------------------------
-        # 6. ADDITIONAL HEALTH CHECKS (Read-Only)
+        # 6. ADDITIONAL HEALTH CHECKS (Read-Only & RPC-Actions)
         # ---------------------------------------------------------------------
-        section("Additional Health Checks (Read-Only)")
+        section("Additional Health Checks (Read-Only & RPC-Actions)")
 
-        endpoints_to_test = [
-            ("Senders", mailjet_v3.sender),
-            ("Campaigns", mailjet_v3.campaign),
-            ("Messages", mailjet_v3.message),
-            ("Legacy Templates", mailjet_v3.template),
-            ("v1 Templates", mailjet_v1.templates),
+        # Strategy: 'stream' for list/GET-collections, 'ping' for POST/RPC-actions
+        health_checks = [
+            ("Send", mailjet_v3.send, "ping"),
+            ("Contacts", mailjet_v3.contact, "stream"),
+            ("Webhooks", mailjet_v3.webhook, "ping"),
+            ("Sender Validate", mailjet_v3.sender_validate, "ping"),
+            ("Tokens (v1)", mailjet_v1.tokens, "stream"),
+            ("Labels (v1)", mailjet_v1.labels, "stream"),
+            ("Template Contents", mailjet_v1.templates_contents, "stream"),
+            ("Senders", mailjet_v3.sender, "stream"),
+            ("Campaigns", mailjet_v3.campaign, "stream"),
+            ("Messages", mailjet_v3.message, "stream"),
+            ("Legacy Templates", mailjet_v3.template, "stream"),
         ]
 
-        for name, endpoint in endpoints_to_test:
-            res = endpoint.get(filters={"limit": 1})
-            assert res.status_code == 200, f"Health Check failed for {name}"
-            print(f"✅ {name} passed.")
+        for name, endpoint, strategy in health_checks:
+            try:
+                if strategy == "stream":
+                    iterator = endpoint.stream(chunk_size=1)
+                    item = next(iterator, None)
+
+                    if item is not None:
+                        print(f"✅ {name} (stream) passed (Found items).")
+                    else:
+                        print(f"⚠️ {name} (stream) passed (Resource exists but is empty).")
+                else:
+                    # Verification for Action/RPC Resources
+                    # Trying to GET an action endpoint usually results in 405,
+                    # which confirms the route exists and is reachable.
+                    res = endpoint.get()
+                    if res.status_code in (200, 400, 405):
+                        print(f"✅ {name} (ping) passed (Status: {res.status_code}).")
+                    else:
+                        assert False, f"Unexpected status {res.status_code}"
+
+            except Exception as e:
+                # API error handling: Check if it's a 405 Method Not Allowed
+                # This confirms the endpoint is reachable, just not via GET
+                if hasattr(e, "response") and getattr(e.response, "status_code", None) == 405:
+                    print(f"✅ {name} (ping) passed (Expected 405 Method Not Allowed).")
+                else:
+                    print(f"❌ {name} failed: {e}")
+                    assert False, f"Health Check failed for {name}: {e}"
 
     print(f"\n{'=' * 60}\n🎉 ALL TESTS AND HEALTH CHECKS COMPLETED SUCCESSFULLY!\n{'=' * 60}")
 
