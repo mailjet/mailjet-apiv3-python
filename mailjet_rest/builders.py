@@ -111,9 +111,9 @@ class MessageBuilder:
         Returns:
             The builder instance for method chaining.
         """
-        if text:
+        if text is not None:
             self._msg["TextPart"] = text
-        if html:
+        if html is not None:
             self._msg["HTMLPart"] = html
         return self
 

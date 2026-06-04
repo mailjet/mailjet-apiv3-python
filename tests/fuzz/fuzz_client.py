@@ -7,6 +7,7 @@ from unittest.mock import patch
 import requests
 from mailjet_rest.errors import MailjetAuthError, CriticalApiError, ApiError, ValidationError
 
+
 with atheris.instrument_imports():
     from mailjet_rest.client import Client
 

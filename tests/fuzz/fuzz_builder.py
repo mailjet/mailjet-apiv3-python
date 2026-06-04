@@ -4,6 +4,7 @@ import atheris
 import sys
 from unittest.mock import patch, MagicMock
 
+
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
     from mailjet_rest.utils.guardrails import SecurityGuard

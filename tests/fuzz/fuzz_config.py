@@ -4,6 +4,7 @@ import sys
 from mailjet_rest import ValidationError, MailjetAuthError
 from mailjet_rest.config import Config
 
+
 with atheris.instrument_imports():
     pass
 

@@ -3,6 +3,7 @@ import sys
 import base64
 import atheris
 
+
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
     from mailjet_rest.errors import ValidationError

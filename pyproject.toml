@@ -337,14 +337,18 @@ branch = true
 parallel = true
 omit = [
     "samples/*",
+    "tests/*",
 ]
 
 [tool.coverage.paths]
 tests = ["tests"]
 
 [tool.coverage.report]
+fail_under = 80
+show_missing = true
 exclude_lines = [
     "no cov",
+    "pragma: no cover",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
