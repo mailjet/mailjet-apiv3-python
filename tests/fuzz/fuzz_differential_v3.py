@@ -66,14 +66,16 @@ def TestOneInput(data: bytes) -> None:
     try:
         client_v3.send.create(data=payload_v3)
         success_v3 = True
-    except EXPECTED_REJECTIONS:
-        pass
+    except EXPECTED_REJECTIONS as _exc:
+        # Expected fuzzing-time validation rejection: keep success_v3 as False.
+        _ = _exc
 
     try:
         client_v31.send.create(data=payload_v31)
         success_v31 = True
-    except EXPECTED_REJECTIONS:
-        pass
+    except EXPECTED_REJECTIONS as _exc:
+        # Expected fuzzing-time validation rejection: keep success_v31 as False.
+        _ = _exc
 
     # 3. Differential Assertion
     if success_v3 != success_v31:

@@ -41,6 +41,7 @@ def TestOneInput(data: bytes) -> None:
     try:
         client.contactslist_csvdata.create(id=list_id, data=fuzzed_csv_data)
     except (ValueError, TypeError):
+        # Expected for malformed fuzz inputs; ignore and continue fuzzing.
         pass
 
     # 2. Fuzz the Import Job Creation Payload
@@ -54,6 +55,7 @@ def TestOneInput(data: bytes) -> None:
     try:
         client.csvimport.create(data=import_data)
     except (ValueError, TypeError):
+        # Expected for malformed fuzz inputs; ignore and continue fuzzing.
         pass
 
 if __name__ == "__main__":
