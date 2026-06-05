@@ -44,6 +44,7 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 - [PR_129](https://github.com/mailjet/mailjet-apiv3-python/pull/129) - Use hyphen in the package name in readme.
 - [PR_130](https://github.com/mailjet/mailjet-apiv3-python/pull/130) - refactor: Modernize SDK architecture, harden security, and enable O(1) routing.
+- [PR_131](https://github.com/mailjet/mailjet-apiv3-python/pull/131) - Release 1.7.0.
 
 ## [1.6.0] - 2026-04-27
 
