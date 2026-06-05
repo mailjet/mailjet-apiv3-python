@@ -16,6 +16,7 @@ py-modules = ["mailjet_rest._version"]
 
 [tool.setuptools.packages.find]
 include = ["mailjet_rest", "mailjet_rest.*"]
+exclude = ["tests*"]
 
 [tool.setuptools.package-data]
 mailjet_rest = ["py.typed", "*.pyi"]
