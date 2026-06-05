@@ -3,7 +3,7 @@ include README.md
 include CHANGELOG.md
 include PERFORMANCE.md
 include SECURITY.md
-recursive-include mailjet_rest *.py *.pyi py.typed
+recursive-include mailjet_rest *.py py.typed
 
 prune tests
 prune samples
