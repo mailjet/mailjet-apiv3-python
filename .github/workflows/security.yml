@@ -44,6 +44,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with: { python-version: "3.13" }
+      - run: python -m pip install --upgrade pip
       - run: pip install pip-audit
       - run: pip-audit --strict
 
