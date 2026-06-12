@@ -46,7 +46,7 @@ test:
     - responses
   commands:
     - pip check
-    - pytest tests/unit/ -v -m "not property_heavy"
+    - pytest tests/unit/ -v
 
 about:
   home: {{ project['urls']['Homepage'] }}

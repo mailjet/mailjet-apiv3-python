@@ -13,6 +13,21 @@ else:
     from typing_extensions import NotRequired
 
 
+__all__ = [
+    # Constants
+    "_ALLOWED_TRACE_FIELDS",
+    "_DEFAULT_TIMEOUT",
+    "_JSON_HEADERS",
+    "_TEXT_HEADERS",
+    "Attachment",
+    "EmailAddress",
+    "HttpMethod",
+    "PayloadType",
+    "SendV31Message",
+    "SendV31Payload",
+    "TimeoutType",
+]
+
 # ==========================================
 # Types & Constants
 # ==========================================

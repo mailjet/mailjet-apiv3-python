@@ -4,6 +4,8 @@ We [keep a changelog.](http://keepachangelog.com/)
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-10
+
 ### Security
 
 - **Enterprise Runtime Security:** Added opt-in PEP 578 Audit Hooks (`sys.addaudithook`) via `Config.enable_security_audit` to track runtime network events.
@@ -37,6 +39,12 @@ We [keep a changelog.](http://keepachangelog.com/)
 ### Fixed
 
 - Legacy compatibility: Restored parity with old exceptions and dynamic routing mechanics to keep integration completely seamless for existing users.
+
+### Pull Requests Merged
+
+- [PR_129](https://github.com/mailjet/mailjet-apiv3-python/pull/129) - Use hyphen in the package name in readme.
+- [PR_130](https://github.com/mailjet/mailjet-apiv3-python/pull/130) - refactor: Modernize SDK architecture, harden security, and enable O(1) routing.
+- [PR_131](https://github.com/mailjet/mailjet-apiv3-python/pull/131) - Release 1.7.0.
 
 ## [1.6.0] - 2026-04-27
 
@@ -295,4 +303,5 @@ We [keep a changelog.](http://keepachangelog.com/)
 [1.5.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.0
 [1.5.1]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1
 [1.6.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0
+[1.7.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.7.0
 [unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.7.0...HEAD

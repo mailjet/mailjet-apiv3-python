@@ -8,7 +8,6 @@ import base64
 import os
 import uuid
 import logging
-import warnings
 import time
 
 from mailjet_rest import Client, MailjetAuthError

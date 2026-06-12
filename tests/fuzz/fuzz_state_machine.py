@@ -32,7 +32,7 @@ def TestOneInput(data: bytes) -> None:
                 builder._msg = {}
             elif op == 3:
                 payload = builder.build()
-                client._execute_request("POST", "https://api.mailjet.com/v3/send", data=payload)  # type: ignore[call-arg]
+                client.api_call("POST", "https://api.mailjet.com/v3/send", data=payload)
             elif op == 4:
                 client.auth = (fdp.ConsumeUnicodeNoSurrogates(5), None)  # type: ignore[attr-defined]
 
