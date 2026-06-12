@@ -85,7 +85,7 @@ test_integration() {
 
 test_cov() {
     # Example: ./manage.sh test_cov
-    info "Running tests with Coverage requirements (Fail under 80%)..."
+    info "Running tests with Coverage requirements (Fail under 80%)...."
     pytest -n auto --cov="${SRC_DIR}" "${TEST_DIR}" --cov-fail-under=80 --cov-report=term-missing --cov-report=html
     success "Coverage report generated in htmlcov/index.html"
 }
@@ -108,26 +108,35 @@ test_strict_warnings() {
 # SECURITY & FUZZING
 # ==============================================================================
 fuzz_all() {
-    # Usage: ./manage.sh fuzz_all [duration_in_seconds]
-    local duration=${1:-30}
+    # Usage: ./manage.sh fuzz_all [duration_in_seconds] [extra_libfuzzer_flags...]
+    local duration=${1:-20}
+    if [ $# -gt 0 ]; then shift; fi
+
+    local root_dir="$(pwd)"
     local fuzzer_dir="tests/fuzz"
     local dictionary="tests/fuzz/fuzzer.dict"
     local corpus_dir="tests/fuzz/corpus"
+    local log_dir="logs"
 
     if [ ! -d "$fuzzer_dir" ]; then
         error "Fuzzer directory '$fuzzer_dir' not found."
         return 1
     fi
 
+    mkdir -p "$log_dir"
+
     # Ensure the dictionary exists before passing the argument
     local dict_arg=""
     if [ -f "$dictionary" ]; then
-        dict_arg="-dict=$dictionary"
+        dict_arg="-dict=$root_dir/$dictionary"
     else
-        echo "⚠️ Warning: Dictionary '$dictionary' not found. Running without it."
+        echo -e "${YELLOW}⚠️ Warning: Dictionary '$dictionary' not found. Running without it.${NC}"
     fi
 
     info "🚀 Starting security fuzzing suite (duration: ${duration} seconds per fuzzer)..."
+    if [ $# -gt 0 ]; then
+        info "Applying extra LibFuzzer arguments: $@"
+    fi
 
     # Safely gather fuzzer files to prevent errors if none exist
     shopt -s nullglob
@@ -141,27 +150,49 @@ fuzz_all() {
 
     for fuzzer in "${fuzzers[@]}"; do
         local fuzzer_name=$(basename "$fuzzer" .py)
-        local fuzzer_corpus="$corpus_dir/$fuzzer_name"
+
+        # Create dedicated directories for THIS specific fuzzer
+        local fuzzer_work_dir="$root_dir/$log_dir/$fuzzer_name"
+        local fuzzer_corpus="$root_dir/$corpus_dir/$fuzzer_name"
+
+        mkdir -p "$fuzzer_work_dir"
         mkdir -p "$fuzzer_corpus"
 
-        info "🔍 Running fuzzer: $fuzzer (Corpus: $fuzzer_corpus)"
+        echo -e "🔍 Running fuzzer: $fuzzer_name (Logs: logs/$fuzzer_name/fuzz_output.log)"
 
-        conda run --name "${CONDA_ENV_NAME}" python "$fuzzer" \
-            $dict_arg \
-            -max_len=512 \
-            -max_total_time="$duration" \
-            "$fuzzer_corpus"
+        # Isolate execution:
+        # 1. Background subshell `(...) &` runs fuzzers in parallel.
+        # 2. `cd` into log folder ensures LibFuzzer outputs (crash, leak files) are neatly contained.
+        # 3. Use absolute paths for the execution dependencies to avoid pathing errors.
+        (
+            cd "$fuzzer_work_dir"
 
-        local exit_code=$?
-        # libFuzzer returns 1 for crash, 70 for OOM, 77 for timeout.
-        # Catching any non-zero exit ensures we don't miss Python tracebacks.
-        if [ $exit_code -ne 0 ]; then
-            error "❌ Fuzzing failed: Crash or error detected in $fuzzer (Exit Code: $exit_code)."
-            return $exit_code
-        fi
+            # Prevent Conda's double-stack path bug by checking if we are already activated
+            if [[ "$CONDA_DEFAULT_ENV" == "${CONDA_ENV_NAME}" ]]; then
+                EXEC_CMD="python"
+            else
+                EXEC_CMD="conda run --name ${CONDA_ENV_NAME} python"
+            fi
+
+            $EXEC_CMD "$root_dir/$fuzzer" \
+                $dict_arg \
+                -max_len=512 \
+                -max_total_time="$duration" \
+                -artifact_prefix="./" \
+                "$fuzzer_corpus" \
+                "$@" > "fuzz_output.log" 2>&1
+
+            local exit_code=$?
+            # libFuzzer returns 1 for crash, 70 for OOM, 77 for timeout.
+            if [ $exit_code -ne 0 ]; then
+                echo -e "${RED}❌ Fuzzing failed: Crash or error detected in $fuzzer_name (Exit Code: $exit_code). Check logs/$fuzzer_name/fuzz_output.log${NC}"
+            fi
+        ) &
     done
 
-    success "✅ All fuzz tests passed successfully."
+    echo -e "${CYAN}⏳ All fuzzers launched in isolation. Waiting for completion...${NC}"
+    wait
+    success "✅ All fuzz tests finished."
 }
 
 # ==============================================================================
@@ -243,6 +274,7 @@ clean() {
     find . -type f -name '*.egg' -exec rm -f {} +
 
     # Temp logs and profilers
+    rm -rf logs/
     rm -f *.prof profile.html profile.json tmp.txt wget-log
 
     success "Workspace cleaned!"
@@ -270,7 +302,7 @@ help() {
     echo "  test_strict_warnings - Run tests and fail on any DeprecationWarning"
     echo ""
     echo -e "${YELLOW}Security & Fuzzing:${NC}"
-    echo "  fuzz_all          - Run all fuzz tests"
+    echo "  fuzz_all          - Run all fuzz tests (pass duration as first arg, optionally pass fuzzer flags)"
     echo ""
     echo -e "${YELLOW}Performance & Security:${NC}"
     echo "  perf_bench        - Run pytest-benchmark suite"
@@ -286,7 +318,7 @@ help() {
     echo -e "${GREEN}Examples:${NC}"
     echo "  ./manage.sh test_unit -vvv -s"
     echo "  ./manage.sh test_unit -k \"test_pep578_audit_hooks\""
-    echo "  ./manage.sh test_no_warnings tests/unit/test_client.py"
+    echo "  ./manage.sh fuzz_all 60 -max_len=16384"
 }
 
 # Check if at least one argument is provided
@@ -299,39 +331,11 @@ COMMAND=$1
 shift # Remove the command from the arguments list, leaving only extra flags
 
 case "$COMMAND" in
-    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|help)
+    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|fuzz_all)
         "$COMMAND" "$@" # Execute the function with any remaining arguments
         ;;
-    fuzz_all)
-        # 1. Grab the duration, defaulting to 20 if not provided
-        DURATION=${1:-20}
-
-        # 2. Shift the duration out of the arguments list (if it was provided)
-        # This leaves ONLY the extra flags (like -max_len=16384) in "$@"
-        if [ $# -gt 0 ]; then shift; fi
-
-        info "🚀 Starting security fuzzing suite (duration: ${DURATION} seconds per fuzzer)..."
-        if [ $# -gt 0 ]; then
-            info "Applying extra LibFuzzer arguments: $@"
-        fi
-
-        # Find all fuzzers
-        FUZZERS=$(find tests/fuzz -maxdepth 1 -name "fuzz_*.py" -type f)
-
-        for fuzzer in $FUZZERS; do
-            fuzzer_name=$(basename "$fuzzer" .py)
-            corpus_dir="tests/fuzz/corpus/$fuzzer_name"
-
-            mkdir -p "$corpus_dir"
-
-            info "🔍 Running fuzzer: $fuzzer (Corpus: $corpus_dir)"
-
-            # 3. Append "$@" to the end to forward any extra arguments
-            python "$fuzzer" "$corpus_dir" -dict=tests/fuzz/fuzzer.dict -max_total_time="$DURATION" "$@"
-
-            echo ""
-        done
-        success "✅ All fuzz tests passed successfully."
+    help)
+        help
         ;;
     *)
         error "Unknown command: $COMMAND"
