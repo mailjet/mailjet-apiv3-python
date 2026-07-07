@@ -15,7 +15,7 @@ jobs:
     name: Lint & Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'  # Specify a Python version explicitly
@@ -36,7 +36,7 @@ jobs:
       MJ_APIKEY_PUBLIC: ${{ secrets.MJ_APIKEY_PUBLIC }}
       MJ_APIKEY_PRIVATE: ${{ secrets.MJ_APIKEY_PRIVATE }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # Get full history with tags (required for setuptools-scm)
       - name: Set up Python ${{ matrix.python-version }}
