@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0  # MANDATORY: Required for setuptools_scm to read the git tag
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
