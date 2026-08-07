@@ -76,7 +76,7 @@ class Endpoint:
                 format_kwargs["id"] = SecurityGuard.sanitize_segment(id_val)
                 id_val = None
 
-            if "{action_id}" in path:  # ruff: ignore[missing-f-string-syntax]
+            if f"{action_id}" in path:
                 if action_id is None:
                     msg = f"Endpoint '{self.name}' requires an 'action_id' parameter."
                     raise ValueError(msg)
@@ -182,7 +182,7 @@ class Endpoint:
 
     def get(
         self,
-        id: int | str | None = None,  # ruff: ignore[builtin-argument-shadowing]
+        id: int | str | None = None,
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
         **kwargs: Any,
@@ -202,7 +202,7 @@ class Endpoint:
 
     def stream(
         self,
-        id: int | str | None = None,  # ruff: ignore[builtin-argument-shadowing]
+        id: int | str | None = None,
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
         chunk_size: int = 1000,
@@ -240,7 +240,7 @@ class Endpoint:
     def create(
         self,
         data: Any = None,
-        id: int | str | None = None,  # ruff: ignore[builtin-argument-shadowing]
+        id: int | str | None = None,
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
@@ -263,7 +263,7 @@ class Endpoint:
 
     def update(
         self,
-        id: int | str,  # ruff: ignore[builtin-argument-shadowing]
+        id: int | str,
         data: Any = None,
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
@@ -285,7 +285,7 @@ class Endpoint:
             **kwargs,
         )
 
-    def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:  # ruff: ignore[builtin-argument-shadowing]
+    def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:
         """Perform a DELETE request to remove a resource.
 
         Returns:

@@ -146,6 +146,67 @@ class TestSecurityGuard:
         mock_audit.assert_called_with("mailjet.security.path_traversal", "..")
 
 
+class TestAuthCoercionAndValidation:
+    """Test suite for robust authentication validation and coercion (CWE-113, CWE-316)."""
+
+    def test_valid_bearer_token(self) -> None:
+        """Verify valid string tokens return cleanly as bearer tokens."""
+        token = "secret_bearer_token_123"
+        result = SecurityGuard.validate_and_coerce_auth(token)
+        assert result == token
+
+    def test_invalid_empty_bearer_token(self) -> None:
+        """Verify empty or whitespace-only string tokens raise ValueError."""
+        with pytest.raises(ValueError, match="Bearer token cannot be an empty string"):
+            SecurityGuard.validate_and_coerce_auth("   ")
+
+    def test_bearer_token_crlf_injection(self) -> None:
+        """Verify string tokens with control characters raise ValueError."""
+        with pytest.raises(ValueError, match="Auth credentials contain forbidden control characters"):
+            SecurityGuard.validate_and_coerce_auth("token\rwith\nnewline")
+
+    def test_valid_basic_auth_tuple(self) -> None:
+        """Verify valid (key, secret) tuples are successfully coerced into SecretAuth."""
+        auth = ("my_api_key", "my_api_secret")
+        result = SecurityGuard.validate_and_coerce_auth(auth)
+        assert isinstance(result, SecretAuth)
+        assert result == auth
+
+    def test_invalid_tuple_length(self) -> None:
+        """Verify tuples with incorrect element counts raise ValueError."""
+        with pytest.raises(ValueError, match="Basic auth tuple must contain exactly two elements"):
+            SecurityGuard.validate_and_coerce_auth(("single_key",))  # type: ignore[arg-type]
+
+    def test_invalid_tuple_types(self) -> None:
+        """Verify non-string elements inside basic auth tuples raise TypeError."""
+        with pytest.raises(TypeError, match="Auth tuple elements must be strings"):
+            SecurityGuard.validate_and_coerce_auth(("key", 123))  # type: ignore[arg-type]
+
+    def test_empty_tuple_elements(self) -> None:
+        """Verify empty or whitespace-only strings inside auth tuples raise ValueError."""
+        with pytest.raises(ValueError, match="Auth credentials cannot be empty or whitespace-only"):
+            SecurityGuard.validate_and_coerce_auth(("", "secret"))
+
+    def test_tuple_crlf_injection(self) -> None:
+        """Verify auth tuple elements containing CRLF or control characters raise ValueError."""
+        with pytest.raises(ValueError, match="Auth credentials contain forbidden control characters"):
+            SecurityGuard.validate_and_coerce_auth(("key", "secret\r"))
+
+    def test_tuple_invalid_unicode_chars(self) -> None:
+        """Verify forbidden Unicode space/separator characters (e.g. \\xa0) raise ValueError."""
+        with pytest.raises(ValueError, match="Auth credentials contain invalid whitespace or control characters"):
+            SecurityGuard.validate_and_coerce_auth(("key", "secret\xa0"))
+
+    def test_none_auth(self) -> None:
+        """Verify None auth returns None safely."""
+        assert SecurityGuard.validate_and_coerce_auth(None) is None
+
+    def test_invalid_auth_type(self) -> None:
+        """Verify unsupported auth types raise TypeError."""
+        with pytest.raises(TypeError, match="Invalid auth type"):
+            SecurityGuard.validate_and_coerce_auth(12345)  # type: ignore[arg-type]
+
+
 def test_generate_payload_fingerprint_cyclic() -> None:
     """Coverage: Prevent recursion errors on cyclic references."""
     cyclic: dict[str, Any] = {}

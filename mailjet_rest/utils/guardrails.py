@@ -183,10 +183,10 @@ class RedactingFilter(logging.Filter):
     def _redact_str(data: str) -> str:
         try:
             return _get_secret_pattern().sub(r"\1\2********", data)
-        except Exception:  # ruff: ignore[blind-except, try-except-pass]
+        except Exception:  # ruff: ignore[blind-except]
             return "[REDACTION_FAILED_UNSAFE_STRING]"
 
-    def _deep_redact(self, data: Any, depth: int = 0) -> Any:  # ruff: ignore[too-many-return-statements]
+    def _deep_redact(self, data: Any, depth: int = 0) -> Any:
         """Recursively search and scrub secrets from complex nested data structures.
 
         Returns:
@@ -228,9 +228,9 @@ class RedactingFilter(logging.Filter):
             for attr_name, attr_value in record.__dict__.items():
                 if attr_name not in self._STANDARD_ATTRS:
                     record.__dict__[attr_name] = self._deep_redact(attr_value)
-        except Exception:  # ruff: ignore[blind-except, try-except-pass]
+        except Exception as e:  # ruff: ignore[blind-except]
             # Failsafe: Never let logging filters crash application execution
-            pass
+            logging.getLogger(__name__).debug("Redaction filter failed: %s", e)
         return True
 
 
@@ -609,3 +609,64 @@ class SecurityGuard:
         if not trace_val:
             return ""
         return re.sub(r"\s+", "_", str(trace_val))
+
+    @staticmethod
+    def _validate_token(auth: str) -> str:
+        """Validate a Bearer token string.
+
+        Returns:
+            str: The validated and stripped token string.
+        """
+        clean_token = auth.strip()
+        if not clean_token:
+            msg = "Bearer token cannot be an empty string."
+            raise ValueError(msg)
+        if _CRLF_RE.search(clean_token) or _CONTROL_CHAR_RE.search(clean_token):
+            msg = "Auth credentials contain forbidden control characters."
+            raise ValueError(msg)
+        return clean_token
+
+    @staticmethod
+    def _validate_basic_auth(auth: tuple[str, str]) -> SecretAuth:
+        """Validate a Basic Auth tuple and return a SecretAuth instance.
+
+        Returns:
+            SecretAuth: The validated and wrapped SecretAuth instance.
+        """
+        if len(auth) != 2:  # type: ignore[unreachable]
+            msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."  # type: ignore[unreachable]
+            raise ValueError(msg)
+        key, secret = auth
+        if not isinstance(key, str) or not isinstance(secret, str):  # type: ignore[unreachable]
+            msg = "Auth tuple elements must be strings."  # type: ignore[unreachable]
+            raise TypeError(msg)
+        for item in (key, secret):
+            if not item or not item.strip():
+                msg = "Auth credentials cannot be empty or whitespace-only."
+                raise ValueError(msg)
+            if _CRLF_RE.search(item) or _CONTROL_CHAR_RE.search(item):
+                msg = "Auth credentials contain forbidden control characters."
+                raise ValueError(msg)
+            if any(unicodedata.category(c) in {"Zs", "Cc", "Cf"} for c in item if c != " "):
+                msg = "Auth credentials contain invalid whitespace or control characters."
+                raise ValueError(msg)
+        return SecretAuth((key.strip(), secret.strip()))
+
+    @staticmethod
+    def validate_and_coerce_auth(auth: str | tuple[str, str] | None) -> str | SecretAuth | None:
+        """Validate and coerce authentication credentials securely (CWE-113, CWE-316).
+
+        Returns:
+            str | SecretAuth | None: The validated and coerced authentication credentials.
+        """
+        if auth is None:
+            return None
+
+        if isinstance(auth, str):
+            return SecurityGuard._validate_token(auth)
+
+        if isinstance(auth, tuple):
+            return SecurityGuard._validate_basic_auth(auth)
+
+        msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"  # type: ignore[unreachable]
+        raise TypeError(msg)  # type: ignore[unreachable]

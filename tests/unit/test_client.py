@@ -211,7 +211,7 @@ def test_client_empty_bearer_token() -> None:
 
 def test_client_invalid_bearer_token() -> None:
     """Coverage: Blocking invalid header-injection tokens."""
-    with pytest.raises(ValueError, match="contains invalid characters"):
+    with pytest.raises(ValueError, match="contain forbidden control characters"):
         Client(auth="token\nwith\rnewline")
 
 

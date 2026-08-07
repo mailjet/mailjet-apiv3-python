@@ -34,7 +34,12 @@ from mailjet_rest.errors import (
 )
 from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.types import _ALLOWED_TRACE_FIELDS
-from mailjet_rest.utils.guardrails import RedactingFilter, SecretAuth, SecureHTTPAdapter, SecurityGuard
+from mailjet_rest.utils.guardrails import (
+    RedactingFilter,
+    SecretAuth,
+    SecureHTTPAdapter,
+    SecurityGuard,
+)
 
 
 if TYPE_CHECKING:
@@ -125,57 +130,27 @@ class Client:
                 stacklevel=2,
             )
 
-        # If kwargs were passed directly, map them to a Config object dynamically
-        if config is None:
-            self.config = Config(**kwargs)
-        else:
-            self.config = config
-
+        self.config = Config(**kwargs) if config is None else config
         self.session = requests.Session()
 
-        # Determine Authorization schema
-        self.auth: str | tuple[str, str] | SecretAuth | None = None
+        # Delegate auth validation and coercion to SecurityGuard
+        self.auth = SecurityGuard.validate_and_coerce_auth(auth)
 
-        # Bypass strict MyPy unreachable errors for runtime-only failsafe validation
-        auth_val: Any = auth
-
-        if isinstance(auth_val, str):
-            clean_token = auth_val.strip()
-            if not clean_token:
-                msg = "Bearer token cannot be an empty string."
-                raise ValueError(msg)
-            if "\n" in clean_token or "\r" in clean_token:
-                msg = "Bearer token contains invalid characters (Header Injection risk)."
-                raise ValueError(msg)
-            self.auth = clean_token
+        if isinstance(self.auth, str):
             self.session.auth = None
-            self.session.headers.update({"Authorization": f"Bearer {clean_token}"})
-
-        elif isinstance(auth_val, tuple):
-            if len(auth_val) != 2:
-                msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."
-                raise ValueError(msg)
-            # Wrap the tuple in SecretAuth to prevent tracebacks from leaking the credentials (CWE-316)
-            auth_tuple = SecretAuth((str(auth_val[0]).strip(), str(auth_val[1]).strip()))
-            self.auth = auth_tuple
-            self.session.auth = auth_tuple
-
-        elif auth_val is None:
-            self.session.auth = None
-
+            self.session.headers.update({"Authorization": f"Bearer {self.auth}"})
+        elif isinstance(self.auth, SecretAuth):
+            self.session.auth = self.auth
         else:
-            msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"
-            raise TypeError(msg)
+            self.session.auth = None  # type: ignore[unreachable]
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
 
-        # Attach the resilient retry adapter and TLS enforcement
         adapter = SecureHTTPAdapter(pool_connections=100, pool_maxsize=100, max_retries=self._RETRY_STRATEGY)
         self.session.mount("https://", adapter)
 
         self._endpoint_cache: dict[str, Endpoint] = {}
 
-        # Activate the Runtime Security radar if explicitly allowed by the configuration
         if getattr(self.config, "enable_security_audit", False):
             SecurityGuard.enable_audit_logging()
 
