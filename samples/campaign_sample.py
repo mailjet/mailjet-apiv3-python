@@ -2,6 +2,7 @@ import json
 import os
 
 from mailjet_rest import Client
+from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
 
 mailjet30 = Client(
     auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
@@ -29,12 +30,17 @@ def create_a_campaign_draft():
 def by_adding_custom_content():
     """POST https://api.mailjet.com/v3/REST/campaigndraft/$draft_ID/detailcontent"""
     _id = "$draft_ID"
-    data = {
-        "Headers": "object",
-        "Html-part": "<h3>Dear passenger, welcome to Mailjet!</h3><br />May the delivery force be with you!",
-        "MJMLContent": "",
-        "Text-part": "Dear passenger, welcome to Mailjet! May the delivery force be with you!",
-    }
+
+    # Use TemplateContentBuilder to safely format Text-part and Html-part (CWE-400 protected)
+    data = (
+        TemplateContentBuilder()
+        .set_headers({"X-Custom": "object"})
+        .set_content(
+            html="<h3>Dear passenger, welcome to Mailjet!</h3><br />May the delivery force be with you!",
+            text="Dear passenger, welcome to Mailjet! May the delivery force be with you!",
+        )
+        .build()
+    )
     return mailjet30.campaigndraft_detailcontent.create(id=_id, data=data)
 
 
@@ -53,26 +59,28 @@ def send_the_campaign_right_away():
 
 def api_call_requirements():
     """POST https://api.mailjet.com/v3.1/send"""
-    # fmt: off
-    data = {
-        "Messages": [
-            {
-                "From": {
-                    "Email": "pilot@mailjet.com",
-                    "Name": "Mailjet Pilot"},
-                "To": [
-                    {
-                        "Email": "passenger1@mailjet.com",
-                        "Name": "passenger 1"}],
-                "Subject": "Your email flight plan!",
-                "TextPart": "Dear passenger 1, welcome to Mailjet! May the delivery force be with you!",
-                "HTMLPart": "<h3>Dear passenger 1, welcome to <a "
-                            "href=\"https://www.mailjet.com/\">Mailjet</a>!</h3><br />May the delivery force be with "
-                            "you!",
-                "CustomCampaign": "SendAPI_campaign",
-                "DeduplicateCampaign": True}]}
-    # fmt: on
-    return mailjet31.send.create(data=data)
+
+    # Safely build the core message
+    message = (
+        MessageBuilder()
+        .set_sender("pilot@mailjet.com", "Mailjet Pilot")
+        .add_recipient("passenger1@mailjet.com", "passenger 1")
+        .set_subject("Your email flight plan!")
+        .set_content(
+            text="Dear passenger 1, welcome to Mailjet! May the delivery force be with you!",
+            html='<h3>Dear passenger 1, welcome to <a href="https://www.mailjet.com/">Mailjet</a>!</h3><br />May the delivery force be with you!',
+        )
+    ).build()
+
+    # The builder returns a standard dictionary, allowing developers to easily append
+    # advanced routing properties like CustomCampaign directly before dispatch.
+    message["CustomCampaign"] = "SendAPI_campaign"
+    message["DeduplicateCampaign"] = True
+
+    # Wrap it in the v3.1 payload wrapper
+    payload = SendPayloadBuilder().add_message(message).build()
+
+    return mailjet31.send.create(data=payload)
 
 
 if __name__ == "__main__":
