@@ -63,14 +63,14 @@ _ROUTE_MAP: RouteMapType = {
     "messagestate": Route(None, "REST/messagestate"),
     # ==========================================
     # Templates
-    # (Email API v3 uses Singular, Content API v1 uses Plural)
     # ==========================================
     "template": Route(None, "REST/template"),
     "templates": Route(None, "REST/templates"),
+    # Template Actions
     "template_update": Route(None, "REST/template/{id}"),
     "template_detailcontent": Route(None, "REST/template/{id}/detailcontent"),
     "templates_contents": Route(None, "REST/templates/{id}/contents"),
-    # Content API Template Actions
+    # Content API (Explicitly routed to v1)
     "template_contents": Route("v1", "REST/templates/{id}/contents"),
     "template_content_by_type": Route("v1", "REST/templates/{id}/contents/types/{action_id}"),
     # ==========================================
@@ -117,4 +117,4 @@ _ROUTE_MAP: RouteMapType = {
     "data_images": Route("v1", "DATA/images"),
 }
 
-ROUTE_MAP: Final = MappingProxyType(_ROUTE_MAP)
+ROUTE_MAP: Final[MappingProxyType[str, Route]] = MappingProxyType(_ROUTE_MAP)
