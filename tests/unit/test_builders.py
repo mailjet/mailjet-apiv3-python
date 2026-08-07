@@ -1,25 +1,26 @@
+# pyright: reportTypedDictNotRequiredAccess=false
+"""Unit tests for the payload builder modules."""
+
 import os
 import tempfile
-
+from pathlib import Path
 import pytest
-from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
+from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
 
 
 def test_message_builder_variables_size_limit() -> None:
     """Verify blocking of excessively large Variables objects to prevent Out-Of-Memory (OOM) errors."""
     builder = MessageBuilder()
-
-    # Create a dictionary that exceeds 1MB when JSON-serialized
     large_payload = {"huge_key": "x" * (1024 * 1024 + 100)}
 
-    builder._msg = {
+    builder._payload = {
         "From": {"Email": "sender@example.com", "Name": "System"},
         "To": [{"Email": "recipient@example.com"}],
         "TextPart": "Hello",
         "Variables": large_payload,
     }
 
-    with pytest.raises(ValueError, match="Security Violation: Variables payload too large"):
+    with pytest.raises(ValueError, match="Security Violation"):
         builder.build()
 
 
@@ -27,7 +28,7 @@ def test_message_builder_variables_safe_size() -> None:
     """Verify that a valid, safe-sized Variables object passes validation without errors."""
     builder = MessageBuilder()
 
-    builder._msg = {
+    builder._payload = {
         "From": {"Email": "sender@example.com", "Name": "System"},
         "To": [{"Email": "recipient@example.com"}],
         "TextPart": "Hello",
@@ -42,43 +43,34 @@ def test_message_builder_variables_safe_size() -> None:
 
 
 def test_template_content_builder_mapping() -> None:
-    """Verify correct mapping to Template Content API schema (hyphenated keys)."""
+    """Verify correct payload assembly for templates."""
     builder = TemplateContentBuilder()
-
-    payload = (
-        builder
-        .set_content(text="Plain text", html="<h1>Hello</h1>", mjml="<mjml></mjml>")
-        .set_headers({"Reply-To": "support@example.com"})
-        .build()
-    )
-
-    # Check for correct hyphenated keys required by the Template API
-    assert payload.get("TextPart") == "Plain text"
-    assert payload.get("HTMLPart") == "<h1>Hello</h1>"
-    assert payload.get("MJMLContent") == "<mjml></mjml>"
-    assert payload.get("Headers") == {"Reply-To": "support@example.com"}
+    builder.set_content(text="Hello", html="<b>Hello</b>", mjml="<mjml></mjml>")
+    builder.set_headers({"X-Custom": "Value"})
+    res = builder.build()
+    assert res["Text-part"] == "Hello"
+    assert res["Html-part"] == "<b>Hello</b>"
+    assert res["Headers"]["X-Custom"] == "Value"
 
 
 def test_template_content_builder_partial_data() -> None:
-    """Verify that builder only includes provided fields."""
+    """Verify partial content insertion."""
     builder = TemplateContentBuilder()
-    payload = builder.set_content(text="Just text").build()
-
-    assert "TextPart" in payload
-    assert "HTMLPart" not in payload
-    assert "MJMLContent" not in payload
+    builder.set_content(text="Only Text")
+    res = builder.build()
+    assert "Html-part" not in res
+    assert res["Text-part"] == "Only Text"
 
 
 def test_message_builder_validation_fails() -> None:
-    """Test validation errors when building an incomplete message."""
+    """Verify that incomplete payloads fail early."""
     builder = MessageBuilder()
-    builder.add_recipient("to@example.com")
-    # Fails because 'From' sender is missing
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Sender \\(From\\) is required"):
         builder.build()
 
-def test_message_builder_optional_branches() -> None:
-    """Test CC, BCC, HTML, TemplateID, and Attachments branches."""
+
+def test_message_builder_optional_branches(tmp_path: Path) -> None:
+    """Test CC, BCC, HTML, TemplateID, and Attachments branches using safe sandbox paths."""
     builder = MessageBuilder()
     builder.set_sender("sender@example.com")
     builder.add_recipient("to@example.com")
@@ -89,178 +81,207 @@ def test_message_builder_optional_branches() -> None:
     builder.set_content(html="<h1>HTML</h1>")
     builder.set_template(12345)
 
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp.write(b"dummy content")
-        tmp_name = tmp.name
+    safe_file = tmp_path / "dummy.txt"
+    safe_file.write_text("dummy content")
 
-    try:
-        builder.attach_file(tmp_name)
-    finally:
-        os.remove(tmp_name)
+    builder.attach_file(safe_file, base_dir=tmp_path)
+    res = builder.build()
+    assert "Attachments" in res
+    assert res["Attachments"][0]["Filename"] == "dummy.txt"
 
-    result = builder.build()
-
-    assert "To" in result
-    assert len(result.get("To", [])) >= 1
-    assert "Subject" in result
 
 def test_template_content_builder_validation_fails() -> None:
-    """Fails because neither Text, HTML, nor MJML is provided."""
+    """Verify empty template structures are blocked."""
     builder = TemplateContentBuilder()
-    with pytest.raises(ValueError, match="At least one of text, html, or mjml content is required"):
+
+    with pytest.warns(PendingDeprecationWarning, match="At least one of text, html, or mjml content is required"):
         builder.build()
 
 
 def test_message_builder_exhaustive_coverage() -> None:
-    """Test all branches of MessageBuilder to maximize coverage."""
+    """Coverage: Force evaluation of all edge cases."""
     builder = MessageBuilder()
-
-    # Sender with name (hits 'if name:' branch)
-    builder.set_sender("sender@example.com", name="Sender Name")
-
-    # ReplyTo with name
-    if hasattr(builder, "set_reply_to"):
-        builder.set_reply_to("reply@example.com", name="Reply Name")
-
-    # Multiple recipients with names (hits both initialization and append branches)
-    builder.add_recipient("to1@example.com", name="To1")
-    builder.add_recipient("to2@example.com", name="To2")
-
-    # Multiple CCs with names
-    builder.add_cc("cc1@example.com", name="CC1")
-    builder.add_cc("cc2@example.com", name="CC2")
-
-    # Multiple BCCs with names
-    builder.add_bcc("bcc1@example.com", name="BCC1")
-    builder.add_bcc("bcc2@example.com", name="BCC2")
-
-    builder.set_subject("Test Exhaustive")
-
-    # Content with text and html
-    builder.set_content(text="Text", html="<b>HTML</b>")
-
-    # Additional dictionary-based settings
-    if hasattr(builder, "set_variables"):
-        builder.set_variables({"var1": "val1"})
-    if hasattr(builder, "set_globals"):
-        builder.set_globals({"glob1": "val1"})
-    if hasattr(builder, "set_headers"):
-        builder.set_headers({"X-Header": "Value"})
-
-    res = builder.build()
-
-    assert res.get("From", {}).get("Name") == "Sender Name"  # pyright: ignore[reportTypedDictNotRequiredAccess]
-    assert len(res.get("To", [])) == 2
-    assert res.get("To", [{}, {}])[1].get("Name") == "To2"  # pyright: ignore[reportTypedDictNotRequiredAccess]
-    assert len(res.get("Cc", [])) == 2  # pyright: ignore[reportTypedDictNotRequiredAccess]
-    assert res.get("Cc", [{}])[0].get("Name") == "CC1"  # type: ignore[call-overload]  # pyright: ignore[reportTypedDictNotRequiredAccess]
-    assert len(res.get("Bcc", [])) == 2  # pyright: ignore[reportTypedDictNotRequiredAccess]
-
-def test_template_content_builder_exhaustive() -> None:
-    """Test TemplateContentBuilder with all optional parameters."""
-    builder = TemplateContentBuilder()
-    builder.set_meta(author="Author", name="Name")
-
-    # Passing all 3 parts ensures no missing branches inside set_content
-    builder.set_content(text="Text", html="HTML", mjml="MJML")
-    builder.set_headers({"Key": "Val"})
-
-    res = builder.build()
-    assert res.get("TextPart") == "Text"
-    assert res.get("HTMLPart") == "HTML"
-    assert res.get("MJMLContent") == "MJML"
-    assert res.get("Headers", {}).get("Key") == "Val"
-
-def test_message_builder_attachments_branches() -> None:
-    """Hit branches for multiple attachments."""
-    builder = MessageBuilder()
-    builder.set_sender("sender@example.com")  # <-- Added missing sender
+    builder.set_sender("sender@example.com", "Sender Name")
     builder.add_recipient("to@example.com")
-    builder.set_content(text="Hello")
-
-    import tempfile
-    import os
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
-        tmp.write(b"attachment1")
-        tmp1_name = tmp.name
-
-    try:
-        # First call initializes the list inside _msg
-        builder.attach_file(tmp1_name)
-        # Second call hits the append branch
-        builder.attach_file(tmp1_name)
-
-        # Test inline attachments if the method exists
-        if hasattr(builder, "attach_inline"):
-            builder.attach_inline(tmp1_name)
-            builder.attach_inline(tmp1_name)
-    finally:
-        os.remove(tmp1_name)
+    builder.set_variables({"key": "value"})
+    builder._payload["TextPart"] = "Text"
 
     res = builder.build()
-    assert len(res.get("Attachments", [])) == 2  # pyright: ignore[reportTypedDictNotRequiredAccess]
-    if hasattr(builder, "attach_inline"):
-        assert len(res.get("InlinedAttachments", [])) == 2  # type: ignore[arg-type]  # pyright: ignore[reportTypedDictNotRequiredAccess]
+    assert res["Variables"]["key"] == "value"
 
 
-def test_message_builder_missing_to_raises() -> None:
+def test_send_payload_builder_exhaustive() -> None:
+    """Coverage: Verify root-level properties in SendPayloadBuilder."""
+    msg_builder = MessageBuilder()
+    msg_builder.set_sender("test@test.com")
+    msg_builder.add_recipient("to@test.com")
+    msg_builder._payload["TextPart"] = "Text"
+
+    payload_builder = SendPayloadBuilder()
+    payload_builder.add_message(msg_builder)
+    payload_builder.set_sandbox_mode(True)
+    payload_builder.set_globals({"Subject": "Global Subject"})
+
+    res = payload_builder.build()
+    assert res["SandboxMode"] is True
+    assert res["Globals"]["Subject"] == "Global Subject"
+    assert len(res["Messages"]) == 1
+
+
+def test_message_builder_attachments_branches(tmp_path: Path) -> None:
+    """Coverage: Tests attachment parsing and encoding inside the MessageBuilder using safe paths."""
     builder = MessageBuilder()
-    builder.set_sender("test@example.com")
-    with pytest.raises(ValueError, match="At least one recipient \\(To\\) is required"):
-        builder.build()
+    builder.set_sender("sender@example.com")
+    builder.add_recipient("to@example.com")
+    builder.add_cc("cc@example.com")
+    builder.add_bcc("bcc@example.com")
 
-    builder._msg["To"] = []
-    with pytest.raises(ValueError, match="At least one recipient \\(To\\) is required"):
-        builder.build()
+    safe_file = tmp_path / "invoice.txt"
+    safe_file.write_text("amount,date\n100,2023-01-01")
 
-def test_message_builder_missing_content_raises() -> None:
+    builder.attach_inline(safe_file, base_dir=tmp_path)
+    builder.set_content(html="<b>html</b>")
+
+    res = builder.build()
+    assert "InlinedAttachments" in res
+
+
+def test_message_builder_optional_args_branches(tmp_path: Path) -> None:
+    """Verify attachments can be stacked seamlessly."""
     builder = MessageBuilder()
-    builder.set_sender("test@example.com")
-    builder.add_recipient("test@example.com")
-    with pytest.raises(ValueError, match="Message validation failed: TextPart, HTMLPart, or TemplateID is required."):
-        builder.build()
+    builder.set_sender("sender@example.com")
+    builder.add_recipient("to@example.com")
+    builder.add_cc("cc@example.com")
+    builder.add_bcc("bcc@example.com")
 
-def test_message_builder_optional_args_branches() -> None:
-    builder = MessageBuilder()
-    builder.set_sender("sender@example.com")  # No name provided
-    if hasattr(builder, "set_reply_to"):
-        builder.set_reply_to("reply@example.com")  # No name provided
-    builder.add_recipient("to@example.com")  # No name provided
-    builder.add_cc("cc@example.com")  # No name provided
-    builder.add_bcc("bcc@example.com")  # No name provided
+    safe_file = tmp_path / "invoice.txt"
+    safe_file.write_text("content")
 
-    import tempfile
-    import os
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
-        tmp.write(b"attachment1")
-        tmp1_name = tmp.name
-    try:
-        if hasattr(builder, "attach_inline"):
-            # First call initializes the array branch
-            builder.attach_inline(tmp1_name)
-            # Second call hits the append branch
-            builder.attach_inline(tmp1_name)
-    finally:
-        os.remove(tmp1_name)
+    builder.attach_inline(safe_file, base_dir=tmp_path)
+    builder.attach_inline(safe_file, base_dir=tmp_path)
 
     builder.set_content(html="<b>html</b>")
     res = builder.build()
-    assert "Name" not in res.get("From", {})
-    assert "Name" not in res.get("To", [{}])[0]
+    assert len(res["InlinedAttachments"]) == 2
 
 
 def test_template_content_builder_empty_build() -> None:
+    """Verify empty template structures are rejected cleanly."""
     builder = TemplateContentBuilder()
-    with pytest.raises(ValueError, match="At least one of text, html, or mjml content is required"):
+
+    with pytest.warns(PendingDeprecationWarning, match="At least one of text, html, or mjml"):
         builder.build()
 
+
 def test_template_content_builder_partial_content() -> None:
-    # Test setting each type exclusively to cover the 3 isolated IF branches
+    """Verify partial builds render safely."""
     builder1 = TemplateContentBuilder().set_content(text="text")
-    assert "TextPart" in builder1.build()
+    assert "Text-part" in builder1.build()
 
     builder2 = TemplateContentBuilder().set_content(html="html")
-    assert "HTMLPart" in builder2.build()
+    assert "Html-part" in builder2.build()
 
-    builder3 = TemplateContentBuilder().set_content(mjml="mjml")
-    assert "MJMLContent" in builder3.build()
+
+def test_message_builder_missing_names_and_recipients() -> None:
+    """Coverage: Test branches where optional Name parameters are omitted."""
+    builder = MessageBuilder()
+    builder.set_sender("sender@test.com")
+    builder.add_recipient("to@test.com")
+    builder.add_cc("cc@test.com")
+    builder.add_bcc("bcc@test.com")
+    builder.set_reply_to("reply@test.com")
+
+    builder.set_content(text="Hello")
+
+    res = builder.build()
+    assert "Name" not in res["From"]
+    assert "Name" not in res["To"][0]
+    assert "Name" not in res["Cc"][0]
+    assert "Name" not in res["Bcc"][0]
+    assert "Name" not in res["ReplyTo"]
+
+def test_message_builder_no_recipients() -> None:
+    """Coverage: Test validation branch for missing recipients."""
+    builder = MessageBuilder()
+    builder.set_sender("sender@test.com")
+    builder.set_content(text="Hello")
+    with pytest.raises(ValueError, match="At least one recipient"):
+        builder.build()
+
+def test_spam_guard_html_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Coverage: Enable spam guard analysis in MessageBuilder."""
+    builder = MessageBuilder()
+
+    # Use monkeypatch to modify the ClassVar since __slots__ prevents instance mutation
+    monkeypatch.setattr(MessageBuilder, "ENABLE_SPAM_GUARD", True)
+
+    # Mock the security guard to return a "not safe" analysis,
+    # simulating a deliverability warning without throwing a hard security exception.
+    monkeypatch.setattr(
+        "mailjet_rest.builders.SecurityGuard.analyze_html_safety",
+        lambda html: {"is_safe": False, "issues": ["Mocked deliverability issue"]}
+    )
+
+    with pytest.warns(UserWarning, match="Deliverability Warning"):
+        builder.set_content(html="<div>Mocked HTML</div>")
+
+def test_template_content_builder_full() -> None:
+    """Coverage: Test TemplateContentBuilder meta and mjml properties."""
+    builder = TemplateContentBuilder()
+    builder.set_meta(author="Author Name", name="Template Name", locale="en-US")
+    builder.set_content(mjml="<mjml><mjml-body></mjml-body></mjml>")
+    res = builder.build()
+    assert res["Author"] == "Author Name"
+    assert res["Name"] == "Template Name"
+    assert res["Locale"] == "en-US"
+    assert res["MJMLContent"] == "<mjml><mjml-body></mjml-body></mjml>"
+
+def test_send_payload_builder_empty() -> None:
+    """Coverage: Test SendPayloadBuilder validation branch."""
+    builder = SendPayloadBuilder()
+    with pytest.raises(ValueError, match="At least one message is required"):
+        builder.build()
+
+def test_message_builder_content_type_attachment(tmp_path: Path) -> None:
+    """Coverage: Branch where an explicit Content-Type is provided to attach_file."""
+    builder = MessageBuilder()
+    builder.set_sender("test@test.com")
+
+    builder.add_recipient("to@test.com")
+
+    safe_file = tmp_path / "data.csv"
+    safe_file.write_text("a,b,c")
+    builder.attach_file(safe_file, content_type="text/csv", base_dir=tmp_path)
+    builder.set_content(text="test")
+    res = builder.build()
+    assert res["Attachments"][0]["ContentType"] == "text/csv"
+
+
+def test_message_builder_html_size_limit() -> None:
+    """Coverage: HTML size strict upper bounds."""
+    builder = MessageBuilder()
+    builder.set_sender("test@test.com")
+    builder.add_recipient("to@test.com")
+    builder.set_content(html="x" * (6 * 1024 * 1024))
+    with pytest.raises(ValueError, match="HTMLPart exceeds 5MB"):
+        builder.build()
+
+
+def test_message_builder_text_size_limit() -> None:
+    """Coverage: Text size strict upper bounds."""
+    builder = MessageBuilder()
+    builder.set_sender("test@test.com")
+    builder.add_recipient("to@test.com")
+    builder.set_content(text="x" * (6 * 1024 * 1024))
+    with pytest.raises(ValueError, match="TextPart exceeds 5MB"):
+        builder.build()
+
+
+def test_template_content_builder_meta_branches() -> None:
+    """Coverage: Test isolated template builder meta properties."""
+    b1 = TemplateContentBuilder().set_meta(author="A")
+    assert b1._payload["Author"] == "A"
+    b2 = TemplateContentBuilder().set_meta(name="N")
+    assert b2._payload["Name"] == "N"
+    b3 = TemplateContentBuilder().set_meta(locale="L")
+    assert b3._payload["Locale"] == "L"

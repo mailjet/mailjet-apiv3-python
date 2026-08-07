@@ -42,7 +42,7 @@ def safe_cleanup(action, name, **kwargs):
     except MailjetAuthError:
         print(f"⚠️ CLEANUP: {name} skipped (Permission denied: Operation not allowed).")
     except DoesNotExistError:
-        # FIX: The SDK now correctly raises DoesNotExistError for 404 responses
+        # The SDK now correctly raises DoesNotExistError for 404 responses
         print(f"⚠️ CLEANUP: {name} skipped (Not found: likely eventual consistency delay).")
     except Exception as e:
         print(f"❌ CLEANUP: {name} raised unexpected exception: {e}")
@@ -261,7 +261,7 @@ def run_readme_tests():
                         assert False, f"Unexpected status {res.status_code}"
 
             except Exception as e:
-                # FIX: Check if the status code is on the domain exception, or nested inside the HTTP error cause
+                # Check if the status code is on the domain exception, or nested inside the HTTP error cause
                 status = getattr(e, "status_code", None)
                 if status is None and getattr(e, "__cause__", None) is not None:
                     response = getattr(e.__cause__, "response", None)

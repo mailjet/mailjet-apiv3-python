@@ -14,16 +14,19 @@ client_v31 = Client(auth=("test", "test"), version="v3.1")
 # Create a "Dumb Mock" that doesn't record call history.
 # This prevents the 2GB Out-Of-Memory (OOM) crash during heavy fuzzing.
 class DumbResponse:
-    status_code = 200
-    def json(self) -> dict[str, Any]:
-        return {}
+    def __init__(self, status_code, json_data):
+        self.status_code = status_code
+        self._json = json_data
+        self.text = str(json_data)
 
-    @property
-    def text(self) -> str:
-        return ""
+    def json(self):
+        return self._json
+
+    def raise_for_status(self):
+        pass
 
 def dumb_mock_request(*args: Any, **kwargs: Any) -> DumbResponse:
-    return DumbResponse()
+    return DumbResponse(200, {})
 
 client_v3.session.request = dumb_mock_request  # type: ignore[method-assign, assignment]
 client_v31.session.request = dumb_mock_request  # type: ignore[method-assign, assignment]

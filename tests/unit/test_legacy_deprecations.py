@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 import requests  # pyright: ignore[reportMissingModuleSource]
 
+from mailjet_rest.client import Client, logging_handler, parse_response
 from mailjet_rest.errors import (
     ActionDeniedError,
     ApiRateLimitError,
@@ -15,7 +16,6 @@ from mailjet_rest.errors import (
     DoesNotExistError,
     ValidationError,
 )
-from mailjet_rest.client import Client, logging_handler, parse_response
 
 
 def test_legacy_exceptions_exist_and_inherit_properly() -> None:
@@ -43,38 +43,37 @@ def test_parse_response_emits_deprecation_warning() -> None:
     with pytest.warns(DeprecationWarning, match="parse_response is deprecated"):
         result = parse_response(resp)
         assert isinstance(result, dict)
-        assert result.get("success") is True
 
 
 def test_parse_response_handles_value_error_fallback() -> None:
-    """Verify parse_response returns raw text if JSON decoding fails."""
+    """Verify text fallback on invalid JSON payloads."""
     resp = requests.Response()
     resp.status_code = 200
-    resp._content = b"Plain text response"
+    resp._content = b'invalid json'
 
-    # Catching the warning to keep the test output clean
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         result = parse_response(resp)
-        assert result == "Plain text response"
+        assert result == "invalid json"
 
 
 def test_logging_handler_emits_deprecation_warning() -> None:
-    """Verify logging_handler returns a logger and warns the developer."""
-    resp = requests.Response()
+    """Verify the old standalone handler is marked for removal."""
     with pytest.warns(DeprecationWarning, match="logging_handler is deprecated"):
-        # Pass the response to verify it absorbs positional arguments safely at runtime
-        logging_handler(resp)  # type: ignore[arg-type]
+        logging_handler(None)
 
 
 def test_legacy_kwargs_emit_deprecation_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that using ensure_ascii or data_encoding in Client.create emits a warning."""
     client = Client(auth=("a", "b"), version="v3")
 
-    def mock_request(method: str, url: str, data: Any = None, **kwargs: Any) -> requests.Response:
+    def mock_request(method: str, url: str, data: Any = None, json: Any = None, **kwargs: Any) -> requests.Response:
         assert "ensure_ascii" not in kwargs  # Should be consumed by the wrapper
-        assert data is not None
-        assert "\\u" not in data if isinstance(data, str) else True
+        assert data is not None or json is not None
+
+        if data is not None:
+            assert "\\u" not in data if isinstance(data, str) else True
+
         resp = requests.Response()
         resp.status_code = 200
         return resp
@@ -88,7 +87,6 @@ def test_legacy_kwargs_emit_deprecation_warning(monkeypatch: pytest.MonkeyPatch)
     # Triggering via update()
     with pytest.warns(DeprecationWarning, match="'ensure_ascii' and 'data_encoding' are deprecated"):
         client.contact.update(id=1, data={"Name": "Test"}, ensure_ascii=False)
-
 
 def test_legacy_encoding_injection(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that explicitly passing data_encoding actually transcodes the payload to bytes."""

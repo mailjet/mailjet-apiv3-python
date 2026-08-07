@@ -3,8 +3,9 @@ from __future__ import annotations
 import sys
 from contextlib import suppress
 from unittest.mock import patch
+import pytest
 
-from mailjet_rest.utils.version import get_version
+from mailjet_rest.utils.version import get_version, clean_version
 
 
 def test_version_length_equal_three() -> None:
@@ -50,3 +51,16 @@ def test_get_version_raises_exception() -> None:
         ):
             with suppress(Exception):
                 get_version()
+
+
+def test_clean_version_invalid_string() -> None:
+    """Coverage: Hits the IndexError/ValueError blocks in the string cleaner fallback."""
+    assert clean_version("not.a.version") == (0, 0, 0)
+    assert clean_version("1.0") == (0, 0, 0)  # Missing patch triggering IndexError
+    assert clean_version("a.b.c") == (0, 0, 0)  # String to integer parsing triggers ValueError
+
+
+def test_get_version_invalid_tuple() -> None:
+    """Coverage: Forces the hard ValueError loop on invalid internal tuple declarations."""
+    with pytest.raises(ValueError, match="must contain 3 items"):
+        get_version((1, 2))

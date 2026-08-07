@@ -314,6 +314,7 @@ show_error_codes = true
 disable_error_code = 'misc'
 
 [tool.pyright]
+reportMissingModuleSource = false
 include = ["mailjet_rest"]
 exclude = ["samples/*", "**/__pycache__"]
 reportAttributeAccessIssue = false
@@ -382,3 +383,7 @@ markers = [
     "network: marks tests as integration tests that require live network access",
     "property_heavy: Heavy Hypothesis property-based tests skipped on CI",
 ]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["untyped-decorator", "unreachable", "no-untyped-def", "no-untyped-call"]

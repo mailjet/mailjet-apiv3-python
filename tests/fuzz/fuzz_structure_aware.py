@@ -1,131 +1,107 @@
-from typing import Any
+#!/usr/bin/env python3
+"""
+Structure-Aware Fuzzer for Semantic Payload Generation.
+Tests deeply nested dictionaries, type confusion on schemas, and payload builder limits.
+"""
 import sys
-import base64
-import atheris
+import logging
+from typing import Any
 
+import atheris
 
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
     from mailjet_rest.errors import ValidationError
 
-def generate_valid_payload(fdp: atheris.FuzzedDataProvider) -> dict:
-    payload: dict[str, Any] = {"Messages": []}
+logging.disable(logging.CRITICAL)
 
-    # Fuzz SandboxMode at the root payload level
-    if fdp.ConsumeBool():
-        payload["SandboxMode"] = fdp.ConsumeBool()
+def _generate_structured_payload(fdp: atheris.FuzzedDataProvider, depth: int = 0) -> dict[str, Any]:
+    """Generates a deeply nested, semantically valid dictionary matching Mailjet boundaries."""
+    payload: dict[str, Any] = {}
 
-    num_messages = fdp.ConsumeIntInRange(1, 3)
+    if depth > 3: # Guardrail against extreme recursive recursion errors
+        return payload
 
-    for _ in range(num_messages):
-        msg: dict[str, Any] = {}
-        msg["From"] = {
+    payload["From"] = {
+        "Email": fdp.ConsumeUnicodeNoSurrogates(15) + "@example.com",
+        "Name": fdp.ConsumeUnicodeNoSurrogates(15) if fdp.ConsumeBool() else None
+    }
+
+    # Generate chaotic array lengths
+    payload["To"] = [
+        {
             "Email": fdp.ConsumeUnicodeNoSurrogates(15) + "@example.com",
-            "Name": fdp.ConsumeUnicodeNoSurrogates(15) if fdp.ConsumeBool() else None
+            "Name": fdp.ConsumeUnicodeNoSurrogates(15)
         }
+        for _ in range(fdp.ConsumeIntInRange(1, 3))
+    ]
 
-        msg["To"] = [
-            {
-                "Email": fdp.ConsumeUnicodeNoSurrogates(15) + "@example.com",
-                "Name": fdp.ConsumeUnicodeNoSurrogates(15) if fdp.ConsumeBool() else None
-            }
-            for _ in range(fdp.ConsumeIntInRange(1, 2))
-        ]
+    # Type confusion on expected schemas
+    if fdp.ConsumeBool():
+        payload["Subject"] = fdp.ConsumeUnicodeNoSurrogates(32)
+    else:
+        payload["Subject"] = fdp.ConsumeInt(1000) # Force type rejection
 
-        if fdp.ConsumeBool():
-            msg["Cc"] = [{"Email": fdp.ConsumeUnicodeNoSurrogates(10) + "@ex.com"}]
-        if fdp.ConsumeBool():
-            msg["Bcc"] = [{"Email": fdp.ConsumeUnicodeNoSurrogates(10) + "@ex.com"}]
-        if fdp.ConsumeBool():
-            msg["TemplateID"] = fdp.ConsumeInt(1000000)
-            msg["TemplateLanguage"] = fdp.ConsumeBool()
-
-        # Add Tracing, Tracking, and Custom Identity Fuzzing
-        if fdp.ConsumeBool():
-            msg["CustomID"] = fdp.ConsumeUnicodeNoSurrogates(30)
-        if fdp.ConsumeBool():
-            msg["EventPayload"] = fdp.ConsumeUnicodeNoSurrogates(50)
-        if fdp.ConsumeBool():
-            msg["TrackOpens"] = fdp.PickValueInList(["enabled", "disabled", "account_default", fdp.ConsumeUnicodeNoSurrogates(5)])
-
-        if fdp.ConsumeBool():
-            fuzzed_binary = fdp.ConsumeBytes(150)
-            try:
-                b64_data = base64.b64encode(fuzzed_binary).decode('utf-8')
-            except Exception:
-                b64_data = "invalid_b64"
-
-            msg["Attachments"] = [{
-                "ContentType": "text/plain",
-                "Filename": fdp.ConsumeUnicodeNoSurrogates(10) + ".txt",
-                "Base64Content": b64_data
-            }]
-
-        payload["Messages"].append(msg)
+    if fdp.ConsumeBool():
+        payload["Variables"] = {
+            fdp.ConsumeUnicodeNoSurrogates(8): _generate_structured_payload(fdp, depth + 1)
+        }
 
     return payload
 
-
 def TestOneInput(data: bytes) -> None:
-    if len(data) < 10:
+    # Cap size to avoid noisy massive allocations
+    if len(data) < 20 or len(data) > 1024:
         return
+
     fdp = atheris.FuzzedDataProvider(data)
 
-    target = fdp.ConsumeIntInRange(0, 1)
-
-    if target == 0:
+    if fdp.ConsumeBool():
         builder = MessageBuilder()
         try:
-            # Parse our fuzzed structural dictionary
-            payload_dict = generate_valid_payload(fdp)
-            for msg in payload_dict.get("Messages", []):
-                builder.set_sender(msg.get("From", {}).get("Email", ""), msg.get("From", {}).get("Name"))
+            # 1. Structural Fuzzing on the semantic payload engine
+            msg = _generate_structured_payload(fdp)
 
-                for to in msg.get("To", []):
-                    builder.add_recipient(to.get("Email", ""), to.get("Name"))
-                for cc in msg.get("Cc", []):
-                    builder.add_cc(cc.get("Email", ""), cc.get("Name"))
-                for bcc in msg.get("Bcc", []):
-                    builder.add_bcc(bcc.get("Email", ""), bcc.get("Name"))
+            if "From" in msg and isinstance(msg["From"], dict):
+                builder.set_sender(
+                    email=msg["From"].get("Email", ""),
+                    name=msg["From"].get("Name")
+                )
 
-                if "Subject" in msg:
-                    builder.set_subject(msg["Subject"])
-                if "TextPart" in msg:
-                    builder.set_content(text=msg["TextPart"])
-                if "HTMLPart" in msg:
-                    builder.set_content(html=msg["HTMLPart"])
-                if "TemplateID" in msg:
-                    builder.set_template(msg["TemplateID"])
+            if "To" in msg and isinstance(msg["To"], list):
+                for recipient in msg["To"]:
+                    if isinstance(recipient, dict):
+                        builder.add_recipient(
+                            email=recipient.get("Email", ""),
+                            name=recipient.get("Name")
+                        )
 
-                # NEW: Ensure fuzzed attachments are injected into the builder state
-                if "Attachments" in msg:
-                    builder._msg["Attachments"] = msg["Attachments"]
+            if "Subject" in msg and isinstance(msg["Subject"], str):
+                builder.set_subject(msg["Subject"])
 
-                if "Variables" in msg:
-                    builder._msg["Variables"] = msg["Variables"]
+            if "Variables" in msg:
+                builder._payload["Variables"] = msg["Variables"]
 
             builder.build()
-        except (ValueError, ValidationError, TypeError):
-            # Expected for malformed fuzzed inputs; keep fuzzing subsequent cases.
+        except (ValueError, ValidationError, TypeError, AttributeError):
+            # Expected for malformed structure or type-confusion checks
             pass
+        except RecursionError:
+            raise RuntimeError("CRASH: Payload builder hit Infinite Recursion.")
     else:
         t_builder = TemplateContentBuilder()
         try:
             t_builder.set_meta(fdp.ConsumeUnicodeNoSurrogates(10), fdp.ConsumeUnicodeNoSurrogates(10))
-            t_builder.set_content(
+            t_builder.set_content( # type: ignore[call-arg]
                 text=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 html=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 mjml=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
             )
             t_builder.build()
-        except (ValueError, ValidationError, TypeError):
-            # Expected for malformed fuzz inputs; ignore so the fuzzer can continue exploring.
+        except (ValueError, ValidationError, TypeError, AttributeError):
             pass
 
-def main() -> None:
+if __name__ == "__main__":
     atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()
-
-if __name__ == "__main__":
-    main()

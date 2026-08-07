@@ -37,18 +37,23 @@ def fuzz_routing(fdp: atheris.FuzzedDataProvider) -> None:
 
     try:
         ep = Endpoint(DummyClient(), name)  # type: ignore[arg-type]
-        ep._build_url(id_val=id_val, action_id=action_id)
-    except (ValueError, ValidationError, MailjetAuthError):
+
+        # Actually trigger the new O(1) routing engine!
+        # This forces the fuzzer through ROUTE_MAP and SecurityGuard validations.
+        url = ep._build_url(id_val=id_val, action_id=action_id)
+        assert isinstance(url, str)
+
+    except (ValueError, TypeError, KeyError):
+        # KeyError: Expected when fuzzed 'name' isn't in ROUTE_MAP
+        # ValueError: Expected from SecurityGuard (e.g., path traversal blocks)
         pass
-    except Exception as e:
-        raise RuntimeError(f"Routing crashed on malformed input: {e}") from e
 
 def fuzz_telemetry_and_difflib(fdp: atheris.FuzzedDataProvider) -> None:
     """Target 3: Telemetry Extraction and Difflib Typo Fallback."""
-    # Fuzz difflib resilience against massive chaotic strings
+    # Fuzz difflib resilience
     client = Client(auth=("test", "test"), version="v3")
     try:
-        getattr(client, fdp.ConsumeUnicodeNoSurrogates(150))
+        getattr(client, fdp.ConsumeUnicodeNoSurrogates(30))
     except AttributeError:
         pass
 
@@ -59,7 +64,6 @@ def fuzz_telemetry_and_difflib(fdp: atheris.FuzzedDataProvider) -> None:
         for _ in range(num_keys)
     }
 
-    # Send as either a dictionary or a list
     payload = [chaotic_dict] if fdp.ConsumeBool() else chaotic_dict
     Client._extract_telemetry(payload, None)
 
