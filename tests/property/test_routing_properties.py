@@ -57,7 +57,10 @@ def test_property_endpoint_build_url_resilience(endpoint_name: str, id_val: Any,
 
     try:
         url = endpoint._build_url(id_val=id_val, action_id=action_id)
-        assert url.startswith("https://api.mailjet.com")
+        parsed_url = urlparse(url)
+        assert parsed_url.scheme == "https"
+        assert parsed_url.netloc == "api.mailjet.com"
+        assert parsed_url.path.startswith("/")
 
         # Verify Headers are generated successfully
         headers = endpoint._build_headers()
