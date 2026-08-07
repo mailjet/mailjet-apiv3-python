@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for the JitterRetry backoff mathematics.
+"""Fuzz test for the JitterRetry backoff mathematics.
 Hunts for floating-point OverflowErrors or division-by-zero crashes.
 """
-import sys
+
 import logging
+import sys
+
 import atheris
 from urllib3.exceptions import MaxRetryError
+
 
 with atheris.instrument_imports():
     from mailjet_rest.client import JitterRetry
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -43,6 +46,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in JitterRetry math: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

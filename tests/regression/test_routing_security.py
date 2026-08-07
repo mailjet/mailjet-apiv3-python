@@ -1,6 +1,7 @@
 """Regression tests for previously discovered security vulnerabilities."""
 
 import pytest
+
 from mailjet_rest.client import Client
 from mailjet_rest.config import Config
 
@@ -24,7 +25,7 @@ def test_cwe113_header_injection_crlf_prevention() -> None:
     # Attacker attempts to inject a new HTTP header via newline injection
     malicious_headers = {
         "X-Custom-Header": "innocent_value\r\nEvil-Spoofed-Header: admin_access",
-        "Another": "normal\n"
+        "Another": "normal\n",
     }
 
     # The SecurityGuard must aggressively reject this before the network layer.

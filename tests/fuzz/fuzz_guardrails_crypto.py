@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for Cryptographic and Edge-Case Guardrails in Mailjet.
+"""Fuzz test for Cryptographic and Edge-Case Guardrails in Mailjet.
 Focuses on IDNA Parsing (CWE-176) and Input Validation Type Confusion.
 """
 
-import sys
 import logging
+import sys
 from typing import Any
 
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest.utils.guardrails import SecurityGuard

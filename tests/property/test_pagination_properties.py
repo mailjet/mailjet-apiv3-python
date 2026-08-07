@@ -1,9 +1,9 @@
-"""
-Property-based tests for Mailjet SDK Pagination and Streaming.
+"""Property-based tests for Mailjet SDK Pagination and Streaming.
 Powered by Hypothesis.
 """
 
 from unittest.mock import MagicMock
+
 from hypothesis import given, settings, strategies as st
 
 from mailjet_rest.client import Client
@@ -13,13 +13,9 @@ from mailjet_rest.endpoint import Endpoint
 # Disable the 200ms deadline because simulating hundreds of paginated
 # mocked HTTP requests can occasionally exceed the time limit on CI servers.
 @settings(max_examples=300, deadline=None)
-@given(
-    total_items=st.integers(min_value=0, max_value=5000),
-    chunk_size=st.integers(min_value=1, max_value=1000)
-)
+@given(total_items=st.integers(min_value=0, max_value=5000), chunk_size=st.integers(min_value=1, max_value=1000))
 def test_property_pagination_math(total_items: int, chunk_size: int) -> None:
-    """
-    INVARIANT: The `.stream()` generator must request the exact number of pages
+    """INVARIANT: The `.stream()` generator must request the exact number of pages
     required based on chunk_size, correctly increment the 'Offset' query parameter,
     and yield exactly `total_items`. It must never enter an infinite loop.
     """

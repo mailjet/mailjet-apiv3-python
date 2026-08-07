@@ -1,14 +1,16 @@
-"""
-Advanced Atheris fuzzing target for the Mailjet SDK Builders.
+"""Advanced Atheris fuzzing target for the Mailjet SDK Builders.
 Stresses JSON Recursion, Attachment Chunks, and Structural Integrity.
 """
 
 import sys
+
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
     from mailjet_rest.errors import ValidationError
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -22,7 +24,7 @@ def TestOneInput(data: bytes) -> None:
         builder = MessageBuilder()
         builder.set_sender(
             email=fdp.ConsumeUnicodeNoSurrogates(32),
-            name=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None
+            name=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None,
         )
 
         num_ops = fdp.ConsumeIntInRange(1, 6)
@@ -32,7 +34,7 @@ def TestOneInput(data: bytes) -> None:
                 # Target primary recipients
                 builder.add_recipient(
                     email=fdp.ConsumeUnicodeNoSurrogates(20),
-                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 )
             elif op == 1:
                 # Target CC/BCC structural bounds
@@ -47,7 +49,7 @@ def TestOneInput(data: bytes) -> None:
                 builder.add_attachment(  # type: ignore[attr-defined]
                     filename=fdp.ConsumeUnicodeNoSurrogates(16),
                     content_type=fdp.ConsumeUnicodeNoSurrogates(16),
-                    base64_content=fdp.ConsumeUnicodeNoSurrogates(128)
+                    base64_content=fdp.ConsumeUnicodeNoSurrogates(128),
                 )
             elif op == 4:
                 # Synthesize a massive string using Python multiplication to test
@@ -67,14 +69,11 @@ def TestOneInput(data: bytes) -> None:
     # ==========================================
     try:
         t_builder = TemplateContentBuilder()
-        t_builder.set_meta(
-            author=fdp.ConsumeUnicodeNoSurrogates(20),
-            name=fdp.ConsumeUnicodeNoSurrogates(20)
-        )
+        t_builder.set_meta(author=fdp.ConsumeUnicodeNoSurrogates(20), name=fdp.ConsumeUnicodeNoSurrogates(20))
         t_builder.set_content(  # type: ignore[call-arg]
             text=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
             html=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
-            mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None
+            mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
         )
 
         headers = {}

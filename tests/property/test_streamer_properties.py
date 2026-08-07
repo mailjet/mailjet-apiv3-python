@@ -1,5 +1,4 @@
-"""
-Property-based tests for Mailjet SDK I/O and File Streaming.
+"""Property-based tests for Mailjet SDK I/O and File Streaming.
 Powered by Hypothesis.
 """
 
@@ -16,11 +15,10 @@ from mailjet_rest.builders import ChunkedStreamer
 @given(
     file_data=st.binary(),
     # Test extreme chunk sizes from 1 byte up to 1MB
-    chunk_size=st.integers(min_value=1, max_value=1000000)
+    chunk_size=st.integers(min_value=1, max_value=1000000),
 )
 def test_property_lossless_chunked_encoding(file_data: bytes, chunk_size: int) -> None:
-    """
-    INVARIANT: The ChunkedStreamer must safely read and base64-encode any binary
+    """INVARIANT: The ChunkedStreamer must safely read and base64-encode any binary
     payload, across any arbitrary chunk boundary, completely losslessly.
     Decoding the result must yield the exact original bytes.
     """

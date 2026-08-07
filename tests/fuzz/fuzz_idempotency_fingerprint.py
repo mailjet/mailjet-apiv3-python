@@ -1,27 +1,30 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for Idempotency Hash Generation and JSON Serialization limits.
+"""Fuzz test for Idempotency Hash Generation and JSON Serialization limits.
 Hunts for unhandled circular references and recursive type crashes.
 """
 
-import sys
 import logging
+import sys
 from typing import Any
 
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest.utils.guardrails import SecurityGuard
 
 logging.disable(logging.CRITICAL)
 
+
 class PoisonedObject:
     """An object designed to crash json.dumps(default=str) by poisoning __str__"""
+
     def __init__(self, exception_to_raise: Exception):
         self.exception_to_raise = exception_to_raise
 
     def __str__(self) -> str:
         raise self.exception_to_raise
+
 
 def generate_chaotic_payload(fdp: atheris.FuzzedDataProvider, depth: int = 0) -> Any:
     """Recursively generates a dictionary capable of crashing native json libraries."""
@@ -31,18 +34,18 @@ def generate_chaotic_payload(fdp: atheris.FuzzedDataProvider, depth: int = 0) ->
     choice = fdp.ConsumeIntInRange(0, 5)
     if choice == 0:
         return fdp.ConsumeUnicodeNoSurrogates(32)
-    elif choice == 1:
+    if choice == 1:
         return fdp.ConsumeInt(1000)
-    elif choice == 2:
+    if choice == 2:
         return fdp.ConsumeBytes(16)
-    elif choice == 3:
+    if choice == 3:
         return PoisonedObject(fdp.PickValueInList([ValueError("Poison"), TypeError("Poison")]))
-    elif choice == 4:
+    if choice == 4:
         circ: dict[str, Any] = {}
         circ["self"] = circ
         return circ
-    else:
-        return {fdp.ConsumeUnicodeNoSurrogates(10): generate_chaotic_payload(fdp, depth + 1) for _ in range(2)}
+    return {fdp.ConsumeUnicodeNoSurrogates(10): generate_chaotic_payload(fdp, depth + 1) for _ in range(2)}
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 10:
@@ -69,6 +72,7 @@ def TestOneInput(data: bytes) -> None:
         raise RuntimeError("CRASH: Idempotency Fingerprint hit Infinite Recursion Depth.")
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in Fingerprint generation: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

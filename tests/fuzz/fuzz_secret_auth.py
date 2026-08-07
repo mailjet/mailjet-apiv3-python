@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for the SecretAuth requests.auth.AuthBase adapter.
+"""Fuzz test for the SecretAuth requests.auth.AuthBase adapter.
 Ensures credential masking and HTTP header injection do not crash under chaotic input.
 """
-import sys
+
 import logging
+import sys
 from unittest.mock import MagicMock
+
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest.utils.guardrails import SecretAuth
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -50,6 +53,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in SecretAuth: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

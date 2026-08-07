@@ -1,11 +1,10 @@
-"""
-Property-based tests for Mailjet SDK Client logic and Telemetry.
+"""Property-based tests for Mailjet SDK Client logic and Telemetry.
 Powered by Hypothesis.
 """
 
 from typing import Any
 from unittest.mock import MagicMock
-import pytest
+
 from hypothesis import given, settings, strategies as st
 
 from mailjet_rest.client import Client, JitterRetry
@@ -16,7 +15,7 @@ from mailjet_rest.client import Client, JitterRetry
     payload=st.recursive(
         st.dictionaries(st.text(), st.text()),
         lambda children: st.lists(children) | st.dictionaries(st.text(), children),
-        max_leaves=25
+        max_leaves=25,
     )
 )
 def test_property_telemetry_extraction_resilience(payload: Any) -> None:
@@ -27,11 +26,7 @@ def test_property_telemetry_extraction_resilience(payload: Any) -> None:
 
 
 @settings(max_examples=300)
-@given(
-    auth_input=st.one_of(
-        st.tuples(st.text(), st.text()), st.text(), st.integers(), st.none()
-    )
-)
+@given(auth_input=st.one_of(st.tuples(st.text(), st.text()), st.text(), st.integers(), st.none()))
 def test_property_auth_coercion(auth_input: Any) -> None:
     """INVARIANT: Client must successfully auth or reject with clear Type/Value error."""
     try:
@@ -56,7 +51,7 @@ def test_property_jitter_backoff_bounds(consecutive_errors: int) -> None:
 
 
 @settings(max_examples=300)
-@given(route_name=st.text(min_size=1, max_size=20, alphabet=st.characters(blacklist_categories=('Cs', 'Z'))))
+@given(route_name=st.text(min_size=1, max_size=20, alphabet=st.characters(blacklist_categories=("Cs", "Z"))))
 def test_property_client_getattr_difflib(route_name: str) -> None:
     """INVARIANT: Random unmapped endpoints should hit fallback or be caught as difflib typos."""
     client = Client(auth=("a", "b"))
@@ -74,8 +69,10 @@ def test_property_client_getattr_difflib(route_name: str) -> None:
 @settings(max_examples=200)
 @given(
     method=st.sampled_from(["GET", "POST", "PUT", "DELETE"]),
-    payload=st.one_of(st.dictionaries(st.text(), st.text()), st.lists(st.dictionaries(st.text(), st.text())), st.none()),
-    timeout=st.one_of(st.integers(min_value=1), st.none())
+    payload=st.one_of(
+        st.dictionaries(st.text(), st.text()), st.lists(st.dictionaries(st.text(), st.text())), st.none()
+    ),
+    timeout=st.one_of(st.integers(min_value=1), st.none()),
 )
 def test_property_api_call_resilience(method: Any, payload: Any, timeout: Any) -> None:
     """INVARIANT: api_call wrapper safely assigns kwargs, hashes mutations, and fires request."""
@@ -86,7 +83,9 @@ def test_property_api_call_resilience(method: Any, payload: Any, timeout: Any) -
     client._execute_request = MagicMock(return_value=mock_resp)  # type: ignore[method-assign]
 
     # API call must not crash on random standard payload variants
-    res = client.api_call(method=method, url="https://api.mailjet.com/v3/test", headers={}, data=payload, timeout=timeout)
+    res = client.api_call(
+        method=method, url="https://api.mailjet.com/v3/test", headers={}, data=payload, timeout=timeout
+    )
     assert res.status_code == 200
 
     # Ensure idempotency was calculated for valid dictionaries/lists during mutations

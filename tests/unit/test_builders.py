@@ -1,10 +1,10 @@
 # pyright: reportTypedDictNotRequiredAccess=false
 """Unit tests for the payload builder modules."""
 
-import os
-import tempfile
 from pathlib import Path
+
 import pytest
+
 from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
 
 
@@ -200,6 +200,7 @@ def test_message_builder_missing_names_and_recipients() -> None:
     assert "Name" not in res["Bcc"][0]
     assert "Name" not in res["ReplyTo"]
 
+
 def test_message_builder_no_recipients() -> None:
     """Coverage: Test validation branch for missing recipients."""
     builder = MessageBuilder()
@@ -207,6 +208,7 @@ def test_message_builder_no_recipients() -> None:
     builder.set_content(text="Hello")
     with pytest.raises(ValueError, match="At least one recipient"):
         builder.build()
+
 
 def test_spam_guard_html_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
     """Coverage: Enable spam guard analysis in MessageBuilder."""
@@ -219,11 +221,12 @@ def test_spam_guard_html_analysis(monkeypatch: pytest.MonkeyPatch) -> None:
     # simulating a deliverability warning without throwing a hard security exception.
     monkeypatch.setattr(
         "mailjet_rest.builders.SecurityGuard.analyze_html_safety",
-        lambda html: {"is_safe": False, "issues": ["Mocked deliverability issue"]}
+        lambda html: {"is_safe": False, "issues": ["Mocked deliverability issue"]},
     )
 
     with pytest.warns(UserWarning, match="Deliverability Warning"):
         builder.set_content(html="<div>Mocked HTML</div>")
+
 
 def test_template_content_builder_full() -> None:
     """Coverage: Test TemplateContentBuilder meta and mjml properties."""
@@ -236,11 +239,13 @@ def test_template_content_builder_full() -> None:
     assert res["Locale"] == "en-US"
     assert res["MJMLContent"] == "<mjml><mjml-body></mjml-body></mjml>"
 
+
 def test_send_payload_builder_empty() -> None:
     """Coverage: Test SendPayloadBuilder validation branch."""
     builder = SendPayloadBuilder()
     with pytest.raises(ValueError, match="At least one message is required"):
         builder.build()
+
 
 def test_message_builder_content_type_attachment(tmp_path: Path) -> None:
     """Coverage: Branch where an explicit Content-Type is provided to attach_file."""

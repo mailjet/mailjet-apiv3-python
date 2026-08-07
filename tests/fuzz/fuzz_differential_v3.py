@@ -1,6 +1,8 @@
 import sys
-import atheris
 from typing import Any
+
+import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest import Client
@@ -10,6 +12,7 @@ with atheris.instrument_imports():
 # ==========================================
 client_v3 = Client(auth=("test", "test"), version="v3")
 client_v31 = Client(auth=("test", "test"), version="v3.1")
+
 
 # Create a "Dumb Mock" that doesn't record call history.
 # This prevents the 2GB Out-Of-Memory (OOM) crash during heavy fuzzing.
@@ -25,8 +28,10 @@ class DumbResponse:
     def raise_for_status(self):
         pass
 
+
 def dumb_mock_request(*args: Any, **kwargs: Any) -> DumbResponse:
     return DumbResponse(200, {})
+
 
 client_v3.session.request = dumb_mock_request  # type: ignore[method-assign, assignment]
 client_v31.session.request = dumb_mock_request  # type: ignore[method-assign, assignment]
@@ -48,16 +53,18 @@ def TestOneInput(data: bytes) -> None:
         "FromName": "Test",
         "Subject": "Test",
         "Text-part": "Test",
-        "Recipients": [{"Email": "target@example.com"}]
+        "Recipients": [{"Email": "target@example.com"}],
     }
 
     payload_v31 = {
-        "Messages": [{
-            "From": {"Email": email_str, "Name": "Test"},
-            "To": [{"Email": "target@example.com"}],
-            "Subject": "Test",
-            "TextPart": "Test"
-        }]
+        "Messages": [
+            {
+                "From": {"Email": email_str, "Name": "Test"},
+                "To": [{"Email": "target@example.com"}],
+                "Subject": "Test",
+                "TextPart": "Test",
+            }
+        ]
     }
 
     success_v3 = False
@@ -83,9 +90,8 @@ def TestOneInput(data: bytes) -> None:
     # 3. Differential Assertion
     if success_v3 != success_v31:
         # If the SDK's validation logic is mathematically asymmetrical, force a fuzzer crash
-        raise AssertionError(
-            f"Differential Mismatch on Email: {repr(email_str)} | v3: {success_v3} vs v3.1: {success_v31}"
-        )
+        raise AssertionError(f"Differential Mismatch on Email: {email_str!r} | v3: {success_v3} vs v3.1: {success_v31}")
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

@@ -19,7 +19,7 @@ from mailjet_rest.routes import ROUTE_MAP
 pytestmark = pytest.mark.skipif(
     "MJ_APIKEY_PUBLIC" not in os.environ or "MJ_APIKEY_PRIVATE" not in os.environ,
     reason="MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE environment variables must be set.",
-    )
+)
 
 
 @pytest.fixture
@@ -110,9 +110,7 @@ def test_live_email_api_v3_template_lifecycle(client_live: Client) -> None:
             "Html-part": "<html><body><h1>Hello from Python!</h1></body></html>",
             "Text-part": "Hello from Python!",
         }
-        content_resp = client_live.template_detailcontent.create(
-            id=template_id, data=content_data
-        )
+        content_resp = client_live.template_detailcontent.create(id=template_id, data=content_data)
 
         assert content_resp.status_code in (200, 201)
         get_resp = client_live.template_detailcontent.get(id=template_id)
@@ -127,11 +125,7 @@ def test_live_content_api_v1_template_lifecycle(client_live: Client) -> None:
     auth_tuple = (os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
 
     with Client(auth=auth_tuple, version="v1") as client_v1:
-        template_data = {
-            "Name": f"v1-template-{uuid.uuid4().hex[:8]}",
-            "EditMode": 2,
-            "Purposes": ["transactional"]
-        }
+        template_data = {"Name": f"v1-template-{uuid.uuid4().hex[:8]}", "EditMode": 2, "Purposes": ["transactional"]}
         create_resp = client_v1.templates.create(data=template_data)
 
         if create_resp.status_code != 201:
@@ -144,7 +138,7 @@ def test_live_content_api_v1_template_lifecycle(client_live: Client) -> None:
                 "Headers": {"Subject": "V1 Content Subject"},
                 "HtmlPart": "<html><body><h1>V1 Content</h1></body></html>",
                 "TextPart": "V1 Content",
-                "Locale": "en_US"
+                "Locale": "en_US",
             }
             content_resp = client_v1.templates_contents.create(id=template_id, data=content_data)
             assert content_resp.status_code == 201
@@ -167,6 +161,7 @@ def test_live_content_api_v1_template_lifecycle(client_live: Client) -> None:
 
 # --- Security Verification Tests ---
 
+
 def test_live_path_traversal_prevention(client_live: Client) -> None:
     """Verify that malicious IDs are securely URL-encoded, preventing directory traversal execution on the server."""
     with pytest.raises(ValueError, match="Path traversal attempt"):
@@ -183,10 +178,10 @@ def test_live_crlf_header_injection_blocked(client_live: Client) -> None:
     with pytest.raises(ValueError, match="CRLF injection detected in header"):
         client_live.contact.get(headers={"X-Custom": "value\r\nInjected"})
 
+
 @pytest.mark.network
 def test_live_tls_handshake_success() -> None:
-    """
-    Verify that our SecureHTTPAdapter successfully completes a TLS 1.2+ handshake
+    """Verify that our SecureHTTPAdapter successfully completes a TLS 1.2+ handshake
     with the production Mailjet API.
     """
     with Client(auth=("dummy_key", "dummy_secret")) as client:
@@ -197,6 +192,7 @@ def test_live_tls_handshake_success() -> None:
             assert e.status_code == 401
         except Exception as e:
             pytest.fail(f"Live network call failed at the transport layer: {e}")
+
 
 @pytest.mark.filterwarnings("ignore::DeprecationWarning")
 @pytest.mark.parametrize("route_key", ROUTE_MAP.keys())
@@ -216,6 +212,7 @@ def test_registry_parity_and_integrity(client_live: Client, route_key: str) -> N
     assert "//" not in url.replace("https://", ""), f"Malformed URL in {route_key}: {url}"
     assert parsed.scheme == "https", f"Invalid URL scheme in {route_key}: {url}"
     assert parsed.hostname == "api.mailjet.com", f"Invalid base URL in {route_key}: {url}"
+
 
 @pytest.mark.parametrize("malicious_id", ["../admin", "id/../../", "123; DROP TABLE"])
 def test_registry_security_cwe22(client_live: Client, malicious_id: str) -> None:
@@ -244,9 +241,11 @@ def test_tls_handshake_integration() -> None:
 
 # --- Error Path & General Routing Tests ---
 
+
 def test_live_send_api_v3_1_bad_payload(client_live: Client) -> None:
     """Test Send API v3.1 bad path (missing mandatory Messages array)."""
     from mailjet_rest.errors import ValidationError
+
     auth_tuple = (os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
     with Client(auth=auth_tuple, version="v3.1") as client_v31:
         with pytest.raises(ValidationError) as excinfo:
@@ -257,6 +256,7 @@ def test_live_send_api_v3_1_bad_payload(client_live: Client) -> None:
 def test_live_send_api_v3_bad_payload(client_live: Client) -> None:
     """Test legacy Send API v3 bad path endpoint availability."""
     from mailjet_rest.errors import ValidationError
+
     with pytest.raises(ValidationError) as excinfo:
         client_live.send.create(data={})
     assert excinfo.value.status_code == 400
@@ -265,6 +265,7 @@ def test_live_send_api_v3_bad_payload(client_live: Client) -> None:
 def test_live_content_api_bad_path(client_live: Client) -> None:
     """Test Content API bad path (accessing detailcontent of a non-existent template)."""
     from mailjet_rest.errors import DoesNotExistError, ValidationError
+
     invalid_template_id = 999999999999
     with pytest.raises((DoesNotExistError, ValidationError)) as excinfo:
         client_live.template_detailcontent.get(id=invalid_template_id)
@@ -299,6 +300,7 @@ def test_get_no_param(client_live: Client) -> None:
 def test_post_with_no_param(client_live: Client) -> None:
     """Tests a POST request with an empty data payload. Should return 400 Bad Request."""
     from mailjet_rest.errors import ValidationError
+
     with pytest.raises(ValidationError) as excinfo:
         client_live.sender.create(data={})
     assert excinfo.value.status_code == 400
@@ -319,9 +321,7 @@ def test_csv_import_flow(client_live: Client) -> None:
     from pathlib import Path
 
     unique_suffix = uuid.uuid4().hex[:8]
-    list_resp = client_live.contactslist.create(
-        data={"Name": f"Test CSV List {unique_suffix}"}
-    )
+    list_resp = client_live.contactslist.create(data={"Name": f"Test CSV List {unique_suffix}"})
 
     if list_resp.status_code != 201:
         pytest.skip(f"Failed to create test contact list: {list_resp.text}")
@@ -334,9 +334,7 @@ def test_csv_import_flow(client_live: Client) -> None:
             pytest.skip("data.csv file not found for testing.")
 
         csv_data = csv_path.read_text(encoding="utf-8")
-        upload_resp = client_live.contactslist_csvdata.create(
-            id=contactslist_id, data=csv_data
-        )
+        upload_resp = client_live.contactslist_csvdata.create(id=contactslist_id, data=csv_data)
         assert upload_resp.status_code == 200
         data_id = upload_resp.json().get("ID")
 
@@ -355,6 +353,7 @@ def test_csv_import_flow(client_live: Client) -> None:
 def test_live_content_api_images_multipart_upload() -> None:
     """Test 8 from Canvas: REAL file upload via multipart/form-data."""
     import base64
+
     from mailjet_rest.errors import ValidationError
 
     api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
@@ -383,7 +382,9 @@ def test_live_content_api_images_multipart_upload() -> None:
                 pass
         except ValidationError as e:
             # Catch 400 Bad Request caused by Mailjet API Free Tier Quota Exhaustion
-            pytest.skip(f"Skipping: Mailjet image quota likely exceeded or payload rejected (400). Details: {e.response_body}")
+            pytest.skip(
+                f"Skipping: Mailjet image quota likely exceeded or payload rejected (400). Details: {e.response_body}"
+            )
 
 
 def test_live_contact_crud_lifecycle(client_live: Client) -> None:
@@ -415,6 +416,7 @@ def test_live_contact_crud_lifecycle(client_live: Client) -> None:
         except Exception as e:
             pytest.fail(f"Live network call failed at the transport layer: {e}")
 
+
 def test_live_template_crud_lifecycle(client_live: Client) -> None:
     """Integration test for Template shell creation, content modification, and deletion."""
     template_name = f"CI Test Template {uuid.uuid4().hex[:8]}"
@@ -425,7 +427,7 @@ def test_live_template_crud_lifecycle(client_live: Client) -> None:
         "Author": "Mailjet Python CI",
         "EditMode": 1,
         "IsTextPartGenerationEnabled": True,
-        "Locale": "en_US"
+        "Locale": "en_US",
     }
     create_resp = client_live.template.create(data=create_data)
     assert create_resp.status_code == 201
@@ -433,10 +435,7 @@ def test_live_template_crud_lifecycle(client_live: Client) -> None:
 
     try:
         # 2. Add Content to Template (Uses POST on detailcontent)
-        content_data = {
-            "Html-part": "<html><body><h1>Hello from CI</h1></body></html>",
-            "Text-part": "Hello from CI"
-        }
+        content_data = {"Html-part": "<html><body><h1>Hello from CI</h1></body></html>", "Text-part": "Hello from CI"}
         content_resp = client_live.template_detailcontent.create(id=template_id, data=content_data)
         assert content_resp.status_code in (200, 201)
 
@@ -448,12 +447,7 @@ def test_live_template_crud_lifecycle(client_live: Client) -> None:
 
 def test_live_readonly_endpoints(client_live: Client) -> None:
     """Verify that basic read operations work across multiple core endpoints."""
-    endpoints_to_test = [
-        client_live.sender,
-        client_live.message,
-        client_live.campaign,
-        client_live.contactfilter
-    ]
+    endpoints_to_test = [client_live.sender, client_live.message, client_live.campaign, client_live.contactfilter]
 
     for endpoint in endpoints_to_test:
         resp = endpoint.get(filters={"limit": 1})

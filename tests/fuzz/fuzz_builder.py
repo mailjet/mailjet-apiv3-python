@@ -1,14 +1,15 @@
 """Atheris fuzzing target for the Mailjet SDK Builders."""
 
-import atheris
 import sys
-from unittest.mock import patch, MagicMock
+
+import atheris
 
 
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
-    from mailjet_rest.utils.guardrails import SecurityGuard
     from mailjet_rest.errors import ValidationError
+    from mailjet_rest.utils.guardrails import SecurityGuard
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -32,7 +33,7 @@ def TestOneInput(data: bytes) -> None:
         builder = MessageBuilder()
         builder.set_sender(
             email=fdp.ConsumeUnicodeNoSurrogates(32),
-            name=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None
+            name=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None,
         )
 
         num_ops = fdp.ConsumeIntInRange(1, 6)
@@ -41,19 +42,19 @@ def TestOneInput(data: bytes) -> None:
             if op == 0:
                 builder.add_recipient(
                     email=fdp.ConsumeUnicodeNoSurrogates(20),
-                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 )
             elif op == 1:
                 builder.set_subject(fdp.ConsumeUnicodeNoSurrogates(64))
             elif op == 2:
                 builder.add_cc(
                     email=fdp.ConsumeUnicodeNoSurrogates(20),
-                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 )
             elif op == 3:
                 builder.add_bcc(
                     email=fdp.ConsumeUnicodeNoSurrogates(20),
-                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 )
             elif op == 4:
                 # Fuzz sizes specifically around the 5MB cutoff limits
@@ -72,14 +73,11 @@ def TestOneInput(data: bytes) -> None:
         # ==========================================
     try:
         t_builder = TemplateContentBuilder()
-        t_builder.set_meta(
-            author=fdp.ConsumeUnicodeNoSurrogates(20),
-            name=fdp.ConsumeUnicodeNoSurrogates(20)
-        )
+        t_builder.set_meta(author=fdp.ConsumeUnicodeNoSurrogates(20), name=fdp.ConsumeUnicodeNoSurrogates(20))
         t_builder.set_content(  # type: ignore[call-arg]
             text=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
             html=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
-            mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None
+            mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
         )
 
         headers = {}

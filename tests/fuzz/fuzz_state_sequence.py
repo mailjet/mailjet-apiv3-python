@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Executes rapid-fire sequences of Mailjet Client operations to isolate
+"""Executes rapid-fire sequences of Mailjet Client operations to isolate
 CPU/Memory leaks and instance-level state corruption.
 """
 
@@ -12,11 +11,13 @@ from unittest.mock import Mock
 
 import atheris
 
+
 with atheris.instrument_imports():
     from mailjet_rest import Client
     from mailjet_rest.errors import ApiError, ValidationError
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 10:
@@ -26,15 +27,15 @@ def TestOneInput(data: bytes) -> None:
     client = Client(auth=("test", "test"), version="v3")
 
     # Mock network to isolate the CPU on internal SDK memory mutations
-    client.session.request = Mock(return_value=Mock(status_code=200, json=lambda: {}))  # type: ignore[method-assign]
+    client.session.request = Mock(return_value=Mock(status_code=200, json=dict))  # type: ignore[method-assign]
 
     # A pool of operational mutations
     actions: list[Callable[[], typing.Any]] = [
         lambda: client.contact.create(data={"Email": fdp.ConsumeUnicodeNoSurrogates(15)}),
         lambda: client.contact.get(id=fdp.ConsumeInt(10000)),
         lambda: client.send.create(data={"Messages": []}),
-        lambda: setattr(client.config, 'timeout', fdp.ConsumeFloat()),
-        lambda: client.template.update(id=fdp.ConsumeInt(100), data={"Name": fdp.ConsumeUnicodeNoSurrogates(10)})
+        lambda: setattr(client.config, "timeout", fdp.ConsumeFloat()),
+        lambda: client.template.update(id=fdp.ConsumeInt(100), data={"Name": fdp.ConsumeUnicodeNoSurrogates(10)}),
     ]
 
     # Execute between 1 and 50 rapid-fire operations on the identical client memory object
@@ -50,6 +51,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"SEQUENCE CRASH: Unhandled memory/state fault: {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

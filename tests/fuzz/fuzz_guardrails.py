@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for Mailjet Core Security Primitives.
+"""Fuzz test for Mailjet Core Security Primitives.
 Protects against Path Traversal, CRLF Injection, ReDoS, and Type Confusion.
 """
 
 import sys
+
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest.utils.guardrails import SecurityGuard
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -38,7 +40,9 @@ def TestOneInput(data: bytes) -> None:
 
         elif target == 3:
             # Target 4: Magic method interception (Deprecated but maintained for safety)
-            SecurityGuard.check_request_security({"proxies": {fdp.ConsumeUnicodeNoSurrogates(10): fdp.ConsumeUnicodeNoSurrogates(20)}})
+            SecurityGuard.check_request_security(
+                {"proxies": {fdp.ConsumeUnicodeNoSurrogates(10): fdp.ConsumeUnicodeNoSurrogates(20)}}
+            )
 
         elif target == 4:
             # Target 5: RFC-9110 Control Character Injection (NEW)
@@ -53,6 +57,7 @@ def TestOneInput(data: bytes) -> None:
     except Exception as e:
         # UNHANDLED CRASH: MemoryError, KeyError, etc.
         raise RuntimeError(f"UNHANDLED CRASH in Security Primitives: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

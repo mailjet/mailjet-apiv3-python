@@ -35,10 +35,10 @@ TARGETS: list[dict[str, Any]] = [
                     "To": [{"Email": "passenger1@mailjet.com", "Name": "passenger 1"}],
                     "Subject": "Your email flight plan!",
                     "TextPart": "Dear passenger 1, welcome to Mailjet!",
-                    "CustomID": "AppGettingStartedTest"
+                    "CustomID": "AppGettingStartedTest",
                 }
             ]
-        }
+        },
     },
     {
         "method": "POST",
@@ -49,26 +49,16 @@ TARGETS: list[dict[str, Any]] = [
                 {
                     # Intentional Error: Missing required 'To' field to trigger 400 validation error
                     "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
-                    "Subject": "Malicious schema test"
+                    "Subject": "Malicious schema test",
                 }
             ]
-        }
+        },
     },
     # ----------------------------------------------------
     # V3 REST API TARGETS (Resource Lookups & Pagination)
     # ----------------------------------------------------
-    {
-        "method": "GET",
-        "name": "contact_get",
-        "url": f"{BASE_URL_V3}/contact",
-        "params": {"limit": 5}
-    },
-    {
-        "method": "GET",
-        "name": "message_get",
-        "url": f"{BASE_URL_V3}/message",
-        "params": {"limit": 10}
-    },
+    {"method": "GET", "name": "contact_get", "url": f"{BASE_URL_V3}/contact", "params": {"limit": 5}},
+    {"method": "GET", "name": "message_get", "url": f"{BASE_URL_V3}/message", "params": {"limit": 10}},
     {
         "method": "GET",
         "name": "campaign_get",
@@ -101,16 +91,13 @@ TARGETS: list[dict[str, Any]] = [
         "method": "POST",
         "name": "contact_managemanycontacts_post",
         "url": f"{BASE_URL_V3}/contact/managemanycontacts",
-        "json": {
-            "Action": "addnoforce",
-            "Contacts": [{"Email": "fuzz-contact@example.com"}]
-        }
+        "json": {"Action": "addnoforce", "Contacts": [{"Email": "fuzz-contact@example.com"}]},
     },
     {
         "method": "POST",
         "name": "contactslist_post",
         "url": f"{BASE_URL_V3}/contactslist",
-        "json": {"Name": "Fuzz Test List"}
+        "json": {"Name": "Fuzz Test List"},
     },
     {
         "method": "POST",
@@ -121,36 +108,27 @@ TARGETS: list[dict[str, Any]] = [
             "Sender": "pilot@mailjet.com",
             "SenderName": "Pilot",
             "Subject": "Fuzz Campaign",
-            "Title": "Fuzz Draft"
-        }
+            "Title": "Fuzz Draft",
+        },
     },
     {
         "method": "POST",
         "name": "template_post",
         "url": f"{BASE_URL_V3}/template",
-        "json": {
-            "Name": "Fuzz Template",
-            "Author": "Fuzzer",
-            "Purposes": ["transactional"]
-        }
+        "json": {"Name": "Fuzz Template", "Author": "Fuzzer", "Purposes": ["transactional"]},
     },
     {
         "method": "PUT",
         "name": "template_detailcontent_put",
         # Note: 999999 will likely 404, feeding our error parser the exact JSON error schema
         "url": f"{BASE_URL_V3}/template/999999/detailcontent",
-        "json": {
-            "Headers": {"Reply-To": "fuzz@mailjet.com"},
-            "Html-part": "<html>Fuzz</html>"
-        }
+        "json": {"Headers": {"Reply-To": "fuzz@mailjet.com"}, "Html-part": "<html>Fuzz</html>"},
     },
     {
         "method": "POST",
         "name": "parseroute_post",
         "url": f"{BASE_URL_V3}/parseroute",
-        "json": {
-            "Url": "https://fuzz-target.example.com/webhook"
-        }
+        "json": {"Url": "https://fuzz-target.example.com/webhook"},
     },
     # ----------------------------------------------------
     # V3 REST API TARGETS (Statistics & Analytics)
@@ -159,62 +137,59 @@ TARGETS: list[dict[str, Any]] = [
         "method": "GET",
         "name": "statcounters_get",
         "url": f"{BASE_URL_V3}/statcounters",
-        "params": {"CounterSource": "APIKey", "CounterTiming": "Message"}
+        "params": {"CounterSource": "APIKey", "CounterTiming": "Message"},
     },
-    {
-        "method": "GET",
-        "name": "bouncestatistics_get",
-        "url": f"{BASE_URL_V3}/bouncestatistics"
-    },
-    {
-        "method": "GET",
-        "name": "clickstatistics_get",
-        "url": f"{BASE_URL_V3}/clickstatistics"
-    },
-    {
-        "method": "GET",
-        "name": "domainstatistics_get",
-        "url": f"{BASE_URL_V3}/domainstatistics"
-    },
+    {"method": "GET", "name": "bouncestatistics_get", "url": f"{BASE_URL_V3}/bouncestatistics"},
+    {"method": "GET", "name": "clickstatistics_get", "url": f"{BASE_URL_V3}/clickstatistics"},
+    {"method": "GET", "name": "domainstatistics_get", "url": f"{BASE_URL_V3}/domainstatistics"},
     # ----------------------------------------------------
     # V1 CONTENT API TARGETS (Tokens & Labels)
     # ----------------------------------------------------
-    {
-        "method": "GET",
-        "name": "tokens_get",
-        "url": f"{BASE_URL_V1}/tokens"
-    },
-    {
-        "method": "GET",
-        "name": "labels_get",
-        "url": f"{BASE_URL_V1}/labels"
-    }
+    {"method": "GET", "name": "tokens_get", "url": f"{BASE_URL_V1}/tokens"},
+    {"method": "GET", "name": "labels_get", "url": f"{BASE_URL_V1}/labels"},
 ]
 
 # Map specific API targets to their respective fuzzer corpus directories
 CORPUS_MAP: dict[str, list[str]] = {
     "fuzz_endpoint": [
-        "contact_get", "message_get", "campaign_get", "sender_get",
-        "user_get", "apikey_get", "webhook_get", "statcounters_get",
-        "bouncestatistics_get", "clickstatistics_get", "domainstatistics_get",
-        "tokens_get", "labels_get"
+        "contact_get",
+        "message_get",
+        "campaign_get",
+        "sender_get",
+        "user_get",
+        "apikey_get",
+        "webhook_get",
+        "statcounters_get",
+        "bouncestatistics_get",
+        "clickstatistics_get",
+        "domainstatistics_get",
+        "tokens_get",
+        "labels_get",
     ],
     "fuzz_builder": [
         # Gives the fluent builders native schema constraints to mutate against
-        "send_v31_post", "template_post", "campaigndraft_post"
+        "send_v31_post",
+        "template_post",
+        "campaigndraft_post",
     ],
     "fuzz_structure_aware": [
         # Provides deep JSON trees for the structured mutator to traverse
-        "send_v31_post", "contact_managemanycontacts_post", "parseroute_post", "template_detailcontent_put"
+        "send_v31_post",
+        "contact_managemanycontacts_post",
+        "parseroute_post",
+        "template_detailcontent_put",
     ],
     "fuzz_error_parser": [
         # Allows the error parser to learn from actual Mailjet 400/404 payloads
-        "send_v31_error_post", "template_detailcontent_put"
+        "send_v31_error_post",
+        "template_detailcontent_put",
     ],
     "fuzz_pagination_stream": [
         # Feeds the lazy-eval generator fuzzer actual list arrays returned by the API
-        "contact_get", "message_get", "campaign_get"
-    ]
+        "contact_get",
+        "message_get",
+        "campaign_get",
+    ],
 }
 
 
@@ -236,13 +211,9 @@ def harvest_seeds() -> None:
             # Capture data to force various API responses (Success vs Error)
             if method in ("POST", "PUT"):
                 # requests.request allows dynamic execution of both POST and PUT methods safely
-                resp = requests.request(
-                    method, url, auth=auth, headers=headers, json=target.get("json"), timeout=10
-                )
+                resp = requests.request(method, url, auth=auth, headers=headers, json=target.get("json"), timeout=10)
             else:
-                resp = requests.get(
-                    url, auth=auth, params=target.get("params"), timeout=10
-                )
+                resp = requests.get(url, auth=auth, params=target.get("params"), timeout=10)
 
             # Save the raw JSON payload
             # We save the status code in the filename so the fuzzer learns

@@ -5,27 +5,25 @@
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
+from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock, patch
+
 import pytest
 import requests
-import warnings
-
-from typing import Any, TYPE_CHECKING
-from unittest.mock import patch, MagicMock
-from contextlib import suppress
-
 from requests.exceptions import ConnectionError as RequestsConnectionError, RequestException, Timeout as RequestsTimeout
 
 from mailjet_rest.client import Client, Config
-from mailjet_rest.utils.guardrails import SecurityGuard
 from mailjet_rest.errors import (
     ApiError,
     CriticalApiError,
-    TimeoutError,
     DoesNotExistError,
+    MailjetAuthError,
+    TimeoutError,
     ValidationError,
-    MailjetAuthError
 )
 from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS
+from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 if TYPE_CHECKING:
@@ -42,6 +40,7 @@ def client_offline() -> Client:
 # ==========================================
 # 1. Authentication & Initialization Tests
 # ==========================================
+
 
 def test_bearer_token_auth_initialization() -> None:
     """Verify that passing a string to auth configures Bearer token (Content API v1)."""
@@ -80,6 +79,7 @@ def test_config_api_url_validation_scheme() -> None:
     # Changed from http:// to ftp:// because http:// is now legally allowed for localhost CI/CD
     with pytest.raises(ValueError, match="Security Alert \\(CWE-918\\): Invalid scheme 'ftp'"):
         Config(api_url="ftp://api.mailjet.com")
+
 
 def test_config_api_url_validation_hostname() -> None:
     """Verify that malicious hosts are rejected (CWE-918)."""
@@ -139,6 +139,7 @@ def test_client_mount_retry_adapter() -> None:
 
 def test_ambiguity_warnings_logged(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that validate_dx_routing correctly flags API version ambiguities via warnings."""
+
     def mock_request(*args: Any, **kwargs: Any) -> requests.Response:
         resp = requests.Response()
         resp.status_code = 404
@@ -224,11 +225,12 @@ def test_client_close_no_session() -> None:
     """Coverage: Graceful close when session is missing."""
     client = Client(auth=("a", "b"))
     client.session = None  # type: ignore[assignment]
-    client.close() # Should pass cleanly without exceptions
+    client.close()  # Should pass cleanly without exceptions
 
 
 def test_client_execute_request_non_json(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Coverage: Verify _execute_request sets data param explicitly for non-JSON payloads."""
+
     def mock_req(method: str, url: str, data: Any = None, json: Any = None, **kwargs: Any) -> requests.Response:
         assert data == "raw text"
         assert json is None
@@ -237,7 +239,9 @@ def test_client_execute_request_non_json(client_offline: Client, monkeypatch: py
         return resp
 
     monkeypatch.setattr(client_offline.session, "request", mock_req)
-    client_offline.api_call("POST", "https://api.mailjet.com/v3/send", headers={"Content-Type": "text/plain"}, data="raw text")
+    client_offline.api_call(
+        "POST", "https://api.mailjet.com/v3/send", headers={"Content-Type": "text/plain"}, data="raw text"
+    )
 
 
 def test_config_getitem_csvdata() -> None:
@@ -266,6 +270,7 @@ def test_client_endpoint_caching(client_offline: Client) -> None:
 # ==========================================
 # 2. Advanced Endpoint Routing Constraints
 # ==========================================
+
 
 @pytest.mark.parametrize(
     ("version", "resource", "expected_path"),
@@ -348,6 +353,7 @@ def test_camel_case_to_dash_routing(client_offline: Client) -> None:
 
 def test_api_call_exception_contract(client_offline: Client, monkeypatch: Any, caplog: Any) -> None:
     """Verify that we still raise the EXACT exception types and strings expected by users."""
+
     def mock_timeout(*args: Any, **kwargs: Any) -> requests.Response:
         raise RequestsTimeout("Read timed out")
 
@@ -359,6 +365,7 @@ def test_api_call_exception_contract(client_offline: Client, monkeypatch: Any, c
 
 def test_http_methods_and_timeout(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that CRUD operations correctly map to their respective HTTP methods and timeouts are passed."""
+
     def mock_request(method: str, url: str, timeout: int | None = None, **kwargs: Any) -> requests.Response:
         assert timeout == 15
         resp = requests.Response()
@@ -374,6 +381,7 @@ def test_http_methods_and_timeout(client_offline: Client, monkeypatch: pytest.Mo
 
 def test_client_coverage_edge_cases(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify internal routing edge cases like missing filters, kwargs extraction, and payload conversion."""
+
     def mock_request(method: str, url: str, params: dict[str, Any] | None = None, **kwargs: Any) -> requests.Response:
         assert params == {"limit": 10} or params is None
         resp = requests.Response()
@@ -391,6 +399,7 @@ def test_api_call_exceptions_and_logging(
 
     def mock_timeout(*args: Any, **kwargs: Any) -> requests.Response:
         raise RequestsTimeout("Read timed out")
+
     monkeypatch.setattr(client_offline.session, "request", mock_timeout)
 
     with pytest.raises(TimeoutError, match="Request to Mailjet API timed out: Read timed out"):
@@ -420,6 +429,7 @@ def test_config_getitem_all_branches() -> None:
 
 def test_legacy_action_id_fallback(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that if 'id' is omitted but 'action_id' is passed, it shifts to the primary ID correctly."""
+
     def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
         assert "/REST/contact/123" in url
         resp = requests.Response()
@@ -449,9 +459,8 @@ def test_client_context_manager_lifecycle() -> None:
 
 
 def test_client_context_manager_exception_safety() -> None:
-    with pytest.raises(ValueError):
-        with Client(auth=("test", "test")) as client:
-            raise ValueError("Test error")
+    with pytest.raises(ValueError), Client(auth=("test", "test")) as client:
+        raise ValueError("Test error")
     assert client.session.auth is None  # type: ignore[unreachable]
 
 
@@ -513,6 +522,7 @@ def test_stream_lazy_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
     client = Client(auth=("a", "b"))
 
     call_count = 0
+
     def mock_paginated_response(**kwargs: Any) -> requests.Response:
         nonlocal call_count
         resp = requests.Response()
@@ -541,15 +551,15 @@ def test_stream_lazy_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @patch("sys.audit")
 def test_pep578_audit_hooks_emitted(
-    mock_audit: MagicMock,
-    client_offline: Client,
-    monkeypatch: pytest.MonkeyPatch
+    mock_audit: MagicMock, client_offline: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Verify that network egress and security bypasses emit PEP 578 audit events."""
+
     def mock_resp(**kwargs: Any) -> requests.Response:
         r = requests.Response()
         r.status_code = 200
         return r
+
     monkeypatch.setattr(client_offline.session, "request", mock_resp)
 
     # 1. Standard request
@@ -592,11 +602,7 @@ def test_extract_telemetry_v3_root_level(client_offline: Client) -> None:
 
 def test_extract_telemetry_v31_nested_level(client_offline: Client) -> None:
     """Verify telemetry extraction successfully navigates down into v3.1 Messages arrays."""
-    payload = {
-        "Messages": [
-            {"TemplateID": 999888, "To": "test@test.com"}
-        ]
-    }
+    payload = {"Messages": [{"TemplateID": 999888, "To": "test@test.com"}]}
     suffix, _ = client_offline._extract_telemetry(payload, None)
     assert "TemplateID=999888" in suffix
 
@@ -651,6 +657,7 @@ def test_client_server_error(client_offline: Client) -> None:
 
 def test_client_timeout_error(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Handle requests Timeout exception securely."""
+
     def mock_timeout(*args: Any, **kwargs: Any) -> requests.Response:
         raise RequestsTimeout("Connection timed out")
 
@@ -668,10 +675,16 @@ def test_client_timeout_error(client_offline: Client, monkeypatch: pytest.Monkey
         ("contact", {"id_val": 123}, "https://api.mailjet.com/v3/REST/contact/123"),
         ("campaign", {}, "https://api.mailjet.com/v3/REST/campaign"),
         ("tokens", {}, "https://api.mailjet.com/v1/REST/tokens"),
-        ("template_content_by_type", {"id_val": 100, "action_id": "html"}, "https://api.mailjet.com/v1/REST/templates/100/contents/types/html"),
-    ]
+        (
+            "template_content_by_type",
+            {"id_val": 100, "action_id": "html"},
+            "https://api.mailjet.com/v1/REST/templates/100/contents/types/html",
+        ),
+    ],
 )
-def test_all_registry_routes(client_offline: Client, endpoint_name: str, kwargs: dict[str, Any], expected_url: str) -> None:
+def test_all_registry_routes(
+    client_offline: Client, endpoint_name: str, kwargs: dict[str, Any], expected_url: str
+) -> None:
     """Verify that every endpoint in the registry constructs the correct URL and handles URI templating."""
     endpoint = getattr(client_offline, endpoint_name)
     url = endpoint._build_url(**kwargs)

@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
-"""
-Atheris fuzzing target for registry-based URL construction, dynamic header merging,
+"""Atheris fuzzing target for registry-based URL construction, dynamic header merging,
 and complex query filter generation.
 """
 
-import sys
 import logging
-from unittest.mock import MagicMock
+import sys
 from typing import Any
+from unittest.mock import MagicMock
 
 import atheris
 
+
 with atheris.instrument_imports():
-    from mailjet_rest.endpoint import Endpoint
     from mailjet_rest.client import Client
-    from mailjet_rest.errors import ValidationError, ApiError
+    from mailjet_rest.endpoint import Endpoint
+    from mailjet_rest.errors import ApiError, ValidationError
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -28,8 +29,12 @@ def TestOneInput(data: bytes) -> None:
     mock_client.api_call.return_value = MagicMock(status_code=200)
 
     url_choices = [
-        "send", "contact", "contactslist_csvdata", "REST/contact", "DATA/contactslist",
-        fdp.ConsumeUnicodeNoSurrogates(20)
+        "send",
+        "contact",
+        "contactslist_csvdata",
+        "REST/contact",
+        "DATA/contactslist",
+        fdp.ConsumeUnicodeNoSurrogates(20),
     ]
     url = fdp.PickValueInList(url_choices)
 
@@ -41,7 +46,7 @@ def TestOneInput(data: bytes) -> None:
         if id_type == 0:
             id_val = ""
         elif id_type == 1:
-            id_val = fdp.ConsumeInt(100) # type: ignore[assignment]
+            id_val = fdp.ConsumeInt(100)  # type: ignore[assignment]
         else:
             id_val = fdp.ConsumeUnicodeNoSurrogates(15)
 
@@ -78,6 +83,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in Endpoint URL/Header routing: {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

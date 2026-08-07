@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for the ChunkedStreamer file encoding utility.
+"""Fuzz test for the ChunkedStreamer file encoding utility.
 Targets File I/O boundaries, buffer sizes, and Base64 encoding stability.
 """
 
+import logging
 import sys
 import tempfile
-import logging
 from pathlib import Path
 
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest.builders import ChunkedStreamer
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -51,6 +52,7 @@ def TestOneInput(data: bytes) -> None:
         # Cleanup temp file to avoid polluting the disk across millions of iterations
         if tmp_path.exists():
             tmp_path.unlink()
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

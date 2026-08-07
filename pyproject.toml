@@ -244,6 +244,37 @@ docstring-code-line-length = "dynamic"
 "__init__.py" = ["E402"]
 #"path/to/file.py" = ["E402"]
 
+[tool.ruff.lint.extend-per-file-ignores]
+"tests/*" = [
+    "D",      # Docstrings
+    "E",      # Formatting
+    "I",      # Unsorted imports
+    "F401",   # Unused imports
+    "SIM",    # Code simplification
+    "RET",    # Return simplifications
+    "PTH",    # Pathlib suggestions
+    "Q",      # Quotes
+    "RUF",    # Ruff-specific styles
+    "S",      # Bandit (asserts, hardcoded dummy passwords, /tmp)
+    "SLF",    # Private member access (tests need to check _payload, etc)
+    "N",      # Naming (Atheris requires TestOneInput)
+    "TRY",    # Tryceratops (Exceptions with strings)
+    "EM",     # Error messages with f-strings
+    "ARG",    # Unused arguments (common in mocks/kwargs)
+    "BLE",    # Blind exceptions (Fuzzers catch all Exceptions)
+    "PL",     # Pylint (Complex branches, inline imports, class structures)
+    "EXE",    # Executable shebangs
+    "INP",    # Implicit namespace packages
+    "DOC",    # Pydoclint (yield/return documentation)
+    "PT",     # Pytest style strictness
+    "ANN",    # Flake8 annotations (strict typing)
+    "A",      # Shadowing builtins
+    "B",      # Bugbear
+    "C90",    # McCabe complexity
+    "T20",    # Print statements
+    "TC",     # Type checking blocks
+]
+
 [tool.ruff.lint.isort]
 force-single-line = false
 combine-as-imports = true

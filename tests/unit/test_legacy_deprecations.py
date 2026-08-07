@@ -49,7 +49,7 @@ def test_parse_response_handles_value_error_fallback() -> None:
     """Verify text fallback on invalid JSON payloads."""
     resp = requests.Response()
     resp.status_code = 200
-    resp._content = b'invalid json'
+    resp._content = b"invalid json"
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
@@ -87,6 +87,7 @@ def test_legacy_kwargs_emit_deprecation_warning(monkeypatch: pytest.MonkeyPatch)
     # Triggering via update()
     with pytest.warns(DeprecationWarning, match="'ensure_ascii' and 'data_encoding' are deprecated"):
         client.contact.update(id=1, data={"Name": "Test"}, ensure_ascii=False)
+
 
 def test_legacy_encoding_injection(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that explicitly passing data_encoding actually transcodes the payload to bytes."""

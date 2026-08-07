@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for Pagination Cursor and Streaming logic.
+"""Fuzz test for Pagination Cursor and Streaming logic.
 Simulates a chaotic or malicious API server returning bad schema types.
 """
 
-import sys
 import logging
-from unittest.mock import MagicMock, patch
+import sys
+from unittest.mock import MagicMock
 
 import atheris
 
+
 with atheris.instrument_imports():
-    from mailjet_rest.endpoint import Endpoint
     from mailjet_rest.client import Client
+    from mailjet_rest.endpoint import Endpoint
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -41,7 +42,7 @@ def TestOneInput(data: bytes) -> None:
         elif choice == 1:
             payload = {"Data": fdp.ConsumeInt(100)}
         elif choice == 2:
-            payload = {} # Missing entirely
+            payload = {}  # Missing entirely
         else:
             payload = {"Data": [{"ID": fdp.ConsumeInt(100)} for _ in range(fdp.ConsumeIntInRange(1, 5))]}
 
@@ -63,6 +64,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"CRASH: Stream generator raised unhandled exception: {type(e).__name__}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for Immutable Route Mapping and URI Interpolation.
+"""Fuzz test for Immutable Route Mapping and URI Interpolation.
 Tests the fail-closed nature of _build_url inside mailjet_rest.endpoint.Endpoint
 """
 
-import sys
 import logging
+import sys
 from unittest.mock import MagicMock
 
 import atheris
 
+
 with atheris.instrument_imports():
-    from mailjet_rest.endpoint import Endpoint
     from mailjet_rest.client import Client
+    from mailjet_rest.endpoint import Endpoint
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -66,6 +67,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in Endpoint._build_url: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

@@ -1,9 +1,9 @@
-"""
-Property-based tests for Mailjet SDK Error Handling and Mapping.
+"""Property-based tests for Mailjet SDK Error Handling and Mapping.
 Powered by Hypothesis.
 """
 
 from unittest.mock import MagicMock
+
 import pytest
 from hypothesis import given, settings, strategies as st
 from requests.exceptions import RequestException
@@ -22,13 +22,9 @@ from mailjet_rest.errors import (
 # 1. Exception Mapping Hierarchy Invariants
 # ==========================================
 @settings(max_examples=300)
-@given(
-    status_code=st.integers(min_value=400, max_value=599),
-    body_text=st.text()
-)
+@given(status_code=st.integers(min_value=400, max_value=599), body_text=st.text())
 def test_property_api_error_mapping(status_code: int, body_text: str) -> None:
-    """
-    INVARIANT: The Client must intercept all requests.RequestException instances
+    """INVARIANT: The Client must intercept all requests.RequestException instances
     and map them perfectly to the Mailjet domain-specific exception hierarchy
     based on the HTTP status code.
     """
@@ -68,8 +64,7 @@ def test_property_api_error_mapping(status_code: int, body_text: str) -> None:
 @settings(max_examples=100)
 @given(error_msg=st.text())
 def test_property_null_response_error_handling(error_msg: str) -> None:
-    """
-    INVARIANT: If a RequestException occurs without a response object attached
+    """INVARIANT: If a RequestException occurs without a response object attached
     (e.g., DNS failure, connection reset), the mapper must safely fall back
     to the base ApiError without raising an AttributeError.
     """

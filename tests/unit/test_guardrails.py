@@ -2,17 +2,14 @@
 """Unit tests for the guardrails.py security module."""
 
 import logging
-import math
-import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 from html.parser import HTMLParser
+from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from mailjet_rest.client import Client
-from mailjet_rest.utils.guardrails import RedactingFilter, SecurityGuard, SecretAuth
+from mailjet_rest.utils.guardrails import RedactingFilter, SecretAuth, SecurityGuard
 
 
 class TestRedactingFilter:
@@ -20,9 +17,13 @@ class TestRedactingFilter:
         """Coverage: Hits the string redaction branch."""
         filter_ = RedactingFilter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
             msg="Sending payload with api_key: Bearer 12345secret",
-            args=(), exc_info=None,
+            args=(),
+            exc_info=None,
         )
         filter_.filter(record)
         assert "12345secret" not in str(record.msg)
@@ -32,7 +33,10 @@ class TestRedactingFilter:
         """Coverage: Hits the deep recursion branches with nested objects."""
         filter_ = RedactingFilter()
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
             msg="Raw request args",
             # We inject the full matching pattern into the value so the string redactor sees context
             args=({"headers": {"Authorization": "Authorization: Basic mysecretkey"}},),
@@ -49,7 +53,10 @@ class TestRedactingFilter:
         deep_dict = {"a": {"b": {"c": {"d": {"e": "too_deep"}}}}}
 
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
             msg="Deep structure",
             args=(deep_dict,),
             exc_info=None,
@@ -98,7 +105,9 @@ class TestSecurityGuard:
         """Coverage: Idempotency hashing mechanism."""
         payload1 = {"a": 1, "b": 2, "CustomID": "ignore"}
         payload2 = {"b": 2, "a": 1, "EventPayload": "ignore"}
-        assert SecurityGuard.generate_payload_fingerprint(payload1) == SecurityGuard.generate_payload_fingerprint(payload2)
+        assert SecurityGuard.generate_payload_fingerprint(payload1) == SecurityGuard.generate_payload_fingerprint(
+            payload2
+        )
 
     def test_validate_attachment_path_traversal(self, tmp_path: Path) -> None:
         """Coverage: Path traversal enforcement (CWE-22)."""
@@ -136,12 +145,14 @@ class TestSecurityGuard:
             SecurityGuard.sanitize_segment("..")
         mock_audit.assert_called_with("mailjet.security.path_traversal", "..")
 
+
 def test_generate_payload_fingerprint_cyclic() -> None:
     """Coverage: Prevent recursion errors on cyclic references."""
     cyclic: dict[str, Any] = {}
     cyclic["a"] = cyclic
     # Should gracefully return a string hash without crashing
     assert SecurityGuard.generate_payload_fingerprint(cyclic)
+
 
 def test_generate_payload_fingerprint_max_depth() -> None:
     """Coverage: Enforce maximum nesting depth limits."""
@@ -152,6 +163,7 @@ def test_generate_payload_fingerprint_max_depth() -> None:
     with pytest.raises(ValueError, match="Payload hashing failed due to malformed"):
         SecurityGuard.generate_payload_fingerprint(deep)
 
+
 def test_validate_attachment_path_no_sandbox() -> None:
     """Coverage: Fallback zero-trust checks for OS roots and path traversal."""
     with pytest.raises(ValueError, match="Path traversal tokens"):
@@ -160,23 +172,27 @@ def test_validate_attachment_path_no_sandbox() -> None:
     with pytest.raises(ValueError, match="explicitly forbidden"):
         SecurityGuard.validate_attachment_path("/etc/passwd")
 
+
 def test_sanitize_segment_template_injection() -> None:
     """Coverage: Block Jinja/Template injection signatures."""
     with pytest.raises(ValueError, match="Template injection attempt"):
         SecurityGuard.sanitize_segment("{{ config.secret }}")
+
 
 def test_sanitize_segment_invalid_type() -> None:
     """Coverage: Block dicts/lists in path segments."""
     with pytest.raises(TypeError, match="Invalid segment type"):
         SecurityGuard.sanitize_segment({"dict": "not allowed"})  # type: ignore[arg-type]
 
+
 def test_spam_guard_html_analysis_htmlparser_error() -> None:
     """Coverage: Trigger Failsafe on HTMLParser crash."""
+
     class CrashParser(HTMLParser):
         def feed(self, data: str) -> None:
             raise RecursionError("Simulated crash")
 
-    with patch.object(SecurityGuard, '_SpamGuardParser', CrashParser):
+    with patch.object(SecurityGuard, "_SpamGuardParser", CrashParser):
         with pytest.raises(Exception, match="Fatal HTML parsing error"):
             SecurityGuard.analyze_html_safety("<div></div>")
 

@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for the Mailjet SpamGuard and HTML static analyzer.
+"""Fuzz test for the Mailjet SpamGuard and HTML static analyzer.
 Targets ReDoS, infinite recursion, memory exhaustion bypasses in the HTML parser.
 """
 
-import sys
 import logging
+import sys
+
 import atheris
 
+
 with atheris.instrument_imports():
-    from mailjet_rest.utils.guardrails import SecurityGuard
     from mailjet_rest.errors import ValidationError
+    from mailjet_rest.utils.guardrails import SecurityGuard
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 10:
@@ -39,11 +41,10 @@ def TestOneInput(data: bytes) -> None:
         # SECURITY SUCCESS: Normal Python rejections for XSS, OOM Limits, or malformed edge cases
         pass
     except RecursionError:
-        raise RuntimeError(
-            "CRITICAL SECURITY BUG: Malformed HTML caused a RecursionError in _SpamGuardParser!"
-        )
+        raise RuntimeError("CRITICAL SECURITY BUG: Malformed HTML caused a RecursionError in _SpamGuardParser!")
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in SpamGuard: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

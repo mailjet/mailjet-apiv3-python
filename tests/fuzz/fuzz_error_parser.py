@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for Semantic Error Response Deserialization.
+"""Fuzz test for Semantic Error Response Deserialization.
 Ensures that native requests.RequestException instances are securely wrapped.
 """
 
-import sys
 import logging
+import sys
 from unittest.mock import MagicMock
 
 import atheris
 from requests.exceptions import RequestException
+
 
 with atheris.instrument_imports():
     from mailjet_rest.client import Client
     from mailjet_rest.errors import ApiError
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -51,6 +52,7 @@ def TestOneInput(data: bytes) -> None:
     except Exception as e:
         # ApiError mapper itself should never crash.
         raise RuntimeError(f"CRASH: Error mapper leaked native exception: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

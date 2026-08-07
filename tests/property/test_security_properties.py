@@ -1,10 +1,11 @@
-"""
-Property-based tests for granular Mailjet SDK SecurityGuard functions.
+"""Property-based tests for granular Mailjet SDK SecurityGuard functions.
 Powered by Hypothesis.
 """
+
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
-from pathlib import Path
+
 from hypothesis import given, settings, strategies as st
 
 from mailjet_rest.builders import MessageBuilder
@@ -52,8 +53,8 @@ def test_property_control_character_rejection(payload: str) -> None:
 
 @settings(max_examples=400)
 @given(
-    html_payload=st.text(alphabet=st.characters(blacklist_categories=('Cs',))),
-    injection=st.sampled_from(["<script>", "javascript:", "onload=", "<iframe src=''>", "<object data=>"])
+    html_payload=st.text(alphabet=st.characters(blacklist_categories=("Cs",))),
+    injection=st.sampled_from(["<script>", "javascript:", "onload=", "<iframe src=''>", "<object data=>"]),
 )
 def test_property_spamguard_xss_detection(html_payload: str, injection: str) -> None:
     """INVARIANT: SpamGuard must safely parse random text and ALWAYS flag exact malicious events/tags."""
@@ -62,7 +63,7 @@ def test_property_spamguard_xss_detection(html_payload: str, injection: str) -> 
     try:
         SecurityGuard.analyze_html_safety(html_payload)
     except ValueError:
-        pass # Safe random strings hitting memory limits or coincidentally forming tags
+        pass  # Safe random strings hitting memory limits or coincidentally forming tags
 
     try:
         SecurityGuard.analyze_html_safety(poisoned_payload)
@@ -72,7 +73,7 @@ def test_property_spamguard_xss_detection(html_payload: str, injection: str) -> 
 
 
 @settings(max_examples=300)
-@given(segments=st.lists(st.text(alphabet=st.characters(blacklist_categories=('Cs',))), min_size=1, max_size=5))
+@given(segments=st.lists(st.text(alphabet=st.characters(blacklist_categories=("Cs",))), min_size=1, max_size=5))
 def test_property_validate_attachment_path_resilience(segments: list[str]) -> None:
     """INVARIANT: Path validation must resolve arbitrary segments, blocking traversal and OS roots."""
     raw_path = "/".join(segments)
@@ -87,13 +88,11 @@ def test_property_validate_attachment_path_resilience(segments: list[str]) -> No
 @settings(max_examples=200)
 @given(
     base_payload=st.one_of(
-        st.dictionaries(st.text(), st.integers()),
-        st.lists(st.dictionaries(st.text(), st.integers()), min_size=1)
+        st.dictionaries(st.text(), st.integers()), st.lists(st.dictionaries(st.text(), st.integers()), min_size=1)
     )
 )
 def test_property_idempotency_fingerprint_lists(base_payload: Any) -> None:
-    """
-    INVARIANT: Hashing must safely generate strings for both dicts and lists,
+    """INVARIANT: Hashing must safely generate strings for both dicts and lists,
     ensuring nested structures don't crash the idempotency lock.
     """
     try:
@@ -105,12 +104,9 @@ def test_property_idempotency_fingerprint_lists(base_payload: Any) -> None:
 
 
 @settings(max_examples=100)
-@given(
-    payload=st.text(min_size=1, max_size=6 * 1024 * 1024)
-)
+@given(payload=st.text(min_size=1, max_size=6 * 1024 * 1024))
 def test_property_html_size_limits(payload: str) -> None:
-    """
-    INVARIANT: HTML and Text payloads strictly > 5MB must raise a ValueError.
+    """INVARIANT: HTML and Text payloads strictly > 5MB must raise a ValueError.
     Payloads <= 5MB must not raise length-based errors.
     """
     builder = MessageBuilder()

@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for Config Validation and Routing Dictionary.
+"""Fuzz test for Config Validation and Routing Dictionary.
 Focuses on type confusion, chaotic URLs, and dictionary contract enforcement.
 """
+
 import logging
 import sys
 from typing import Any
 
 import atheris
 
-from mailjet_rest.errors import ValidationError, MailjetAuthError
 from mailjet_rest.config import Config
+from mailjet_rest.errors import MailjetAuthError, ValidationError
+
 
 logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports():
     pass
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 10:
@@ -31,13 +33,13 @@ def TestOneInput(data: bytes) -> None:
             fdp.ConsumeUnicodeNoSurrogates(10),
             fdp.ConsumeBytes(10),
             [],
-            None
+            None,
         ]
 
         config = Config(
             api_url=fdp.ConsumeUnicodeNoSurrogates(100) or "https://api.mailjet.com",
             version=fdp.ConsumeUnicodeNoSurrogates(10),
-            timeout=fdp.PickValueInList(chaos_types)
+            timeout=fdp.PickValueInList(chaos_types),
         )
 
         # Fuzz the magic __getitem__ routing logic
@@ -50,7 +52,7 @@ def TestOneInput(data: bytes) -> None:
             if not isinstance(url_data, (str, dict)):
                 raise RuntimeError("CRASH: Config output breached return contract.")
 
-        except KeyError as e:
+        except KeyError:
             # Expected for invalid routing keys.
             # We want to ensure this doesn't crash the wider app if trapped cleanly.
             pass
@@ -60,6 +62,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"CRASH: Config failed to handle input securely: {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

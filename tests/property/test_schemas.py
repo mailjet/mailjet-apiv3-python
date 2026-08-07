@@ -1,19 +1,20 @@
-"""
-Property-based tests for Mailjet SDK schemas, routing, and guardrails.
+"""Property-based tests for Mailjet SDK schemas, routing, and guardrails.
 Powered by Hypothesis.
 """
 
-import math
 import logging
-import pytest
+import math
 from typing import Any
+
+import pytest
 from hypothesis import given, settings, strategies as st
 
+from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
 from mailjet_rest.client import Client
 from mailjet_rest.config import Config
 from mailjet_rest.endpoint import Endpoint
-from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
-from mailjet_rest.utils.guardrails import SecurityGuard, RedactingFilter
+from mailjet_rest.utils.guardrails import RedactingFilter, SecurityGuard
+
 
 # ==========================================
 # 1. Config & Type Confusion Invariants
@@ -27,16 +28,16 @@ from mailjet_rest.utils.guardrails import SecurityGuard, RedactingFilter
         st.binary(),
         st.lists(st.integers()),
         st.tuples(st.floats(allow_nan=True), st.floats()),
-        st.none()
+        st.none(),
     )
 )
 def test_property_config_timeout_coercion(timeout_val: Any) -> None:
-    """
-    INVARIANT: Config must successfully coerce the timeout into a valid,
+    """INVARIANT: Config must successfully coerce the timeout into a valid,
     positive float/int (or tuple), leave it as None, or explicitly raise
     a ValueError/TypeError. It must never silently leak bad types.
     """
     import warnings
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         try:
@@ -63,13 +64,9 @@ def test_property_config_timeout_coercion(timeout_val: Any) -> None:
 
 
 @settings(max_examples=500)
-@given(
-    id_val=st.text(),
-    action_id=st.text(alphabet=st.characters(blacklist_categories=('Cs',)))
-)
+@given(id_val=st.text(), action_id=st.text(alphabet=st.characters(blacklist_categories=("Cs",))))
 def test_property_url_traversal_prevention(id_val: Any, action_id: Any) -> None:
-    r"""
-    INVARIANT: No matter what malicious string is passed as an ID or Action,
+    r"""INVARIANT: No matter what malicious string is passed as an ID or Action,
     the resulting URL must never contain unencoded directory traversals.
     """
     try:
@@ -92,15 +89,9 @@ def test_property_url_traversal_prevention(id_val: Any, action_id: Any) -> None:
 # 2. Header CRLF Injection Invariants
 # ==========================================
 @settings(max_examples=500)
-@given(
-    headers=st.dictionaries(
-        keys=st.text(min_size=1, max_size=20),
-        values=st.text()
-    )
-)
+@given(headers=st.dictionaries(keys=st.text(min_size=1, max_size=20), values=st.text()))
 def test_property_crlf_header_injection(headers: Any) -> None:
-    """
-    INVARIANT: If SecurityGuard allows headers to pass, none of the header keys
+    """INVARIANT: If SecurityGuard allows headers to pass, none of the header keys
     or values can contain a Carriage Return (\r) or Line Feed (\n).
     """
     try:
@@ -118,14 +109,9 @@ def test_property_crlf_header_injection(headers: Any) -> None:
 # 3. Payload Idempotency Hash Invariants
 # ==========================================
 @settings(max_examples=200)
-@given(
-    base_dict=st.dictionaries(st.text(), st.integers()),
-    custom_id=st.text(),
-    event_payload=st.text()
-)
+@given(base_dict=st.dictionaries(st.text(), st.integers()), custom_id=st.text(), event_payload=st.text())
 def test_property_idempotency_fingerprint(base_dict: dict, custom_id: str, event_payload: str) -> None:
-    """
-    INVARIANT: Hashing must be structurally consistent regardless of dictionary
+    """INVARIANT: Hashing must be structurally consistent regardless of dictionary
     key ordering, and must explicitly ignore volatile trace fields.
     """
     payload1 = base_dict.copy()
@@ -150,11 +136,10 @@ def test_property_idempotency_fingerprint(base_dict: dict, custom_id: str, event
     email=st.emails(),
     name=st.text(),
     template_id=st.integers(min_value=-1000, max_value=999999999999999),
-    custom_id=st.text(max_size=300)
+    custom_id=st.text(max_size=300),
 )
 def test_property_message_builder_schema(email: str, name: str, template_id: int, custom_id: str) -> None:
-    """
-    INVARIANT: The MessageBuilder must successfully map valid data types to the
+    """INVARIANT: The MessageBuilder must successfully map valid data types to the
     SendV31Message schema without raising key errors or internal panics.
     """
     builder = MessageBuilder()
@@ -179,14 +164,9 @@ def test_property_message_builder_schema(email: str, name: str, template_id: int
 # 5. Template Content Builder Invariants
 # ==========================================
 @settings(max_examples=200)
-@given(
-    text_part=st.text(max_size=500),
-    html_part=st.text(max_size=500),
-    mjml_part=st.text(max_size=500)
-)
+@given(text_part=st.text(max_size=500), html_part=st.text(max_size=500), mjml_part=st.text(max_size=500))
 def test_property_template_builder(text_part: str, html_part: str, mjml_part: str) -> None:
-    """
-    INVARIANT: Template builder must correctly assign content blocks and successfully
+    """INVARIANT: Template builder must correctly assign content blocks and successfully
     generate the payload when at least one block type is passed.
     """
     builder = TemplateContentBuilder()
@@ -213,8 +193,7 @@ def test_property_template_builder(text_part: str, html_part: str, mjml_part: st
 @settings(max_examples=200)
 @given(domain=st.text(min_size=1))
 def test_property_idn_normalization(domain: str) -> None:
-    """
-    INVARIANT: The IDN normalizer must reliably return a string (punycode) or
+    """INVARIANT: The IDN normalizer must reliably return a string (punycode) or
     fail-closed with a ValueError. It must not leak UnicodeErrors.
     """
     try:
@@ -228,13 +207,9 @@ def test_property_idn_normalization(domain: str) -> None:
 # 7. Redacting Filter Integrity
 # ==========================================
 @settings(max_examples=200)
-@given(
-    secret=st.text(min_size=5),
-    log_msg=st.text()
-)
+@given(secret=st.text(min_size=5), log_msg=st.text())
 def test_property_redacting_filter(secret: str, log_msg: str) -> None:
-    """
-    INVARIANT: The RedactingFilter must seamlessly traverse strings and dictionaries
+    """INVARIANT: The RedactingFilter must seamlessly traverse strings and dictionaries
     without raising type or recursion errors.
     """
     record = logging.LogRecord("test", logging.INFO, "fake.py", 1, log_msg, (), None)

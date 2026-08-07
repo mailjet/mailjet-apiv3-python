@@ -1,10 +1,9 @@
-"""
-Property-based tests for Mailjet SDK URL Routing and Sanitization.
+"""Property-based tests for Mailjet SDK URL Routing and Sanitization.
 Powered by Hypothesis.
 """
 
-from urllib.parse import urlparse
 from typing import Any
+from urllib.parse import urlparse
 
 from hypothesis import given, settings, strategies as st
 
@@ -15,9 +14,7 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 @settings(max_examples=500)
-@given(
-    segment=st.one_of(st.text(), st.integers(), st.floats(allow_nan=False), st.none())
-)
+@given(segment=st.one_of(st.text(), st.integers(), st.floats(allow_nan=False), st.none()))
 def test_property_segment_sanitization(segment: Any) -> None:
     """INVARIANT: The segment sanitizer must mathematically guarantee the absence of traversal vectors."""
     try:
@@ -33,7 +30,7 @@ def test_property_segment_sanitization(segment: Any) -> None:
 
 
 @settings(max_examples=500)
-@given(route_key=st.text(min_size=1, alphabet=st.characters(blacklist_categories=('Cs',))))
+@given(route_key=st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cs",))))
 def test_property_config_router_contract(route_key: str) -> None:
     """INVARIANT: Dynamic Config.__getitem__ must return a valid URL and dict."""
     config = Config()
@@ -49,9 +46,9 @@ def test_property_config_router_contract(route_key: str) -> None:
 
 @settings(max_examples=400)
 @given(
-    endpoint_name=st.text(min_size=1, alphabet=st.characters(blacklist_categories=('Cs',))),
-    id_val=st.one_of(st.integers(), st.text(alphabet=st.characters(blacklist_categories=('Cs',))), st.none()),
-    action_id=st.one_of(st.integers(), st.text(alphabet=st.characters(blacklist_categories=('Cs',))), st.none()),
+    endpoint_name=st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cs",))),
+    id_val=st.one_of(st.integers(), st.text(alphabet=st.characters(blacklist_categories=("Cs",))), st.none()),
+    action_id=st.one_of(st.integers(), st.text(alphabet=st.characters(blacklist_categories=("Cs",))), st.none()),
 )
 def test_property_endpoint_build_url_resilience(endpoint_name: str, id_val: Any, action_id: Any) -> None:
     """INVARIANT: _build_url must securely map any random inputs to a safe URL without internal exceptions."""
@@ -65,16 +62,15 @@ def test_property_endpoint_build_url_resilience(endpoint_name: str, id_val: Any,
         # Verify Headers are generated successfully
         headers = endpoint._build_headers()
         assert isinstance(headers, dict)
-    except ValueError as e:
+    except ValueError:
         # ValueErrors from missing required URI params (e.g. {id} format templates) or Traversal protections are safe
         pass
 
 
 @settings(max_examples=500)
-@given(route_name=st.text(min_size=3, max_size=15, alphabet=st.characters(blacklist_categories=('Cs', 'Z'))))
+@given(route_name=st.text(min_size=3, max_size=15, alphabet=st.characters(blacklist_categories=("Cs", "Z"))))
 def test_property_difflib_dynamic_routing_resilience(route_name: str) -> None:
-    """
-    INVARIANT: Random strings that are not >80% similar to existing endpoints
+    """INVARIANT: Random strings that are not >80% similar to existing endpoints
     must successfully fallback to dynamic Endpoint creation without raising
     a difflib typo AttributeError.
     """

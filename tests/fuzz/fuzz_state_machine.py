@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""
-Atheris target for Stateful/Temporal execution manipulation.
+"""Atheris target for Stateful/Temporal execution manipulation.
 Tracks entity IDs to accurately simulate CRUD lifecycles in rapid succession.
 """
+
+import contextlib
 import logging
 import sys
-import contextlib
 from unittest.mock import MagicMock
-from typing import Any
 
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest import Client
@@ -19,6 +19,7 @@ with atheris.instrument_imports():
 
 _DEVNULL = sys.stderr
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 20:
@@ -81,6 +82,7 @@ def TestOneInput(data: bytes) -> None:
         pass
     except Exception as e:
         raise RuntimeError(f"STATEFUL CRASH: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

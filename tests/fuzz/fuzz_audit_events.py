@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""
-Fuzz test for PEP 578 sys.audit Runtime Security boundary.
+"""Fuzz test for PEP 578 sys.audit Runtime Security boundary.
 Ensures that the SDK's security guardrails do not crash the interpreter
 due to C-API null-byte restrictions when reporting attacks.
 """
 
-import sys
 import logging
-from typing import Any
+import sys
 
 import atheris
+
 
 with atheris.instrument_imports():
     from mailjet_rest.utils.guardrails import SecurityGuard
 
 logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -59,6 +59,7 @@ def TestOneInput(data: bytes) -> None:
                 "The SDK must sanitize strings before emitting audit events."
             ) from e
         raise RuntimeError(f"UNHANDLED CRASH in Audit Emission: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     # Ensure audit logging is active for the fuzzer

@@ -1,8 +1,10 @@
+import logging
 import sys
-import atheris
 from typing import Any
 
-import logging
+import atheris
+
+
 logging.getLogger().handlers.clear()
 logging.disable(logging.CRITICAL)
 
@@ -13,6 +15,7 @@ with atheris.instrument_imports():
 # GLOBAL SETUP (No network calls allowed)
 # ==========================================
 client = Client(auth=("test", "test"), version="v3")
+
 
 class DumbResponse:
     def __init__(self, status_code, json_data):
@@ -27,12 +30,15 @@ class DumbResponse:
         # Mock successful status check
         pass
 
+
 def dumb_mock_request(*args: Any, **kwargs: Any) -> DumbResponse:
     # Return a mocked 200 OK response with dummy json data
     return DumbResponse(200, {"ID": 12345, "Data": [{"ID": 67890}]})
 
+
 # Intercept all outbound network requests
 client.session.request = dumb_mock_request  # type: ignore[method-assign, assignment]
+
 
 def TestOneInput(data: bytes) -> None:
     # Cap size to prevent memory bottlenecks during CSV string synthesis
@@ -66,6 +72,7 @@ def TestOneInput(data: bytes) -> None:
     except (ValueError, TypeError):
         # Expected for malformed fuzz inputs; ignore and continue fuzzing.
         pass
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

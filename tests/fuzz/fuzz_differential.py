@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Differential Fuzzer for Mailjet API v3 vs v3.1 using Semantic Payloads.
+"""Differential Fuzzer for Mailjet API v3 vs v3.1 using Semantic Payloads.
 This harness feeds the exact same chaotic, deeply nested dictionary into both
 versions to ensure the serializers crash/succeed symmetrically.
 """
@@ -12,6 +11,7 @@ from unittest.mock import MagicMock
 
 import atheris
 
+
 with atheris.instrument_imports():
     from mailjet_rest import Client
 
@@ -22,12 +22,14 @@ client_v31 = Client(auth=("fuzz_key", "fuzz_secret"), version="v3.1")
 # Define which errors are considered "Dirty" (SDK crashed) vs "Clean" (Safely blocked)
 DIRTY_ERRORS = (KeyError, AttributeError, IndexError, RecursionError)
 
+
 def dumb_mock_request(*args: Any, **kwargs: Any) -> MagicMock:
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"Message": "Fuzzed"}
     mock_resp.raise_for_status = MagicMock()
     return mock_resp
+
 
 client_v3.session.request = dumb_mock_request  # type: ignore[method-assign]
 client_v31.session.request = dumb_mock_request  # type: ignore[method-assign]
@@ -46,7 +48,7 @@ def _generate_structured_payload(fdp: atheris.FuzzedDataProvider) -> dict[str, A
     if choice == 0:
         payload["Recipients"] = [{"Email": fdp.ConsumeUnicodeNoSurrogates(16)}]
     elif choice == 1:
-        payload["Recipients"] = fdp.ConsumeInt(1000) # Force type validation failure
+        payload["Recipients"] = fdp.ConsumeInt(1000)  # Force type validation failure
     elif choice == 2:
         payload["Recipients"] = None
 
@@ -97,6 +99,7 @@ def TestOneInput(data: bytes) -> None:
 
     if isinstance(v3_exc, RecursionError) or isinstance(v31_exc, RecursionError):
         raise RuntimeError("CRASH: Payload processing caused infinite recursion limit breach.")
+
 
 if __name__ == "__main__":
     atheris.instrument_all()

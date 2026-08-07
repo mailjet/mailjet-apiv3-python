@@ -1,11 +1,16 @@
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
+
 import pytest
 import responses
+
 from mailjet_rest.client import Client
+
 
 # ------------------------------------------------------------------------
 # FIXTURES
 # ------------------------------------------------------------------------
+
 
 # --- Fixture needs a Generator return type ---
 @pytest.fixture
@@ -25,6 +30,7 @@ def mocked_mailjet() -> Generator[responses.RequestsMock, None, None]:
 # BENCHMARK 1: ROUTING OVERHEAD (CPU)
 # ------------------------------------------------------------------------
 
+
 def test_client_routing_speed(benchmark: Any) -> None:
     """Measure CPU overhead of the dynamic __getattr__ router and caching logic."""
     client = Client(auth=("api", "key"))
@@ -35,9 +41,11 @@ def test_client_routing_speed(benchmark: Any) -> None:
 
     benchmark(route_contact)
 
+
 # ------------------------------------------------------------------------
 # BENCHMARK 2: FULL REQUEST CYCLE (MOCKED NETWORK)
 # ------------------------------------------------------------------------
+
 
 def test_request_cycle_performance(benchmark: Any, mocked_mailjet: responses.RequestsMock) -> None:
     """Measure the time from method call to response (with zero network delay)."""

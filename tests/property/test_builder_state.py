@@ -1,11 +1,10 @@
-"""
-Stateful property test for the MessageBuilder.
+"""Stateful property test for the MessageBuilder.
 Hypothesis will fire these rules in random sequences and check invariants.
 """
 
 import pytest
 from hypothesis import strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, rule, initialize
+from hypothesis.stateful import RuleBasedStateMachine, initialize, rule
 
 from mailjet_rest.builders import MessageBuilder
 
