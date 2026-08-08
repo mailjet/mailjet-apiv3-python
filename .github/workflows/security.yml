@@ -39,7 +39,8 @@ jobs:
           python-version: "3.13"
       - run: pip install pip-audit
       - run: pip install -e .
-      - run: pip-audit --strict --desc
+      # Add --skip mailjet-rest to ignore the local package
+      - run: pip-audit --strict --desc --skip mailjet-rest
 
   osv-scanner:
     runs-on: ubuntu-latest
