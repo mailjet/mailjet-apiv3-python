@@ -171,36 +171,28 @@ exclude = ["samples/*"]
 # Never enforce `E501` (line length violations).
 ignore = [
     # Architectural & backwards compatibility constraints
-    "A002",    # Argument `id` is shadowing a Python builtin
-    "ANN401",  # Dynamically typed expressions (typing.Any) are allowed for JSON payloads
-    "FBT001",  # Boolean-typed positional argument in function definition
-    "FBT002",  # Boolean default positional argument in function definition
-    "RUF100",
+    "builtin-argument-shadowing",                    # A002
+    "any-type",                                      # ANN401
+    "boolean-type-hint-positional-argument",         # FBT001
+    "boolean-default-value-positional-argument",     # FBT002
+    "unused-noqa",                                   # RUF100
 
     # Complexity & Magic Numbers constraints for legacy SDK design
-    "PLR2004", # Magic value used in comparison
-    "PLR0913", # Too many arguments in function definition
-    "PLR0917", # Too many positional arguments
-#    "PLW0717", # Too many statements in try clause
+    "magic-value-comparison",                        # PLR2004
+    "too-many-arguments",                            # PLR0913
+    "too-many-positional-arguments",                 # PLR0917
+#   "too-many-statements-in-try-body",               # PLW0717
 
     # Missing Documentation constraints
-    "CPY001",  # Missing copyright notice at top of file
-    "DOC501",  # Raised exception missing from docstring
-    "E501",    # Line length (handled by formatter)
-#    "D100",    # Missing docstring in public module
-#    "D104",    # Missing docstring in public package
-#    "D417",    # Missing argument descriptions in docstring
-#    "D211",    # No blank lines allowed before class docstring (Conflicts with formatter)
-#    "D212",    # Multi-line docstring summary should start at the first line (Conflicts with formatter)
+    "missing-copyright-notice",                      # CPY001
+    "docstring-missing-exception",                   # DOC501
+    "line-too-long",                                 # E501
+#   "docstring-missing-public-module",               # D100
+#   "docstring-missing-public-package",              # D104
 
     # Formatter incompatibilities (Mandatory ignores when using Ruff Formatter)
-    "COM812",  # Trailing comma missing
-    "ISC001",  # Implicit string concatenation
-
-    # SDK Realities (Reduces exception definition bloat)
-#    "TRY003",  # Avoid specifying long messages outside the exception class
-#    "EM101",   # Exception must not use a string literal
-#    "EM102",   # Exception must not use an f-string literal
+    "missing-trailing-comma",                        # COM812
+    "single-line-implicit-string-concatenation",     # ISC001
 ]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
@@ -209,6 +201,42 @@ unfixable = ["B"]
 
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+# Ignore E402 (import violations) in all '__init__.py' files, and in `path/to/file.py`.
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["module-import-not-at-top-of-file"]     # E402
+#"path/to/file.py" = ["E402"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"tests/*" = [
+    "D",      # Docstrings not required in tests
+    "E",      # Formatting rules handled by formatter
+    "I",      # Unsorted imports in test suites
+    "unused-import",   # Unused imports (often kept for fixtures/testing setup)
+    "SIM",    # Code simplification rules
+    "RET",    # Return simplifications
+    "PTH",    # Pathlib suggestions
+    "Q",      # Quotes strictness
+    "RUF",    # Ruff-specific style rules
+    "S",      # Bandit security checks (allows asserts, dummy passwords, /tmp)
+    "SLF",    # Private member access (tests need to inspect internal state)
+    "N",      # Naming conventions (allows CamelCase like TestOneInput for fuzzers)
+    "TRY",    # Tryceratops (exceptions with raw strings)
+    "EM",     # Error messages with f-strings
+    "ARG",    # Unused arguments in mocks and fixtures
+    "BLE",    # Blind exception catches in fuzzers/harnesses
+    "PL",     # Pylint rules (complexity, method structures)
+    "EXE",    # Executable shebangs
+    "INP",    # Implicit namespace packages
+    "DOC",    # Pydoclint yield/return doc requirements
+    "PT",     # Pytest style strictness
+    "ANN",    # Type annotation strictness in tests
+    "A",      # Builtin shadowing in test signatures
+    "B",      # Bugbear checks
+    "C90",    # McCabe complexity
+    "T20",    # Print statements in tests
+    "TC",     # Type checking block constraints
+]
 
 [tool.ruff.lint.pylint]
 max-args = 9           # SDK endpoints need more (auth, data, headers, filters, etc.)
@@ -238,42 +266,6 @@ docstring-code-format = true
 
 # Set the line length limit used when formatting code snippets in docstrings.
 docstring-code-line-length = "dynamic"
-
-# Ignore `E402` (import violations) in all `__init__.py` files, and in `path/to/file.py`.
-[tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["E402"]
-#"path/to/file.py" = ["E402"]
-
-[tool.ruff.lint.extend-per-file-ignores]
-"tests/*" = [
-    "D",      # Docstrings
-    "E",      # Formatting
-    "I",      # Unsorted imports
-    "F401",   # Unused imports
-    "SIM",    # Code simplification
-    "RET",    # Return simplifications
-    "PTH",    # Pathlib suggestions
-    "Q",      # Quotes
-    "RUF",    # Ruff-specific styles
-    "S",      # Bandit (asserts, hardcoded dummy passwords, /tmp)
-    "SLF",    # Private member access (tests need to check _payload, etc)
-    "N",      # Naming (Atheris requires TestOneInput)
-    "TRY",    # Tryceratops (Exceptions with strings)
-    "EM",     # Error messages with f-strings
-    "ARG",    # Unused arguments (common in mocks/kwargs)
-    "BLE",    # Blind exceptions (Fuzzers catch all Exceptions)
-    "PL",     # Pylint (Complex branches, inline imports, class structures)
-    "EXE",    # Executable shebangs
-    "INP",    # Implicit namespace packages
-    "DOC",    # Pydoclint (yield/return documentation)
-    "PT",     # Pytest style strictness
-    "ANN",    # Flake8 annotations (strict typing)
-    "A",      # Shadowing builtins
-    "B",      # Bugbear
-    "C90",    # McCabe complexity
-    "T20",    # Print statements
-    "TC",     # Type checking blocks
-]
 
 [tool.ruff.lint.isort]
 force-single-line = false
@@ -351,6 +343,9 @@ exclude = ["samples/*", "**/__pycache__"]
 reportAttributeAccessIssue = false
 reportMissingImports = false
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["untyped-decorator", "unreachable", "no-untyped-def", "no-untyped-call"]
 
 [tool.bandit]
 # usage: bandit -c pyproject.toml -r .
@@ -414,7 +409,3 @@ markers = [
     "network: marks tests as integration tests that require live network access",
     "property_heavy: Heavy Hypothesis property-based tests skipped on CI",
 ]
-
-[[tool.mypy.overrides]]
-module = ["tests.*"]
-disable_error_code = ["untyped-decorator", "unreachable", "no-untyped-def", "no-untyped-call"]

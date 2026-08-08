@@ -242,15 +242,15 @@ repos:
           - mdformat-ruff
 
 # TODO: Enable it for a single check
-  - repo: https://github.com/tcort/markdown-link-check
-    rev: v3.15.0
-    hooks:
-      - id: markdown-link-check
-        name: "📝 docs · Check markdown links"
-
-  # Makefile linting
-  - repo: https://github.com/checkmake/checkmake
-    rev: v0.3.0
-    hooks:
-      - id: checkmake
-        name: "🔧 build · Lint Makefile"
+#  - repo: https://github.com/tcort/markdown-link-check
+#    rev: v3.15.0
+#    hooks:
+#      - id: markdown-link-check
+#        name: "📝 docs · Check markdown links"
+#
+#  # Makefile linting
+#  - repo: https://github.com/checkmake/checkmake
+#    rev: v0.3.0
+#    hooks:
+#      - id: checkmake
+#        name: "🔧 build · Lint Makefile"

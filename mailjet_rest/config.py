@@ -39,7 +39,7 @@ class Config:
         SecurityGuard.validate_config_url(self.api_url, allowed_root_domain=self.ALLOWED_ROOT_DOMAIN)
 
         # 2. Validate the timeouts securely (Guardrail handles both scalars and tuples natively)
-        Config.timeout = SecurityGuard.validate_timeout(self.timeout)
+        self.timeout = SecurityGuard.validate_timeout(self.timeout)
 
     def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
         """Retrieve the base API endpoint URL and default headers for a given key.

@@ -1,4 +1,4 @@
-.PHONY: clean clean-env clean-test clean-pyc clean-build clean-other help dev test test-debug test-cov pre-commit lint format format-docs analyze docs
+.PHONY: all clean clean-env clean-test clean-pyc clean-build clean-other help dev test test-debug test-cov pre-commit lint format format-docs analyze docs
 .DEFAULT_GOAL := help
 
 # The `.ONESHELL` and setting `SHELL` allows us to run commands that require
@@ -37,6 +37,9 @@ endef
 export PRINT_HELP_PYSCRIPT
 
 BROWSER := python -c "$$BROWSER_PYSCRIPT"
+
+all:
+	echo "All is a placeholder"
 
 clean: clean-cov clean-build clean-pyc clean-test clean-temp clean-other ## remove all build, test, coverage and Python artifacts
 
@@ -154,10 +157,6 @@ format-black:
 format-isort:
 	@isort --profile black --line-length=88 $(SRC_DIR) $(TEST_DIR) $(SCRIPTS_DIR)
 format: format-black format-isort
-
-format:			## runs the code auto-formatter
-	isort
-	black
 
 format-docs:	## runs the docstring auto-formatter. Note this requires manually installing `docconvert` with `pip`
 	docconvert --in-place --config .docconvert.json $(SRC_DIR)
