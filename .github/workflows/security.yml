@@ -43,7 +43,8 @@ jobs:
   osv-scanner:
     runs-on: ubuntu-latest
     permissions:
-      security-events: write
+      actions: read
+      security-events: write  # For Security Tab
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -57,15 +58,6 @@ jobs:
           scan-args: |
             --recursive
             ./
-          format: sarif
-          output: ./results.sarif
-
-      - name: Upload OSV-Scanner SARIF
-        if: always()
-        # zizmor: ignore[unpinned-uses]
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
-        with:
-          sarif_file: ./results.sarif
 
   semgrep:
     runs-on: ubuntu-latest

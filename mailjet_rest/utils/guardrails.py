@@ -94,10 +94,10 @@ class SecureHTTPAdapter(HTTPAdapter):
             Any: The proxy manager instance.
         """
         proxy_kwargs["ssl_context"] = self._get_secure_ssl_context()
-        return super().proxy_manager_for(proxy, **proxy_kwargs)
+        return super().proxy_manager_for(proxy, **proxy_kwargs)  # type: ignore[no-untyped-call]
 
 
-class SecretAuth(AuthBase):  # type: ignore[type-arg]
+class SecretAuth(AuthBase):
     """OWASP: Obfuscate credentials in memory dumps and tracebacks (CWE-316).
 
     Inherits from AuthBase instead of tuple to prevent index/iteration exposure.
@@ -513,7 +513,7 @@ class SecurityGuard:
             return None
 
         if isinstance(timeout, tuple):
-            if len(timeout) != 2:  # type: ignore[unreachable]
+            if len(timeout) != 2:
                 msg = "Timeout tuple must contain exactly two elements."  # type: ignore[unreachable]
                 raise ValueError(msg)
             connect_timeout = SecurityGuard.validate_timeout(timeout[0])
@@ -663,11 +663,11 @@ class SecurityGuard:
         Returns:
             SecretAuth: The validated and wrapped SecretAuth instance.
         """
-        if len(auth) != 2:  # type: ignore[unreachable]
+        if len(auth) != 2:
             msg = "Basic auth tuple must contain exactly two elements: (API_KEY, API_SECRET)."  # type: ignore[unreachable]
             raise ValueError(msg)
         key, secret = auth
-        if not isinstance(key, str) or not isinstance(secret, str):  # type: ignore[unreachable]
+        if not isinstance(key, str) or not isinstance(secret, str):
             msg = "Auth tuple elements must be strings."  # type: ignore[unreachable]
             raise TypeError(msg)
         for item in (key, secret):
@@ -699,4 +699,4 @@ class SecurityGuard:
             return SecurityGuard._validate_basic_auth(auth)
 
         msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"  # type: ignore[unreachable]
-        raise TypeError(msg)  # type: ignore[unreachable]
+        raise TypeError(msg)

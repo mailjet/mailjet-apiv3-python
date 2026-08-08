@@ -222,7 +222,7 @@ class Endpoint:
                 data = data_str.encode(data_encoding) if data_encoding else data_str
 
         return self.client.api_call(
-            method=method,  # type: ignore[arg-type]
+            method=method,
             url=self._build_url(id_val=id, action_id=action_id),
             headers=self._build_headers(headers),
             data=data,
