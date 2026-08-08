@@ -74,7 +74,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest hypothesis responses
+          pip install pytest hypothesis responses pytest-cov
 
       - name: Run unit tests
         run: pytest -v tests/unit --cov=mailjet_rest --cov-report=xml
