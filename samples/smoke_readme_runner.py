@@ -131,7 +131,7 @@ def run_readme_tests():
         res_meta = mailjet_v3.contactmetadata.create(data={"Datatype": "str", "Name": prop_name, "NameSpace": "static"})
         if res_meta.status_code == 201:
             prop_id = res_meta.json()["Data"][0]["ID"]
-            update_data = {"Data": [{"Name": prop_name, "value": "John"}]}
+            update_data = {"Data": [{"Name": prop_name, "Value": "John"}]}
             res = mailjet_v3.contactdata.update(id=contact_id, data=update_data)
             assert res.status_code == 200
             print("✅ PUT (Update Contact Data) passed.")

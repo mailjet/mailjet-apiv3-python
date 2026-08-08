@@ -85,7 +85,7 @@ test_integration() {
 
 test_cov() {
     # Example: ./manage.sh test_cov
-    info "Running tests with Coverage requirements (Fail under 80%)...."
+    info "Running tests with Coverage requirements (Fail under 80%)..."
     pytest -n auto --cov="${SRC_DIR}" "${TEST_DIR}" --cov-fail-under=80 --cov-report=term-missing --cov-report=html
     success "Coverage report generated in htmlcov/index.html"
 }
