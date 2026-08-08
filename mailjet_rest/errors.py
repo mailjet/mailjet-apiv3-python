@@ -35,7 +35,7 @@ class MailjetAuthError(MailjetApiError):
 # We keep these as subclasses of the new hierarchy to preserve backward compatibility.
 
 
-class TimeoutError(MailjetNetworkError):  # noqa: A001
+class TimeoutError(MailjetNetworkError):  # ruff: ignore[builtin-variable-shadowing]
     """Legacy exception: maintained for backward compatibility."""
 
 

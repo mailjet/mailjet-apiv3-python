@@ -11,7 +11,7 @@ from mailjet_rest.errors import (
     MailjetApiError,
     MailjetAuthError,
     MailjetNetworkError,
-    TimeoutError,  # noqa: A004
+    TimeoutError,  # ruff: ignore[builtin-import-shadowing]
     ValidationError,
 )
 from mailjet_rest.utils.version import get_version
