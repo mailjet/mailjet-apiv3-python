@@ -104,7 +104,7 @@ pyrightconfig.json
 
 # Atheris / ClusterFuzzLite
 tests/fuzz/corpus/
-.clusterfuzzlite/
+.github/.clusterfuzzlite/
 
 # ==============================================================================
 # 6. TESTING METRICS & CODE COVERAGE

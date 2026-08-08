@@ -13,11 +13,11 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: github/codeql-action/init@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: github/codeql-action/init@babb66d6a26d7f0227163f9202dd34b6b66e5f15 # v4
         with:
           languages: python
           queries: security-extended,security-and-quality
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@babb66d6a26d7f0227163f9202dd34b6b66e5f15 # v4
         with:
           category: "/language:python"

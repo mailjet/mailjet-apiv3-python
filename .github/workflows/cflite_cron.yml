@@ -24,17 +24,22 @@ jobs:
   Coverage:
     runs-on: ubuntu-latest
     steps:
-    - name: Build Fuzzers
-      id: build
-      uses: google/clusterfuzzlite/actions/build_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # v1
-      with:
-        language: python
-        sanitizer: coverage
-    - name: Run Fuzzers
-      id: run
-      uses: google/clusterfuzzlite/actions/run_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # v1
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        fuzz-seconds: 600
-        mode: 'coverage'
-        sanitizer: 'coverage'
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # v1
+        with:
+          language: python
+          sanitizer: coverage
+      - name: Run Fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: 'coverage'
+          sanitizer: 'coverage'
