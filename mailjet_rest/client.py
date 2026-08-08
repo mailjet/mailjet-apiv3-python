@@ -330,8 +330,9 @@ class Client:
                 stacklevel=2,
             )
 
-        # Determine strict timeout bounds
-        req_timeout = SecurityGuard.validate_timeout(timeout if timeout is not None else self.config.timeout)
+        # Safely determine and validate active timeout bounds (CWE-400)
+        active_timeout = timeout if timeout is not None else self.config.timeout
+        req_timeout = SecurityGuard.validate_timeout(active_timeout)
 
         # Proxy Security Guardrail
         SecurityGuard.check_request_security(kwargs)

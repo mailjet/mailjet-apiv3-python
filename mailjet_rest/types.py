@@ -31,7 +31,7 @@ __all__ = [
 # Types & Constants
 # ==========================================
 
-TimeoutType: TypeAlias = int | float | tuple[float, float] | None
+TimeoutType: TypeAlias = int | float | tuple[int | float, int | float] | None
 PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | bytes | None
 HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
 

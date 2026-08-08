@@ -29,6 +29,8 @@ from urllib.parse import quote, unquote, urlparse
 if TYPE_CHECKING:
     import requests
 
+    from mailjet_rest.types import TimeoutType
+
 from requests.adapters import HTTPAdapter
 from requests.auth import AuthBase
 
@@ -484,20 +486,35 @@ class SecurityGuard:
             raise ValueError(msg)
 
     @staticmethod
-    def validate_timeout(timeout: Any) -> float | int | None:
-        """Prevent Resource Exhaustion (CWE-400) via infinite bounds checking.
+    def validate_timeout(
+        timeout: TimeoutType,
+    ) -> int | float | tuple[float, float] | None:
+        """Validate and normalize scalar or tuple timeouts (CWE-400).
 
         Returns:
-            float | int | None: The sanitized timeout configuration safely coerced.
+            int | float | tuple[float, float] | None: Sanitized timeout configuration.
         """
         if timeout is None:
             warnings.warn(
-                "Timeout set to None allows infinite socket blocking (CWE-400).", DeprecationWarning, stacklevel=2
+                "Timeout set to None allows infinite socket blocking (CWE-400).",
+                DeprecationWarning,
+                stacklevel=2,
             )
             return None
 
+        if isinstance(timeout, tuple):
+            if len(timeout) != 2:  # type: ignore[unreachable]
+                msg = "Timeout tuple must contain exactly two elements."  # type: ignore[unreachable]
+                raise ValueError(msg)
+            connect_timeout = SecurityGuard.validate_timeout(timeout[0])
+            read_timeout = SecurityGuard.validate_timeout(timeout[1])
+            if not isinstance(connect_timeout, (int, float)) or not isinstance(read_timeout, (int, float)):
+                msg = "Timeout tuple elements must be valid numeric values."
+                raise TypeError(msg)
+            return float(connect_timeout), float(read_timeout)
+
         if not isinstance(timeout, (int, float)):
-            msg = "Timeout must be a numeric float or int."
+            msg = f"Timeout must be a numeric float or int, got {type(timeout).__name__}."  # type: ignore[unreachable]
             raise TypeError(msg)
 
         if isinstance(timeout, float) and (math.isinf(timeout) or math.isnan(timeout)):
@@ -506,8 +523,9 @@ class SecurityGuard:
             raise ValueError(msg)
 
         if timeout <= 0:
-            msg = f"Timeout must be a strictly positive finite number, got {timeout}"
+            msg = f"Timeout must be a strictly positive finite number, got {timeout}."
             raise ValueError(msg)
+
         return timeout
 
     @staticmethod
