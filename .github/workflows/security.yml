@@ -71,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       # Official Semgrep Docker image
-      image: semgrep/semgrep@latest
+      image: semgrep/semgrep@v1
     if: (github.actor != 'dependabot[bot]')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
