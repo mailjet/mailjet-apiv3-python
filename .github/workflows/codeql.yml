@@ -14,6 +14,8 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - uses: github/codeql-action/init@babb66d6a26d7f0227163f9202dd34b6b66e5f15 # v4
         with:
           languages: python
