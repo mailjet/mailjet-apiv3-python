@@ -67,6 +67,7 @@ def TestOneInput(data: bytes) -> None:
         assert len(_hash) == 64
 
     except (TypeError, ValueError):
+        # Expected validation/fuzzing error; ignore so the fuzzer can continue.  # noqa: S110
         pass
     except RecursionError:
         raise RuntimeError("CRASH: Idempotency Fingerprint hit Infinite Recursion Depth.")

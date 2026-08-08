@@ -88,6 +88,7 @@ def TestOneInput(data: bytes) -> None:
         t_builder.build()
 
     except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
+        # Expected validation/fuzzing error; ignore so the fuzzer can continue.  # noqa: S110
         pass
     except RecursionError:
         raise RuntimeError("CRASH: Builder JSON Serialization hit Recursion Depth limit.")

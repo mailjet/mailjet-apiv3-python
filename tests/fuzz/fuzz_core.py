@@ -8,7 +8,6 @@ from mailjet_rest.errors import MailjetAuthError, ValidationError, MailjetApiErr
 with atheris.instrument_imports():
     from mailjet_rest.client import Client
     from mailjet_rest.config import Config
-    from mailjet_rest.endpoint import Endpoint
     from mailjet_rest.utils.guardrails import SecurityGuard
 
 # Initialize a dummy client globally ONCE to save execution time across millions of runs

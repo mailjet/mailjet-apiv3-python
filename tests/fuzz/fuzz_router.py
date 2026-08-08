@@ -58,6 +58,7 @@ def fuzz_telemetry_and_difflib(fdp: atheris.FuzzedDataProvider) -> None:
     try:
         getattr(client, fdp.ConsumeUnicodeNoSurrogates(30))
     except AttributeError:
+        # Expected validation/fuzzing error; ignore so the fuzzer can continue.  # noqa: S110
         pass
 
     # Fuzz telemetry extractor with lists and dicts
