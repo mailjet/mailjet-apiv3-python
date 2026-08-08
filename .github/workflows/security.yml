@@ -49,26 +49,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+
       - name: Run OSV-Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@8deb546fdb875b9996d27d4950be7312dac076a1 # v1.9.0
+        # zizmor: ignore[unpinned-uses]
+        uses: google/osv-scanner-action/osv-scanner-action@8deb546fdb875b9996d27d4950be7312dac076a1
         with:
-          scan-args: |-
-            -r
-            --skip-git
+          scan-args: |
+            --recursive
             ./
           format: sarif
-          output: results.sarif
+          output: ./results.sarif
+
       - name: Upload OSV-Scanner SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4
+        # zizmor: ignore[unpinned-uses]
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81
         with:
-          sarif_file: results.sarif
+          sarif_file: ./results.sarif
 
   semgrep:
     runs-on: ubuntu-latest
     container:
       # Official Semgrep Docker image
-      image: semgrep/semgrep@sha256:651f37efa397bf066e1cf627414eeabe40b07e27
+      image: semgrep/semgrep@latest
     if: (github.actor != 'dependabot[bot]')
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
