@@ -322,6 +322,9 @@ class Client:
         if headers is None:
             headers = {}
 
+        # CWE-113: Prevent Request Smuggling / CRLF Injection in headers
+        headers = SecurityGuard.sanitize_headers(headers)
+
         if not kwargs.get("verify", True):
             warnings.warn(
                 "Security Warning: TLS verification is disabled. This is highly discouraged "

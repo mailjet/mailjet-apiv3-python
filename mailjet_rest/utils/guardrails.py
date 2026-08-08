@@ -22,7 +22,7 @@ import warnings
 from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Final
+from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn
 from urllib.parse import quote, unquote, urlparse
 
 
@@ -63,7 +63,7 @@ def _get_secret_pattern() -> re.Pattern[str]:
         re.Pattern[str]: The compiled regex pattern for detecting secrets.
     """
     return re.compile(
-        r"(?i)(Authorization|api[_-]key|api[_-]secret|token)([:\s='\"\]]{1,10}(?:(?:Bearer|Basic|Token)\s{1,5})?)([^\s'\"\}\]]{1,200})"
+        r"(?i)(Authorization|api[_-]key|api[_-]secret|token)((?:\s*[:='\"\]]+\s*|\s+)(?:(?:Bearer|Basic|Token)\s+)?)([^\s'\"\}\]]{1,200})"
     )
 
 
@@ -141,6 +141,16 @@ class SecretAuth(AuthBase):  # type: ignore[type-arg]
             return self._api_key == other._api_key and self._api_secret == other._api_secret
 
         return False
+
+    def __getitem__(self, index: int) -> NoReturn:
+        """Prevent Credential extraction via tuple unpacking / indexing."""
+        msg = "Credential extraction via indexing is blocked for security (CWE-316)."
+        raise TypeError(msg)
+
+    def __iter__(self) -> Any:
+        """Prevent Credential extraction via iteration."""
+        msg = "Credential extraction via iteration is blocked for security (CWE-316)."
+        raise TypeError(msg)
 
     def __repr__(self) -> str:
         """Return a safe representation of the credential."""
@@ -513,20 +523,22 @@ class SecurityGuard:
                 raise TypeError(msg)
             return float(connect_timeout), float(read_timeout)
 
-        if not isinstance(timeout, (int, float)):
-            msg = f"Timeout must be a numeric float or int, got {type(timeout).__name__}."  # type: ignore[unreachable]
-            raise TypeError(msg)
+        try:
+            timeout_val = float(timeout)
+        except (ValueError, TypeError):
+            msg = f"Timeout must be a numeric float or int, got {type(timeout).__name__}."
+            raise TypeError(msg) from None
 
-        if isinstance(timeout, float) and (math.isinf(timeout) or math.isnan(timeout)):
+        if math.isinf(timeout_val) or math.isnan(timeout_val):
             sys.audit("mailjet.security.resource_exhaustion", str(timeout))
             msg = f"Security Violation: Timeout cannot be Infinity or NaN. Got: {timeout}"
             raise ValueError(msg)
 
-        if timeout <= 0:
+        if timeout_val <= 0:
             msg = f"Timeout must be a strictly positive finite number, got {timeout}."
             raise ValueError(msg)
 
-        return timeout
+        return timeout_val
 
     @staticmethod
     def normalize_domain(email_or_domain: str) -> str:
