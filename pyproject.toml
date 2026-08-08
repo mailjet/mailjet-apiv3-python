@@ -212,7 +212,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "D",      # Docstrings not required in tests
     "E",      # Formatting rules handled by formatter
     "I",      # Unsorted imports in test suites
-    "F401",   # Unused imports (often kept for fixtures/testing setup)
+    "unused-import",   # Unused imports (often kept for fixtures/testing setup)
     "SIM",    # Code simplification rules
     "RET",    # Return simplifications
     "PTH",    # Pathlib suggestions
