@@ -538,6 +538,12 @@ class SecurityGuard:
             msg = f"Timeout must be a strictly positive finite number, got {timeout}."
             raise ValueError(msg)
 
+        # Prevent platform C-level OverflowError in socket.settimeout() (CWE-400)
+        max_timeout = 86400.0  # 24 hours max
+        if timeout > max_timeout:
+            msg = f"Timeout exceeds maximum allowed limit of {max_timeout} seconds."
+            raise ValueError(msg)
+
         return timeout_val
 
     @staticmethod

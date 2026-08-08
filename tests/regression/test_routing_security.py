@@ -66,3 +66,11 @@ def test_cwe668_client_private_attribute_exposure_prevention() -> None:
     # and strictly rejected.
     with pytest.raises(AttributeError, match="'Client' object has no attribute '_parse_response'"):
         _ = client._parse_response
+
+def test_cwe400_excessive_timeout_rejection() -> None:
+    """Ensure excessively large timeouts that cause platform C-level OverflowError are rejected (CWE-400)."""
+    with pytest.raises(ValueError, match="Timeout exceeds maximum allowed limit"):
+        Config(timeout=1e300)
+
+    with pytest.raises(ValueError, match="Timeout exceeds maximum allowed limit"):
+        Config(timeout=(1e300, 10.0))
