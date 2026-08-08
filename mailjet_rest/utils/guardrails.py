@@ -496,6 +496,42 @@ class SecurityGuard:
             raise ValueError(msg)
 
     @staticmethod
+    def _validate_scalar_timeout(timeout: Any) -> float:
+        """Helper to validate a single scalar timeout value (CWE-400).
+
+        Args:
+            timeout (Any): The timeout value to validate.
+
+        Returns:
+            float: The validated scalar timeout in seconds.
+        """
+        if not isinstance(timeout, (int, float)):
+            msg = f"Timeout must be a numeric float or int, got {type(timeout).__name__}."
+            raise TypeError(msg)
+
+        try:
+            timeout_val = float(timeout)
+        except OverflowError as e:
+            msg = f"Timeout value is out of range or invalid: {e}"
+            raise ValueError(msg) from e
+
+        if math.isinf(timeout_val) or math.isnan(timeout_val):
+            sys.audit("mailjet.security.resource_exhaustion", str(timeout))
+            msg = f"Security Violation: Timeout cannot be Infinity or NaN. Got: {timeout}"
+            raise ValueError(msg)
+
+        if timeout_val <= 0:
+            msg = f"Timeout must be a strictly positive finite number, got {timeout}."
+            raise ValueError(msg)
+
+        max_timeout = 86400.0  # 24 hours max
+        if timeout_val > max_timeout:
+            msg = f"Timeout exceeds maximum allowed limit of {max_timeout} seconds."
+            raise ValueError(msg)
+
+        return timeout_val
+
+    @staticmethod
     def validate_timeout(
         timeout: TimeoutType,
     ) -> int | float | tuple[float, float] | None:
@@ -524,27 +560,14 @@ class SecurityGuard:
             return float(connect_timeout), float(read_timeout)
 
         try:
-            timeout_val = float(timeout)
-        except (ValueError, TypeError):
-            msg = f"Timeout must be a numeric float or int, got {type(timeout).__name__}."
-            raise TypeError(msg) from None
-
-        if math.isinf(timeout_val) or math.isnan(timeout_val):
-            sys.audit("mailjet.security.resource_exhaustion", str(timeout))
-            msg = f"Security Violation: Timeout cannot be Infinity or NaN. Got: {timeout}"
-            raise ValueError(msg)
-
-        if timeout_val <= 0:
-            msg = f"Timeout must be a strictly positive finite number, got {timeout}."
-            raise ValueError(msg)
-
-        # Prevent platform C-level OverflowError in socket.settimeout() (CWE-400)
-        max_timeout = 86400.0  # 24 hours max
-        if timeout > max_timeout:
-            msg = f"Timeout exceeds maximum allowed limit of {max_timeout} seconds."
-            raise ValueError(msg)
-
-        return timeout_val
+            res = SecurityGuard._validate_scalar_timeout(timeout)
+        except (OverflowError, ValueError, TypeError) as e:
+            if isinstance(e, (ValueError, TypeError)):
+                raise
+            msg = f"Timeout value is out of range or invalid: {e}"
+            raise ValueError(msg) from e
+        else:
+            return res
 
     @staticmethod
     def normalize_domain(email_or_domain: str) -> str:

@@ -74,3 +74,9 @@ def test_cwe400_excessive_timeout_rejection() -> None:
 
     with pytest.raises(ValueError, match="Timeout exceeds maximum allowed limit"):
         Config(timeout=(1e300, 10.0))
+
+def test_cwe400_astronomical_integer_timeout_rejection() -> None:
+    """Ensure extremely large integers/floats causing float overflow are safely rejected (CWE-400)."""
+    astronomical_overflow_val = 10**5000
+    with pytest.raises(ValueError, match="Timeout value is out of range or invalid|exceeds maximum allowed limit"):
+        Config(timeout=astronomical_overflow_val)
