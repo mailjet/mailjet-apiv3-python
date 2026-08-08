@@ -168,7 +168,13 @@ class Client:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Exit the context manager and safely close the HTTP session."""
+        """Exit the context manager and safely close the HTTP session.
+
+        Args:
+            exc_type (type[BaseException] | None): Exception type.
+            exc_val (BaseException | None): Exception value.
+            exc_tb (TracebackType | None): Traceback.
+        """
         self.close()
 
     def __repr__(self) -> str:
@@ -228,7 +234,7 @@ class Client:
         Returns:
             list[str]: The list of standard attributes plus available dynamic endpoints.
         """
-        return list(super().__dir__()) + list(ROUTE_MAP.keys())
+        return sorted(set(list(super().__dir__()) + list(ROUTE_MAP.keys())))
 
     def _execute_request(
         self,
@@ -298,6 +304,15 @@ class Client:
         **kwargs: Any,
     ) -> requests.Response:
         """Execute the authenticated API call with idempotency guards.
+
+        Args:
+            method (HttpMethod): The HTTP method.
+            url (str): The fully constructed API URL.
+            filters (dict[str, Any] | None, optional): Query parameters.
+            data (PayloadType, optional): Request payload.
+            headers (dict[str, str] | None, optional): Custom HTTP headers.
+            timeout (TimeoutType, optional): Request timeout.
+            **kwargs (Any): Additional arguments passed to 'requests.Session.request'.
 
         Returns:
             requests.Response: The authenticated HTTP response from Mailjet.

@@ -7,7 +7,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from mailjet_rest.routes import ROUTE_MAP
-from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, HttpMethod
+from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, HttpMethod, PayloadType, TimeoutType
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
@@ -36,7 +36,95 @@ class Endpoint:
         self._action_parts = self._name_lower.split("_")
         self._resource_lower = self._action_parts[0]
 
-    def _build_url(self, id_val: int | str | None = None, action_id: int | str | None = None) -> str:  # ruff: ignore[complex-structure, too-many-branches, too-many-statements]
+    def _resolve_registry_route(
+        self, base_url: str, version: str, id_val: int | str | None, action_id: int | str | None
+    ) -> tuple[str, int | str | None, int | str | None]:
+        """Resolves URL using the static ROUTE_MAP registry.
+
+        Args:
+            base_url (str): The base API URL.
+            version (str): The API version string.
+            id_val (int | str | None): The primary resource ID.
+            action_id (int | str | None): The sub-action ID.
+
+        Returns:
+            tuple[str, int | str | None, int | str | None]: A tuple containing:
+                - The resolved base URL string.
+                - The remaining, unconsumed 'id_val'.
+                - The remaining, unconsumed 'action_id'.
+        """
+        route = ROUTE_MAP[self.name]
+        if route.version is not None:
+            version = route.version
+
+        path = route.path
+        format_kwargs = {}
+
+        # Interpolate URI variables using safe encoding (CWE-22)
+        if "{id}" in path:  # ruff: ignore[missing-f-string-syntax]
+            if id_val is None:
+                msg = f"Endpoint '{self.name}' requires an 'id' parameter."
+                raise ValueError(msg)
+            format_kwargs["id"] = SecurityGuard.sanitize_segment(id_val)
+            id_val = None
+
+        if "{action_id}" in path:  # ruff: ignore[missing-f-string-syntax] # Fixed the f-string evaluation bug here
+            if action_id is None:
+                msg = f"Endpoint '{self.name}' requires an 'action_id' parameter."
+                raise ValueError(msg)
+            format_kwargs["action_id"] = SecurityGuard.sanitize_segment(action_id)
+            action_id = None
+
+        if format_kwargs:
+            path = path.format(**format_kwargs)
+
+        return f"{base_url}/{version}/{path}", id_val, action_id
+
+    def _resolve_dynamic_route(
+        self, base_url: str, version: str, id_val: int | str | None, action_id: int | str | None
+    ) -> tuple[str, int | str | None, int | str | None]:
+        """Resolves URL using legacy dynamic getattr fallback logic.
+
+        Args:
+            base_url (str): The base API URL.
+            version (str): The API version string.
+            id_val (int | str | None): The primary resource ID.
+            action_id (int | str | None): The sub-action ID.
+
+        Returns:
+            tuple[str, int | str | None, int | str | None]: A tuple containing:
+                - The resolved base URL string.
+                - The remaining, unconsumed 'id_val'.
+                - The remaining, unconsumed 'action_id'.
+        """
+        if self._name_lower == "send":
+            url = f"{base_url}/{version}/send"
+        elif self._name_lower.endswith(("_csvdata", "_csverror")):
+            safe_part = SecurityGuard.sanitize_segment(self._action_parts[0])
+            url = f"{base_url}/{version}/DATA/{safe_part}"
+            if id_val is not None:
+                suffix = "CSVData/text:plain" if self._name_lower.endswith("_csvdata") else "CSVError/text:csv"
+                url += f"/{SecurityGuard.sanitize_segment(id_val)}/{suffix}"
+                id_val = None
+        elif self._name_lower.startswith("data_"):
+            safe_path = "/".join(SecurityGuard.sanitize_segment(p) for p in self._action_parts[1:])
+            url = f"{base_url}/{version}/data/{safe_path}"
+        else:
+            url = f"{base_url}/{version}/REST/{self._resource_lower}"
+            if len(self._action_parts) > 1:
+                safe_action = "/".join(SecurityGuard.sanitize_segment(p) for p in self._action_parts[1:])
+                if id_val is None:
+                    # Shift logic allowing 'action_id=123' to act as primary ID
+                    id_val = action_id
+                    action_id = safe_action
+                elif action_id is not None:
+                    action_id = f"{safe_action}/{SecurityGuard.sanitize_segment(action_id)}"
+                else:
+                    action_id = safe_action
+
+        return url, id_val, action_id
+
+    def _build_url(self, id_val: int | str | None = None, action_id: int | str | None = None) -> str:
         """Constructs the fully qualified API URL.
 
         Leverages immutable static registry routing mappings with URI template
@@ -59,62 +147,13 @@ class Endpoint:
 
         base_url = self.client.config.api_url.rstrip("/")
 
-        # 1. Registry-First Routing (Express Lane Orchestrator)
+        # 1. Route Resolution Strategy
         if self.name in ROUTE_MAP:
-            route = ROUTE_MAP[self.name]
-            if route.version is not None:
-                version = route.version
-
-            path = route.path
-            format_kwargs = {}
-
-            # Interpolate URI variables using safe encoding (CWE-22)
-            if "{id}" in path:
-                if id_val is None:
-                    msg = f"Endpoint '{self.name}' requires an 'id' parameter."
-                    raise ValueError(msg)
-                format_kwargs["id"] = SecurityGuard.sanitize_segment(id_val)
-                id_val = None
-
-            if f"{action_id}" in path:
-                if action_id is None:
-                    msg = f"Endpoint '{self.name}' requires an 'action_id' parameter."
-                    raise ValueError(msg)
-                format_kwargs["action_id"] = SecurityGuard.sanitize_segment(action_id)
-                action_id = None
-
-            if format_kwargs:
-                path = path.format(**format_kwargs)
-
-            url = f"{base_url}/{version}/{path}"
-
-        # 2. Dynamic Fallback Routing (Legacy Behavior)
-        elif self._name_lower == "send":
-            url = f"{base_url}/{version}/send"
-        elif self._name_lower.endswith(("_csvdata", "_csverror")):
-            safe_part = SecurityGuard.sanitize_segment(self._action_parts[0])
-            url = f"{base_url}/{version}/DATA/{safe_part}"
-            if id_val is not None:
-                suffix = "CSVData/text:plain" if self._name_lower.endswith("_csvdata") else "CSVError/text:csv"
-                url += f"/{SecurityGuard.sanitize_segment(id_val)}/{suffix}"
-                id_val = None
-        elif self._name_lower.startswith("data_"):
-            safe_path = "/".join(SecurityGuard.sanitize_segment(p) for p in self._action_parts[1:])
-            url = f"{base_url}/{version}/data/{safe_path}"
+            url, id_val, action_id = self._resolve_registry_route(base_url, version, id_val, action_id)
         else:
-            url = f"{base_url}/{version}/REST/{self._resource_lower}"
-            if len(self._action_parts) > 1:
-                safe_action = "/".join(SecurityGuard.sanitize_segment(p) for p in self._action_parts[1:])
-                if id_val is None:
-                    # Shift logic allowing `action_id=123` to act as primary ID
-                    id_val = action_id
-                    action_id = safe_action
-                elif action_id is not None:
-                    action_id = f"{safe_action}/{SecurityGuard.sanitize_segment(action_id)}"
-                else:
-                    action_id = safe_action
+            url, id_val, action_id = self._resolve_dynamic_route(base_url, version, id_val, action_id)
 
-        # Final append of remaining dynamically passed IDs
+        # 2. Final append of remaining dynamically passed IDs
         if id_val is not None:
             url = f"{url}/{SecurityGuard.sanitize_segment(id_val)}"
 
@@ -131,6 +170,9 @@ class Endpoint:
     def _build_headers(self, custom_headers: dict[str, str] | None = None) -> dict[str, str]:
         """Build headers based on the endpoint requirements.
 
+        Args:
+            custom_headers (dict[str, str] | None): Custom headers to merge.
+
         Returns:
             dict[str, str]: The composed dictionary of HTTP headers.
         """
@@ -146,14 +188,23 @@ class Endpoint:
     def __call__(
         self,
         method: HttpMethod = "GET",
-        id: int | str | None = None,  # ruff: ignore[builtin-argument-shadowing]
-        data: Any = None,
+        id: int | str | None = None,
+        data: PayloadType = None,
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
-        timeout: float | tuple[float, float] | None = None,
+        timeout: TimeoutType = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Execute the specific HTTP method on the constructed endpoint.
+
+        Args:
+            method (HttpMethod): The HTTP method to use (default: "GET").
+            id (int | str | None): The primary resource ID.
+            data (PayloadType): Request payload.
+            filters (dict[str, Any] | None): Query string URL parameters.
+            action_id (int | str | None): Sub-action ID.
+            timeout (TimeoutType): Request timeout.
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The resulting HTTP response from the request execution.
@@ -193,7 +244,7 @@ class Endpoint:
             id (int | str | None): The primary resource ID.
             filters (dict[str, Any] | None): Query string URL parameters.
             action_id (int | str | None): Sub-action ID.
-            **kwargs: Additional args passed to requests.
+            **kwargs (Any): Additional args passed to requests.
 
         Returns:
             requests.Response: The resulting HTTP response for the GET request.
@@ -215,7 +266,7 @@ class Endpoint:
             filters (dict[str, Any] | None): Query string URL parameters.
             action_id (int | str | None): Sub-action ID.
             chunk_size (int): Objects returned per loop (Limit). Defaults to 1000.
-            **kwargs: Additional args passed to requests.
+            **kwargs (Any): Additional args passed to requests.
 
         Yields:
             dict[str, Any]: Individual resource objects from the paginated API response.
@@ -239,7 +290,7 @@ class Endpoint:
 
     def create(
         self,
-        data: Any = None,
+        data: PayloadType = None,
         id: int | str | None = None,
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
@@ -247,6 +298,14 @@ class Endpoint:
         **kwargs: Any,
     ) -> requests.Response:
         """Perform a POST request to create a resource.
+
+        Args:
+            data (PayloadType): Request payload.
+            id (int | str | None): The primary resource ID.
+            action_id (int | str | None): The sub-action ID.
+            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
+            data_encoding (str | None): Data encoding string (Deprecated).
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response containing the created entity representation.
@@ -264,13 +323,21 @@ class Endpoint:
     def update(
         self,
         id: int | str,
-        data: Any = None,
+        data: PayloadType = None,
         action_id: int | str | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Perform a PUT request to update a resource.
+
+        Args:
+            id (int | str): The primary resource ID.
+            data (PayloadType): Updated payload.
+            action_id (int | str | None): The sub-action ID.
+            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
+            data_encoding (str | None): Data encoding string (Deprecated).
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response for the updated resource context.
@@ -287,6 +354,11 @@ class Endpoint:
 
     def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:
         """Perform a DELETE request to remove a resource.
+
+        Args:
+            id (int | str): The primary resource ID.
+            action_id (int | str | None): The sub-action ID.
+            **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The HTTP response representing the deletion confirmation.

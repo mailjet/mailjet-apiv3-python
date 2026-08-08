@@ -32,7 +32,7 @@ __all__ = [
 # ==========================================
 
 TimeoutType: TypeAlias = int | float | tuple[float, float] | None
-PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | None
+PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | bytes | None
 HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
 
 _DEFAULT_TIMEOUT: Final[int] = 60
