@@ -7,7 +7,6 @@ import json
 import mimetypes
 import sys
 import warnings
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 
@@ -20,6 +19,8 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from mailjet_rest.types import SendV31Message, SendV31Payload
 
 
@@ -55,11 +56,6 @@ class _BaseContentBuilder:
     def __init__(self) -> None:
         """Initialize the base builder instance and an empty payload."""
         self._payload: dict[str, Any] = {}
-
-    def _validate_part_size(self, content: str | None, part_name: str) -> None:
-        if content and len(content.encode("utf-8")) > self.MAX_PART_SIZE:
-            msg = f"{part_name} exceeds the maximum allowed size of 5MB."
-            raise ValueError(msg)
 
     def set_headers(self, headers: dict[str, str]) -> Self:
         """Sets the Headers JSON object structure crossing the ingress gate.
@@ -207,8 +203,7 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        safe_base = base_dir or Path.cwd()
-        target = SecurityGuard.validate_attachment_path(file_path, safe_base)
+        target = SecurityGuard.validate_attachment_path(file_path, base_dir)
         SecurityGuard.check_file_size(target)
 
         ctype = content_type or mimetypes.guess_type(target)[0] or "application/octet-stream"
@@ -233,8 +228,7 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        safe_base = base_dir or Path.cwd()
-        target = SecurityGuard.validate_attachment_path(file_path, safe_base)
+        target = SecurityGuard.validate_attachment_path(file_path, base_dir)
         SecurityGuard.check_file_size(target)
 
         ctype = content_type or mimetypes.guess_type(target)[0] or "application/octet-stream"
@@ -273,7 +267,8 @@ class MessageBuilder(_BaseContentBuilder):
             raise ValueError(msg)
 
         # OOM Guards
-        if "Variables" in self._payload and len(json.dumps(self._payload["Variables"])) > 1024 * 1024:
+        # Use default=str to prevent crash if variables contain non-serializable objects (like datetime or UUID)
+        if "Variables" in self._payload and len(json.dumps(self._payload["Variables"], default=str)) > 1024 * 1024:
             msg = "Security Violation: Variables payload too large (exceeds 1MB)."
             raise ValueError(msg)
 
@@ -434,4 +429,5 @@ class TemplateContentBuilder(_BaseContentBuilder):
                 stacklevel=2,
             )
 
-        return self._payload
+        # Return a copy to preserve builder state immutability
+        return self._payload.copy()  # type: ignore[return-value]

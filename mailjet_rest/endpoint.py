@@ -106,9 +106,18 @@ class Endpoint:
                 suffix = "CSVData/text:plain" if self._name_lower.endswith("_csvdata") else "CSVError/text:csv"
                 url += f"/{SecurityGuard.sanitize_segment(id_val)}/{suffix}"
                 id_val = None
+
+            # Explicitly sanitize action_id so it doesn't bypass _build_url checks
+            if action_id is not None:
+                action_id = SecurityGuard.sanitize_segment(action_id)
+
         elif self._name_lower.startswith("data_"):
             safe_path = "/".join(SecurityGuard.sanitize_segment(p) for p in self._action_parts[1:])
             url = f"{base_url}/{version}/data/{safe_path}"
+
+            if action_id is not None:
+                action_id = SecurityGuard.sanitize_segment(action_id)
+
         else:
             url = f"{base_url}/{version}/REST/{self._resource_lower}"
             if len(self._action_parts) > 1:
@@ -216,7 +225,10 @@ class Endpoint:
 
         if ensure_ascii is not None or data_encoding is not None:
             warnings.warn("'ensure_ascii' and 'data_encoding' are deprecated.", DeprecationWarning, stacklevel=2)
-            if isinstance(data, dict):
+
+            # Include 'list' to ensure batch payloads (arrays) are serialized properly
+            # for users relying on legacy encoding arguments.
+            if isinstance(data, (dict, list)):
                 # Legacy behavior emulation: force serialize data directly into string/bytes payload
                 data_str = json.dumps(data, ensure_ascii=ensure_ascii if ensure_ascii is not None else True)
                 data = data_str.encode(data_encoding) if data_encoding else data_str
@@ -271,9 +283,19 @@ class Endpoint:
         Yields:
             dict[str, Any]: Individual resource objects from the paginated API response.
         """
+        # Prevent infinite CPU/Network loops if 0 or negative numbers are passed
+        if chunk_size <= 0:
+            msg = "stream() chunk_size must be a strictly positive integer."
+            raise ValueError(msg)
+
         current_filters = dict(filters) if filters else {}
         current_filters["Limit"] = chunk_size
-        current_filters["Offset"] = 0
+
+        # Respect user-provided offsets to allow stream resumption.
+        # Cast to int to prevent TypeError when adding chunk_size later.
+        # Protect against 'None' values throwing a TypeError when cast to int
+        offset_val = current_filters.get("Offset")
+        current_filters["Offset"] = int(offset_val) if offset_val is not None else 0
 
         while True:
             response = self.get(id=id, filters=current_filters, action_id=action_id, **kwargs)

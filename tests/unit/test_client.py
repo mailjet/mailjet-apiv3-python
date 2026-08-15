@@ -196,13 +196,6 @@ def test_config_api_url_missing_slash() -> None:
     assert c.api_url == "https://api.mailjet.com/"
 
 
-def test_config_getitem_data_path() -> None:
-    """Coverage: Test Config.__getitem__ data_ path resolution."""
-    c = Config(version="v3")
-    url, headers = c["data_images"]
-    assert url == "https://api.mailjet.com/v3/data/images"
-
-
 def test_client_empty_bearer_token() -> None:
     """Coverage: Blocking empty or whitespace bearer tokens."""
     with pytest.raises(ValueError, match="cannot be an empty string"):
@@ -242,22 +235,6 @@ def test_client_execute_request_non_json(client_offline: Client, monkeypatch: py
     client_offline.api_call(
         "POST", "https://api.mailjet.com/v3/send", headers={"Content-Type": "text/plain"}, data="raw text"
     )
-
-
-def test_config_getitem_csvdata() -> None:
-    """Coverage: Verify dictionary lookup config returns DATA routing rules."""
-    c = Config(version="v3")
-    url, headers = c["contactdata_csvdata"]
-    assert "DATA/contactdata" in url
-    assert headers["Content-Type"] == "text/plain"
-
-
-def test_config_getitem_rest() -> None:
-    """Coverage: Verify dictionary lookup config returns REST routing rules."""
-    c = Config(version="v3")
-    url, headers = c["contact"]
-    assert "REST/contact" in url
-    assert headers["Content-Type"] == "application/json"
 
 
 def test_client_endpoint_caching(client_offline: Client) -> None:
@@ -418,15 +395,6 @@ def test_user_agent() -> None:
     assert "mailjet-apiv3-python" in client.session.headers["User-Agent"]
 
 
-def test_config_getitem_all_branches() -> None:
-    """Verify the dictionary-style access routing logic natively on the Config object."""
-    config = Config(version="v3")
-
-    url, headers = config["send"]
-    assert url == "https://api.mailjet.com/v3/send"
-    assert headers["Content-Type"] == "application/json"
-
-
 def test_legacy_action_id_fallback(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify that if 'id' is omitted but 'action_id' is passed, it shifts to the primary ID correctly."""
 
@@ -571,19 +539,6 @@ def test_pep578_audit_hooks_emitted(
 
 def test_infinite_timeout_deprecation_warning(monkeypatch: Any) -> None:
     """Verify passing a null timeout issues a warning and sets it locally."""
-    with pytest.warns(DeprecationWarning, match="allows infinite socket blocking"):
-        client = Client(auth=("test", "test"), timeout=None)
-
-        def mock_resp(**kwargs: Any) -> requests.Response:
-            r = requests.Response()
-            r.status_code = 200
-            return r
-
-        monkeypatch.setattr(client.session, "request", mock_resp)
-        client.contact.get(timeout=None)
-
-
-def test_cwe400_timeout_deprecation_warning(monkeypatch: Any) -> None:
     with pytest.warns(DeprecationWarning, match="allows infinite socket blocking"):
         client = Client(auth=("test", "test"), timeout=None)
 

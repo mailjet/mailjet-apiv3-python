@@ -29,21 +29,6 @@ def test_property_segment_sanitization(segment: Any) -> None:
         pass
 
 
-@settings(max_examples=500)
-@given(route_key=st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cs",))))
-def test_property_config_router_contract(route_key: str) -> None:
-    """INVARIANT: Dynamic Config.__getitem__ must return a valid URL and dict."""
-    config = Config()
-    url, headers = config[route_key]
-    assert isinstance(url, str)
-    assert isinstance(headers, dict)
-    parsed_url = urlparse(url)
-    assert parsed_url.scheme == "https"
-    assert parsed_url.netloc == "api.mailjet.com"
-    assert parsed_url.path.startswith(f"/{config.version}/")
-    assert "Content-Type" in headers
-
-
 @settings(max_examples=400)
 @given(
     endpoint_name=st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cs",))),

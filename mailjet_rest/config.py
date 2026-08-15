@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from mailjet_rest._version import __version__
-from mailjet_rest.types import _DEFAULT_TIMEOUT, _JSON_HEADERS, _TEXT_HEADERS, TimeoutType
+from mailjet_rest.types import _DEFAULT_TIMEOUT, TimeoutType
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
@@ -40,29 +40,3 @@ class Config:
 
         # 2. Validate the timeouts securely (Guardrail handles both scalars and tuples natively)
         self.timeout = SecurityGuard.validate_timeout(self.timeout)
-
-    def __getitem__(self, key: str) -> tuple[str, dict[str, str]]:
-        """Retrieve the base API endpoint URL and default headers for a given key.
-
-        Args:
-            key (str): The raw endpoint key name.
-
-        Returns:
-            tuple[str, dict[str, str]]: A tuple containing the base URL and the headers dictionary.
-        """
-        action = key.split("_", maxsplit=1)[0]
-        name_lower = key.lower()
-
-        if name_lower == "send":
-            url = f"{self.api_url}{self.version}/send"
-        elif name_lower.endswith(("_csvdata", "_csverror")):
-            url = f"{self.api_url}{self.version}/DATA/{action}"
-        elif name_lower.startswith("data_"):
-            action_path = key.replace("_", "/")
-            url = f"{self.api_url}{self.version}/{action_path}"
-        else:
-            url = f"{self.api_url}{self.version}/REST/{action}"
-
-        # Utilize the pre-allocated constants to save dictionary creation overhead
-        headers = dict(_TEXT_HEADERS) if name_lower.endswith("_csvdata") else dict(_JSON_HEADERS)
-        return url, headers

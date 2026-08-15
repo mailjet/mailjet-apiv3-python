@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 from hypothesis import given, settings, strategies as st, example
 
-from mailjet_rest.client import Client, JitterRetry
+from mailjet_rest.client import Client, Endpoint, JitterRetry
 
 
 @settings(max_examples=500)
@@ -57,7 +57,9 @@ def test_property_client_getattr_difflib(route_name: str) -> None:
     client = Client(auth=("a", "b"))
     try:
         endpoint = getattr(client, route_name)
-        assert endpoint.name == route_name
+        # Only assert .name if it's an actual Endpoint object (ignores 'session', 'auth', etc.)
+        if isinstance(endpoint, Endpoint):
+            assert endpoint.name == route_name
     except AttributeError as e:
         # Check against both standard python attribute errors and custom difflib typo messages
         if route_name.startswith("_"):
@@ -72,7 +74,8 @@ def test_property_client_getattr_difflib(route_name: str) -> None:
     payload=st.one_of(
         st.dictionaries(st.text(), st.text()), st.lists(st.dictionaries(st.text(), st.text())), st.none()
     ),
-    timeout=st.one_of(st.integers(min_value=1), st.none()),
+    # Cap the fuzzed timeout at the maximum allowed 86400 seconds limit
+    timeout=st.one_of(st.integers(min_value=1, max_value=86400), st.none()),
 )
 def test_property_api_call_resilience(method: Any, payload: Any, timeout: Any) -> None:
     """INVARIANT: api_call wrapper safely assigns kwargs, hashes mutations, and fires request."""
