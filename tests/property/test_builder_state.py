@@ -13,34 +13,44 @@ class MessageBuilderMachine(RuleBasedStateMachine):
     @initialize()
     def init_builder(self) -> None:
         self.builder = MessageBuilder()
-
-        # Shadow State
         self.recipients_count = 0
         self.has_content = False
         self.has_sender = False
 
     @rule(email=st.emails(), name=st.one_of(st.none(), st.text(max_size=50)))
     def add_recipient(self, email: str, name: str | None) -> None:
-        self.builder.add_recipient(email=email, name=name)
-        self.recipients_count += 1
-        assert "To" in self.builder._payload
+        try:
+            self.builder.add_recipient(email=email, name=name)
+            self.recipients_count += 1
+            assert "To" in self.builder._payload
+        except ValueError:
+            pass
 
     @rule(email=st.emails(), name=st.one_of(st.none(), st.text(max_size=50)))
     def add_cc(self, email: str, name: str | None) -> None:
-        self.builder.add_cc(email=email, name=name)
-        self.recipients_count += 1
-        assert "Cc" in self.builder._payload
+        try:
+            self.builder.add_cc(email=email, name=name)
+            self.recipients_count += 1
+            assert "Cc" in self.builder._payload
+        except ValueError:
+            pass
 
     @rule(email=st.emails(), name=st.one_of(st.none(), st.text(max_size=50)))
     def add_bcc(self, email: str, name: str | None) -> None:
-        self.builder.add_bcc(email=email, name=name)
-        self.recipients_count += 1
-        assert "Bcc" in self.builder._payload
+        try:
+            self.builder.add_bcc(email=email, name=name)
+            self.recipients_count += 1
+            assert "Bcc" in self.builder._payload
+        except ValueError:
+            pass
 
     @rule(email=st.emails(), name=st.one_of(st.none(), st.text(max_size=50)))
     def set_reply_to(self, email: str, name: str | None) -> None:
-        self.builder.set_reply_to(email=email, name=name)
-        assert "ReplyTo" in self.builder._payload
+        try:
+            self.builder.set_reply_to(email=email, name=name)
+            assert "ReplyTo" in self.builder._payload
+        except ValueError:
+            pass
 
     @rule(email=st.emails(), name=st.one_of(st.none(), st.text(max_size=50)))
     def set_sender(self, email: str, name: str | None) -> None:

@@ -13,6 +13,15 @@ with atheris.instrument_imports():
 # Initialize a dummy client globally ONCE to save execution time across millions of runs
 _mock_client = Client(auth=("mock_key", "mock_secret"), config=None)
 
+class DummyResponse:
+    status_code = 200
+    text = "fuzzed"
+    def json(self): return {}
+    def raise_for_status(self): pass
+
+_mock_client.session.request = lambda *args, **kwargs: DummyResponse()  # type: ignore[method-assign, assignment]
+
+
 
 def fuzz_config(fdp: atheris.FuzzedDataProvider) -> int:
     """Target 1: Config Validation."""

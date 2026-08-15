@@ -258,7 +258,7 @@ class MessageBuilder(_BaseContentBuilder):
             msg = "Message validation failed: Sender (From) is required."
             raise ValueError(msg)
 
-        if "To" not in self._payload and "Cc" not in self._payload and "Bcc" not in self._payload:
+        if not self._payload.get("To") and not self._payload.get("Cc") and not self._payload.get("Bcc"):
             msg = "Message validation failed: At least one recipient (To, Cc, or Bcc) is required."
             raise ValueError(msg)
 
