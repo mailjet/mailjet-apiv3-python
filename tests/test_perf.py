@@ -15,12 +15,15 @@ from mailjet_rest.client import Client
 try:
     from mailjet_rest.builders import MessageBuilder
     from mailjet_rest.utils.guardrails import SecurityGuard
-    MODERN_SDK_AVAILABLE = True
+    MODERN_SDK_AVAILABLE = (
+        MessageBuilder is not None
+        and SecurityGuard is not None
+        and hasattr(SecurityGuard, "generate_payload_fingerprint")
+    )
 except ImportError:
     MODERN_SDK_AVAILABLE = False
     MessageBuilder = None  # type: ignore[assignment]
     SecurityGuard = None  # type: ignore[assignment]
-
 
 # ------------------------------------------------------------------------
 # FIXTURES
