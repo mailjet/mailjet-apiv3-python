@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Fuzz test for Config Validation and Routing Dictionary.
-Focuses on type confusion, chaotic URLs, and dictionary contract enforcement.
+"""Fuzz test for Config Validation.
+Focuses on type confusion and instantiation contract enforcement.
 """
 
 import logging
@@ -10,7 +10,6 @@ from typing import Any
 import atheris
 
 from mailjet_rest.config import Config
-from mailjet_rest.errors import MailjetAuthError, ValidationError
 
 
 logging.disable(logging.CRITICAL)
@@ -36,28 +35,13 @@ def TestOneInput(data: bytes) -> None:
             None,
         ]
 
-        config = Config(
+        _ = Config(
             api_url=fdp.ConsumeUnicodeNoSurrogates(100) or "https://api.mailjet.com",
             version=fdp.ConsumeUnicodeNoSurrogates(10),
             timeout=fdp.PickValueInList(chaos_types),
         )
 
-        # Fuzz the magic __getitem__ routing logic
-        routing_key = fdp.ConsumeUnicodeNoSurrogates(20)
-
-        try:
-            url_data, headers = config[routing_key]
-
-            # Strict Contract Enforcements:
-            if not isinstance(url_data, (str, dict)):
-                raise RuntimeError("CRASH: Config output breached return contract.")
-
-        except KeyError:
-            # Expected for invalid routing keys.
-            # We want to ensure this doesn't crash the wider app if trapped cleanly.
-            pass
-
-    except (ValueError, TypeError, ValidationError, MailjetAuthError):
+    except (ValueError, TypeError):
         # We expect Config to reject bad inputs securely
         pass
     except Exception as e:

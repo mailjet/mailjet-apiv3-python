@@ -430,4 +430,4 @@ class TemplateContentBuilder(_BaseContentBuilder):
             )
 
         # Return a copy to preserve builder state immutability
-        return self._payload.copy()  # type: ignore[return-value]
+        return self._payload.copy()

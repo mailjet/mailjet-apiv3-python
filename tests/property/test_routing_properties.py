@@ -8,7 +8,6 @@ from urllib.parse import urlparse
 from hypothesis import given, settings, strategies as st
 
 from mailjet_rest.client import Client
-from mailjet_rest.config import Config
 from mailjet_rest.endpoint import Endpoint
 from mailjet_rest.utils.guardrails import SecurityGuard
 
