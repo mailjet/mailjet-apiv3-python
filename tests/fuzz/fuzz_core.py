@@ -1,5 +1,6 @@
 import sys
 import atheris
+import gc
 
 from mailjet_rest.errors import MailjetAuthError, ValidationError, MailjetApiError
 
@@ -9,6 +10,8 @@ with atheris.instrument_imports():
     from mailjet_rest.client import Client
     from mailjet_rest.config import Config
     from mailjet_rest.utils.guardrails import SecurityGuard
+
+execution_counter = 0
 
 # Initialize a dummy client globally ONCE to save execution time across millions of runs
 _mock_client = Client(auth=("mock_key", "mock_secret"), config=None)
@@ -61,7 +64,7 @@ def fuzz_routing(fdp: atheris.FuzzedDataProvider) -> int:
         )
 
     except (ValueError, TypeError, ValidationError, AttributeError, MailjetApiError, MailjetAuthError):
-        # FAIL-FAST FIX:
+        # FAIL-FAST:
         # By catching these exceptions and returning -1, we tell Atheris:
         # "The SDK successfully blocked this payload. It's not a crash. Keep exploring!"
         return -1
@@ -108,6 +111,13 @@ def fuzz_guardrails(fdp: atheris.FuzzedDataProvider) -> int:
 
 def TestOneInput(data: bytes) -> int:
     """Main Router: Dynamically choose target based on input bytes."""
+    global execution_counter
+    execution_counter += 1
+
+    # Force garbage collection every 10,000 iterations
+    if execution_counter % 10000 == 0:
+        gc.collect()
+
     if len(data) < 5:
         return -1
 

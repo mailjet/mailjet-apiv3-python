@@ -10,7 +10,6 @@ from typing import Any
 
 import requests
 
-
 # Mailjet specific authentication environment variables
 API_KEY_PUBLIC = os.environ.get("MJ_APIKEY_PUBLIC")
 API_KEY_PRIVATE = os.environ.get("MJ_APIKEY_PRIVATE")
@@ -18,11 +17,12 @@ API_KEY_PRIVATE = os.environ.get("MJ_APIKEY_PRIVATE")
 BASE_URL_V3 = "https://api.mailjet.com/v3/REST"
 BASE_URL_V3_1 = "https://api.mailjet.com/v3.1"
 BASE_URL_V1 = "https://api.mailjet.com/v1/REST"
+BASE_URL_V3_SEND = "https://api.mailjet.com/v3"
 
 # Schema-aware targets based on Mailjet API documentation
 TARGETS: list[dict[str, Any]] = [
     # ----------------------------------------------------
-    # V3.1 SEND API TARGETS (Complex deeply-nested JSON)
+    # SEND API TARGETS (v3.1 and v3)
     # ----------------------------------------------------
     {
         "method": "POST",
@@ -54,51 +54,70 @@ TARGETS: list[dict[str, Any]] = [
             ]
         },
     },
+    {
+        "method": "POST",
+        "name": "send_v3_post",
+        "url": f"{BASE_URL_V3_SEND}/send",
+        "json": {
+            "FromEmail": "pilot@mailjet.com",
+            "FromName": "Mailjet Pilot",
+            "Subject": "Fuzzing v3 Send",
+            "Text-part": "Legacy send API fuzzing",
+            "Recipients": [{"Email": "passenger1@mailjet.com"}]
+        },
+    },
     # ----------------------------------------------------
-    # V3 REST API TARGETS (Resource Lookups & Pagination)
+    # CONTACT MANAGEMENT & METADATA
     # ----------------------------------------------------
     {"method": "GET", "name": "contact_get", "url": f"{BASE_URL_V3}/contact", "params": {"limit": 5}},
-    {"method": "GET", "name": "message_get", "url": f"{BASE_URL_V3}/message", "params": {"limit": 10}},
+    {"method": "GET", "name": "contactdata_get", "url": f"{BASE_URL_V3}/contactdata", "params": {"limit": 2}},
+    {"method": "GET", "name": "contactmetadata_get", "url": f"{BASE_URL_V3}/contactmetadata"},
     {
-        "method": "GET",
-        "name": "campaign_get",
-        "url": f"{BASE_URL_V3}/campaign",
+        "method": "POST",
+        "name": "contactmetadata_post",
+        "url": f"{BASE_URL_V3}/contactmetadata",
+        "json": {"Datatype": "str", "Name": "fuzz_property", "NameSpace": "static"},
     },
-    {
-        "method": "GET",
-        "name": "sender_get",
-        "url": f"{BASE_URL_V3}/sender",
-    },
-    {
-        "method": "GET",
-        "name": "user_get",
-        "url": f"{BASE_URL_V3}/user",
-    },
-    {
-        "method": "GET",
-        "name": "apikey_get",
-        "url": f"{BASE_URL_V3}/apikey",
-    },
-    {
-        "method": "GET",
-        "name": "webhook_get",
-        "url": f"{BASE_URL_V3}/webhook",
-    },
-    # ----------------------------------------------------
-    # V3 REST API TARGETS (Complex POST/PUT Operations)
-    # ----------------------------------------------------
     {
         "method": "POST",
         "name": "contact_managemanycontacts_post",
         "url": f"{BASE_URL_V3}/contact/managemanycontacts",
         "json": {"Action": "addnoforce", "Contacts": [{"Email": "fuzz-contact@example.com"}]},
     },
+    # ----------------------------------------------------
+    # LISTS, SUBSCRIPTIONS & SEGMENTATION
+    # ----------------------------------------------------
+    {"method": "GET", "name": "contactslist_get", "url": f"{BASE_URL_V3}/contactslist"},
     {
         "method": "POST",
         "name": "contactslist_post",
         "url": f"{BASE_URL_V3}/contactslist",
         "json": {"Name": "Fuzz Test List"},
     },
+    {"method": "GET", "name": "listrecipient_get", "url": f"{BASE_URL_V3}/listrecipient", "params": {"limit": 5}},
+    {
+        "method": "POST",
+        "name": "listrecipient_post",
+        "url": f"{BASE_URL_V3}/listrecipient",
+        "json": {"ContactAlt": "fuzz-contact@example.com", "ListID": 999999}, # Will likely 400
+    },
+    {
+        "method": "POST",
+        "name": "csvimport_post",
+        "url": f"{BASE_URL_V3}/csvimport",
+        "json": {"Method": "addnoforce", "ContactsListID": 999999, "DataID": 888888}, # Intentionally bad IDs
+    },
+    {
+        "method": "POST",
+        "name": "contactfilter_post",
+        "url": f"{BASE_URL_V3}/contactfilter",
+        "json": {"Description": "Fuzz segment", "Expression": "(age<35)", "Name": "Fuzz Under 35"},
+    },
+    # ----------------------------------------------------
+    # CAMPAIGNS & TEMPLATES
+    # ----------------------------------------------------
+    {"method": "GET", "name": "campaign_get", "url": f"{BASE_URL_V3}/campaign", "params": {"limit": 5}},
+    {"method": "GET", "name": "newsletter_get", "url": f"{BASE_URL_V3}/newsletter"},
     {
         "method": "POST",
         "name": "campaigndraft_post",
@@ -120,28 +139,49 @@ TARGETS: list[dict[str, Any]] = [
     {
         "method": "PUT",
         "name": "template_detailcontent_put",
-        # Note: 999999 will likely 404, feeding our error parser the exact JSON error schema
         "url": f"{BASE_URL_V3}/template/999999/detailcontent",
         "json": {"Headers": {"Reply-To": "fuzz@mailjet.com"}, "Html-part": "<html>Fuzz</html>"},
     },
+    # ----------------------------------------------------
+    # WEBHOOKS & PARSE API
+    # ----------------------------------------------------
+    {"method": "GET", "name": "webhook_get", "url": f"{BASE_URL_V3}/webhook"},
+    {"method": "GET", "name": "eventcallbackurl_get", "url": f"{BASE_URL_V3}/eventcallbackurl"},
+    {
+        "method": "POST",
+        "name": "eventcallbackurl_post",
+        "url": f"{BASE_URL_V3}/eventcallbackurl",
+        "json": {"Url": "https://fuzz-target.example.com/webhook", "EventType": "open"},
+    },
+    {"method": "GET", "name": "parseroute_get", "url": f"{BASE_URL_V3}/parseroute"},
     {
         "method": "POST",
         "name": "parseroute_post",
         "url": f"{BASE_URL_V3}/parseroute",
-        "json": {"Url": "https://fuzz-target.example.com/webhook"},
+        "json": {"Url": "https://fuzz-target.example.com/parse"},
     },
     # ----------------------------------------------------
-    # V3 REST API TARGETS (Statistics & Analytics)
+    # SETTINGS, SENDERS, AND DOMAINS
     # ----------------------------------------------------
-    {
-        "method": "GET",
-        "name": "statcounters_get",
-        "url": f"{BASE_URL_V3}/statcounters",
-        "params": {"CounterSource": "APIKey", "CounterTiming": "Message"},
-    },
-    {"method": "GET", "name": "bouncestatistics_get", "url": f"{BASE_URL_V3}/bouncestatistics"},
-    {"method": "GET", "name": "clickstatistics_get", "url": f"{BASE_URL_V3}/clickstatistics"},
-    {"method": "GET", "name": "domainstatistics_get", "url": f"{BASE_URL_V3}/domainstatistics"},
+    {"method": "GET", "name": "myprofile_get", "url": f"{BASE_URL_V3}/myprofile"},
+    {"method": "GET", "name": "user_get", "url": f"{BASE_URL_V3}/user"},
+    {"method": "GET", "name": "apikey_get", "url": f"{BASE_URL_V3}/apikey"},
+    {"method": "GET", "name": "sender_get", "url": f"{BASE_URL_V3}/sender"},
+    {"method": "GET", "name": "metasender_get", "url": f"{BASE_URL_V3}/metasender"},
+    {"method": "GET", "name": "dns_get", "url": f"{BASE_URL_V3}/dns"},
+    # ----------------------------------------------------
+    # STATISTICS & ANALYTICS
+    # ----------------------------------------------------
+    {"method": "GET", "name": "message_get", "url": f"{BASE_URL_V3}/message", "params": {"limit": 10}},
+    {"method": "GET", "name": "statcounters_get", "url": f"{BASE_URL_V3}/statcounters", "params": {"CounterSource": "APIKey", "CounterTiming": "Message"}},
+    {"method": "GET", "name": "bouncestatistics_get", "url": f"{BASE_URL_V3}/bouncestatistics", "params": {"limit": 5}},
+    {"method": "GET", "name": "clickstatistics_get", "url": f"{BASE_URL_V3}/clickstatistics", "params": {"limit": 5}},
+    {"method": "GET", "name": "domainstatistics_get", "url": f"{BASE_URL_V3}/domainstatistics", "params": {"limit": 5}},
+    {"method": "GET", "name": "contactstatistics_get", "url": f"{BASE_URL_V3}/contactstatistics", "params": {"limit": 5}},
+    {"method": "GET", "name": "liststatistics_get", "url": f"{BASE_URL_V3}/liststatistics"},
+    {"method": "GET", "name": "openinformation_get", "url": f"{BASE_URL_V3}/openinformation", "params": {"limit": 5}},
+    {"method": "GET", "name": "geostatistics_get", "url": f"{BASE_URL_V3}/geostatistics"},
+    {"method": "GET", "name": "toplinkclicked_get", "url": f"{BASE_URL_V3}/toplinkclicked"},
     # ----------------------------------------------------
     # V1 CONTENT API TARGETS (Tokens & Labels)
     # ----------------------------------------------------
@@ -153,45 +193,74 @@ TARGETS: list[dict[str, Any]] = [
 CORPUS_MAP: dict[str, list[str]] = {
     "fuzz_endpoint": [
         "contact_get",
+        "contactdata_get",
+        "contactmetadata_get",
+        "contactslist_get",
+        "listrecipient_get",
         "message_get",
         "campaign_get",
+        "newsletter_get",
         "sender_get",
+        "metasender_get",
+        "dns_get",
         "user_get",
         "apikey_get",
+        "myprofile_get",
         "webhook_get",
+        "eventcallbackurl_get",
+        "parseroute_get",
         "statcounters_get",
         "bouncestatistics_get",
         "clickstatistics_get",
         "domainstatistics_get",
+        "contactstatistics_get",
+        "liststatistics_get",
+        "openinformation_get",
+        "geostatistics_get",
+        "toplinkclicked_get",
         "tokens_get",
         "labels_get",
     ],
     "fuzz_builder": [
         # Gives the fluent builders native schema constraints to mutate against
         "send_v31_post",
+        "send_v3_post",
         "template_post",
         "campaigndraft_post",
+        "contactmetadata_post",
+        "contactfilter_post",
+        "eventcallbackurl_post",
+        "parseroute_post",
     ],
     "fuzz_structure_aware": [
         # Provides deep JSON trees for the structured mutator to traverse
         "send_v31_post",
+        "send_v3_post",
         "contact_managemanycontacts_post",
+        "contactslist_post",
         "parseroute_post",
         "template_detailcontent_put",
+        "csvimport_post",
+        "listrecipient_post",
     ],
     "fuzz_error_parser": [
         # Allows the error parser to learn from actual Mailjet 400/404 payloads
         "send_v31_error_post",
         "template_detailcontent_put",
+        "csvimport_post",
+        "listrecipient_post",
     ],
     "fuzz_pagination_stream": [
         # Feeds the lazy-eval generator fuzzer actual list arrays returned by the API
         "contact_get",
         "message_get",
         "campaign_get",
+        "bouncestatistics_get",
+        "listrecipient_get",
+        "clickstatistics_get",
+        "openinformation_get",
     ],
 }
-
 
 def harvest_seeds() -> None:
     if not API_KEY_PUBLIC or not API_KEY_PRIVATE:
@@ -241,7 +310,6 @@ def harvest_seeds() -> None:
             print(f"  ❌ Network Failure {target['name']}: {e}")
         except Exception as e:
             print(f"  ❌ Unhandled Error {target['name']}: {e}")
-
 
 if __name__ == "__main__":
     harvest_seeds()
