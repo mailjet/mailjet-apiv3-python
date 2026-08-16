@@ -1,9 +1,12 @@
-name: Security
+name: Continuous Security Verification
 
 on:
-  push: { branches: [main] }
+  push:
+    branches: [ "master" ]
   pull_request:
-  schedule: [{ cron: "0 5 * * *" }] # Daily security sweep
+    branches: [ "master" ]
+  schedule:
+    - cron: '37 3 * * 0'
 
 permissions:
   contents: read
@@ -12,50 +15,66 @@ jobs:
   static-analysis:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
           cache: 'pip'
       - run: python -m pip install --upgrade pip
-      - run: pip install ruff bandit mypy pip-audit
-      # Fast checks
+      - run: pip install ruff bandit mypy
       - run: ruff check .
       - run: bandit -c pyproject.toml -r mailjet_rest
       - run: mypy --strict mailjet_rest
 
-  semgrep:
+  dependency-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: returntocorp/semgrep-action@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          config: >-
-            p/python
-            p/owasp-top-ten
-            p/supply-chain
-            p/command-injection
-            p/insecure-transport
-          error: true # Fails CI if issues found
-
-  pip-audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: "3.13" }
       - run: python -m pip install --upgrade pip
       - run: pip install pip-audit
       - run: pip-audit --strict
 
-  osv-scan:
+  osv-scanner:
+    runs-on: ubuntu-latest
     permissions:
       actions: read
-      security-events: write # For Security Tab
+      security-events: write  # For Security Tab
       contents: read
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8"
-    with:
-      # Explicit root scanning
-      scan-args: |-
-        --recursive
-        ./
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Run OSV-Scanner
+        # zizmor: ignore[unpinned-uses]
+        uses: google/osv-scanner-action/osv-scanner-action@8deb546fdb875b9996d27d4950be7312dac076a1
+        with:
+          scan-args: |
+            --recursive
+            ./
+
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      # Official Semgrep Docker image
+      image: semgrep/semgrep@sha256:bdf7013b2c3634a487671158da77c554f531742326b543a9464d2adf6c433ac8
+    if: (github.actor != 'dependabot[bot]')
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Run Semgrep CE scan
+        run: >-
+          semgrep scan
+          --config "p/python"
+          --config "p/owasp-top-ten"
+          --config "p/supply-chain"
+          --config "p/command-injection"
+          --config "p/insecure-transport"
+          --error

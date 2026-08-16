@@ -36,6 +36,9 @@ ci:
     skip: []
     submodules: false
 
+# Run hooks on staged files by default, ignoring the commit-msg phase
+default_stages: [pre-commit]
+
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -102,7 +105,7 @@ repos:
 
   # Git commit quality
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.16.2
+    rev: v4.17.0
     hooks:
       - id: commitizen
         name: "🌳 git · Validate commit message"
@@ -131,7 +134,7 @@ repos:
         additional_dependencies: [".[toml]"]
 
   - repo: https://github.com/semgrep/pre-commit
-    rev: 'v1.163.0'
+    rev: 'v1.171.0'
     hooks:
       - id: semgrep
         name: "🔒 security · Static analysis (semgrep)"
@@ -139,14 +142,14 @@ repos:
 
   # Spelling and typos
   - repo: https://github.com/crate-ci/typos
-    rev: v1.46.2
+    rev: v1.48.0
     hooks:
       - id: typos
         name: "📝 spelling · Check typos"
 
   # CI/CD validation
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.2
+    rev: 0.37.4
     hooks:
       - id: check-dependabot
         name: "🔧 ci/cd · Validate Dependabot config"
@@ -155,7 +158,7 @@ repos:
         files: ^\.github/workflows/.*\.ya?ml$
 
   - repo: https://github.com/ariebovenberg/slotscheck
-    rev: v0.19.1
+    rev: v0.20.1
     hooks:
       - id: slotscheck
         name: "🔍 check · slotscheck"
@@ -168,7 +171,7 @@ repos:
           - hypothesis
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.14
+    rev: v0.16.1
     hooks:
       - id: ruff-check
         name: "🐍 lint · Check with Ruff"
@@ -187,7 +190,7 @@ repos:
 
   # Python type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
+    rev: v2.3.0
     hooks:
       - id: mypy
         name: "🐍 types · Check with mypy"
@@ -198,7 +201,7 @@ repos:
         exclude: ^samples/
 
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.409
+    rev: v1.1.411
     hooks:
       - id: pyright
         name: "🐍 types · Check with pyright"
@@ -240,7 +243,7 @@ repos:
 
 # TODO: Enable it for a single check
 #  - repo: https://github.com/tcort/markdown-link-check
-#    rev: v3.14.2
+#    rev: v3.15.0
 #    hooks:
 #      - id: markdown-link-check
 #        name: "📝 docs · Check markdown links"

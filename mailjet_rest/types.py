@@ -14,7 +14,6 @@ else:
 
 
 __all__ = [
-    # Constants
     "_ALLOWED_TRACE_FIELDS",
     "_DEFAULT_TIMEOUT",
     "_JSON_HEADERS",
@@ -32,8 +31,8 @@ __all__ = [
 # Types & Constants
 # ==========================================
 
-TimeoutType: TypeAlias = int | float | tuple[float, float] | None
-PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | None
+TimeoutType: TypeAlias = int | float | tuple[int | float, int | float] | None
+PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | bytes | None
 HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
 
 _DEFAULT_TIMEOUT: Final[int] = 60
@@ -75,14 +74,14 @@ class SendV31Message(TypedDict):
     EventPayload: NotRequired[str]
     Headers: NotRequired[dict[str, str]]
     Attachments: NotRequired[list[Attachment]]
+    InlinedAttachments: NotRequired[list[Attachment]]
     # Tracking
     TrackOpens: NotRequired[Literal["enabled", "disabled"]]
     TrackClicks: NotRequired[Literal["enabled", "disabled"]]
-    SandboxMode: NotRequired[bool]
 
 
 class SendV31Payload(TypedDict):
-    """Root payload schema for Send API v3.1."""
+    """Represents the top-level payload for the Mailjet v3.1 API."""
 
     Messages: list[SendV31Message]
     SandboxMode: NotRequired[bool]

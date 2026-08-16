@@ -1,25 +1,40 @@
-"""Atheris fuzzing target for registry-based URL construction and routing."""
+#!/usr/bin/env python3
+"""Atheris fuzzing target for registry-based URL construction, dynamic header merging,
+and complex query filter generation.
+"""
 
-import atheris
+import logging
 import sys
+from typing import Any
 from unittest.mock import MagicMock
 
+import atheris
+
+
 with atheris.instrument_imports():
-    from mailjet_rest.endpoint import Endpoint
     from mailjet_rest.client import Client
-    from mailjet_rest.errors import ValidationError
+    from mailjet_rest.endpoint import Endpoint
+    from mailjet_rest.errors import ApiError, ValidationError
+
+logging.disable(logging.CRITICAL)
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
         return
+
     fdp = atheris.FuzzedDataProvider(data)
 
     mock_client = MagicMock(spec=Client)
     mock_client.api_call.return_value = MagicMock(status_code=200)
 
     url_choices = [
-        "send", "contact", "contactslist_csvdata", "REST/contact", "DATA/contactslist",
-        fdp.ConsumeUnicodeNoSurrogates(20)
+        "send",
+        "contact",
+        "contactslist_csvdata",
+        "REST/contact",
+        "DATA/contactslist",
+        fdp.ConsumeUnicodeNoSurrogates(20),
     ]
     url = fdp.PickValueInList(url_choices)
 
@@ -31,44 +46,46 @@ def TestOneInput(data: bytes) -> None:
         if id_type == 0:
             id_val = ""
         elif id_type == 1:
-            id_val = fdp.ConsumeInt(100)
+            id_val = fdp.ConsumeInt(100)  # type: ignore[assignment]
         else:
             id_val = fdp.ConsumeUnicodeNoSurrogates(15)
 
         action_id = fdp.ConsumeUnicodeNoSurrogates(10) if fdp.ConsumeBool() else None
 
-        # Aggressively Fuzz Pagination and Filters
-        filters = {}
+        # Aggressively Fuzz Pagination and Filters (Query Params)
+        filters: dict[str, Any] = {}
         if fdp.ConsumeBool():
-            # Fuzz massive, negative, and 0 limits
             filters["limit"] = fdp.ConsumeIntInRange(-100, 1000000)
         if fdp.ConsumeBool():
             filters["offset"] = fdp.ConsumeIntInRange(-100, 1000000)
         if fdp.ConsumeBool():
             filters["sort"] = fdp.ConsumeUnicodeNoSurrogates(15)
-        if fdp.ConsumeBool():
-            filters["countOnly"] = fdp.ConsumeBool()
 
-        # Add random noise payload
+        # Intentionally trigger Header collisions during dynamic execution
+        dynamic_headers: dict[str, str] = {}
+        if fdp.ConsumeBool():
+            for _ in range(fdp.ConsumeIntInRange(1, 5)):
+                dynamic_headers[fdp.ConsumeUnicodeNoSurrogates(15)] = fdp.ConsumeUnicodeNoSurrogates(30)
+
         payload = {fdp.ConsumeUnicodeNoSurrogates(5): fdp.ConsumeUnicodeNoSurrogates(10)}
 
         if method_idx == 0:
-            endpoint.get(id=id_val, action_id=action_id, filters=filters)
+            endpoint.get(id=id_val, action_id=action_id, filters=filters, headers=dynamic_headers)
         elif method_idx == 1:
-            endpoint.create(data=payload, action_id=action_id)
+            endpoint.create(data=payload, action_id=action_id, headers=dynamic_headers)
         elif method_idx == 2:
-            endpoint.update(id=id_val, data=payload, action_id=action_id)
+            endpoint.update(id=id_val, data=payload, action_id=action_id, filters=filters)
         else:
             endpoint.delete(id=id_val, action_id=action_id)
 
-    except (ValueError, TypeError, AttributeError, KeyError, ValidationError):
-        # Invalid/malformed fuzz inputs are expected here; ignore and continue fuzzing.
+    except (ValueError, TypeError, AttributeError, KeyError, ValidationError, ApiError):
+        # Expected for malformed fuzzed inputs traversing validation logic
         pass
+    except Exception as e:
+        raise RuntimeError(f"UNHANDLED CRASH in Endpoint URL/Header routing: {e}") from e
 
-def main() -> None:
+
+if __name__ == "__main__":
     atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()
-
-if __name__ == "__main__":
-    main()

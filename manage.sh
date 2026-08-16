@@ -85,7 +85,7 @@ test_integration() {
 
 test_cov() {
     # Example: ./manage.sh test_cov
-    info "Running tests with Coverage requirements (Fail under 80%)...."
+    info "Running tests with Coverage requirements (Fail under 80%)..."
     pytest -n auto --cov="${SRC_DIR}" "${TEST_DIR}" --cov-fail-under=80 --cov-report=term-missing --cov-report=html
     success "Coverage report generated in htmlcov/index.html"
 }
@@ -101,6 +101,40 @@ test_strict_warnings() {
     # Example: ./manage.sh test_strict_warnings
     info "Running tests and treating DeprecationWarnings as ERRORS..."
     pytest -W "error::DeprecationWarning" "$@"
+}
+
+test_examples() {
+    # Example: ./manage.sh test_examples
+    if [[ -z "$MJ_APIKEY_PUBLIC" || -z "$MJ_APIKEY_PRIVATE" ]]; then
+        warn "MJ_APIKEY_PUBLIC or MJ_APIKEY_PRIVATE environment variables are not set."
+        warn "Many examples may fail without them."
+        echo ""
+    fi
+
+    # Ensure python finds the local mailjet_rest module
+    export PYTHONPATH="$(pwd):$PYTHONPATH"
+
+    info "Starting Mailjet Examples Test Suite...\n"
+
+    # Fail gracefully if the examples folder doesn't exist yet
+    if [ ! -d "samples" ]; then
+        warn "Examples directory 'samples' not found. Skipping."
+        return 0
+    fi
+
+    for script in samples/*.py; do
+        if [[ "$(basename "$script")" == "__init__.py" ]]; then
+            continue
+        fi
+
+        success "Running: ${script}..."
+
+        python "$script"
+
+        echo "---------------------------------------------------"
+    done
+
+    success "✅ All examples executed successfully!"
 }
 
 
@@ -130,7 +164,7 @@ fuzz_all() {
     if [ -f "$dictionary" ]; then
         dict_arg="-dict=$root_dir/$dictionary"
     else
-        echo -e "${YELLOW}⚠️ Warning: Dictionary '$dictionary' not found. Running without it.${NC}"
+        warn "Dictionary '$dictionary' not found. Running without it."
     fi
 
     info "🚀 Starting security fuzzing suite (duration: ${duration} seconds per fuzzer)..."
@@ -300,6 +334,7 @@ help() {
     echo "  test_cov          - Run tests with HTML coverage report"
     echo "  test_no_warnings  - Run tests and hide all DeprecationWarnings"
     echo "  test_strict_warnings - Run tests and fail on any DeprecationWarning"
+    echo "  test_examples     - Run all enabled Mailjet examples in the ${SRC_DIR}/examples folder"
     echo ""
     echo -e "${YELLOW}Security & Fuzzing:${NC}"
     echo "  fuzz_all          - Run all fuzz tests (pass duration as first arg, optionally pass fuzzer flags)"
@@ -331,7 +366,7 @@ COMMAND=$1
 shift # Remove the command from the arguments list, leaving only extra flags
 
 case "$COMMAND" in
-    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|fuzz_all)
+    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|test_examples|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|fuzz_all)
         "$COMMAND" "$@" # Execute the function with any remaining arguments
         ;;
     help)

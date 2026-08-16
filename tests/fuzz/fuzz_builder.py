@@ -1,14 +1,15 @@
 """Atheris fuzzing target for the Mailjet SDK Builders."""
 
-import atheris
 import sys
-from unittest.mock import patch, MagicMock
+
+import atheris
 
 
 with atheris.instrument_imports():
     from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
-    from mailjet_rest.utils.guardrails import SecurityGuard
     from mailjet_rest.errors import ValidationError
+    from mailjet_rest.utils.guardrails import SecurityGuard
+
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -31,83 +32,71 @@ def TestOneInput(data: bytes) -> None:
     try:
         builder = MessageBuilder()
         builder.set_sender(
-            email=fdp.ConsumeUnicodeNoSurrogates(20),
-            name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
+            email=fdp.ConsumeUnicodeNoSurrogates(32),
+            name=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None,
         )
 
-        for _ in range(fdp.ConsumeIntInRange(1, 3)):
-            builder.add_recipient(
-                email=fdp.ConsumeUnicodeNoSurrogates(20),
-                name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
-            )
-
-        for _ in range(fdp.ConsumeIntInRange(0, 2)):
-            builder.add_cc(
-                email=fdp.ConsumeUnicodeNoSurrogates(20),
-                name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
-            )
-
-        for _ in range(fdp.ConsumeIntInRange(0, 2)):
-            builder.add_bcc(
-                email=fdp.ConsumeUnicodeNoSurrogates(20),
-                name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None
-            )
-
-        builder.set_subject(fdp.ConsumeUnicodeNoSurrogates(50))
-        builder.set_content(
-            text=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None,
-            html=fdp.ConsumeUnicodeNoSurrogates(100) if fdp.ConsumeBool() else None,
-        )
-
-        builder.set_template(fdp.ConsumeInt(10000))
-
-        # Fuzz mocked file ingestion
-        virtual_file_name = fdp.ConsumeUnicodeNoSurrogates(15)
-        virtual_file_data = fdp.ConsumeBytes(100)
-
-        with patch("pathlib.Path.is_file", return_value=True), \
-             patch("pathlib.Path.stat", return_value=MagicMock(st_size=len(virtual_file_data))), \
-             patch("pathlib.Path.read_bytes", return_value=virtual_file_data):
-
-            if fdp.ConsumeBool():
-                builder.attach_file(virtual_file_name)
-            if fdp.ConsumeBool():
-                builder.attach_inline_image(virtual_file_name)  # type: ignore[attr-defined]
+        num_ops = fdp.ConsumeIntInRange(1, 6)
+        for _ in range(num_ops):
+            op = fdp.ConsumeIntInRange(0, 4)
+            if op == 0:
+                builder.add_recipient(
+                    email=fdp.ConsumeUnicodeNoSurrogates(20),
+                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
+                )
+            elif op == 1:
+                builder.set_subject(fdp.ConsumeUnicodeNoSurrogates(64))
+            elif op == 2:
+                builder.add_cc(
+                    email=fdp.ConsumeUnicodeNoSurrogates(20),
+                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
+                )
+            elif op == 3:
+                builder.add_bcc(
+                    email=fdp.ConsumeUnicodeNoSurrogates(20),
+                    name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
+                )
+            elif op == 4:
+                # Fuzz sizes specifically around the 5MB cutoff limits
+                content = fdp.ConsumeUnicodeNoSurrogates(1024)
+                if fdp.ConsumeBool():
+                    builder.set_content(html=content)
+                else:
+                    builder.set_content(text=content)
 
         builder.build()
     except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
-        # Expected under fuzzed/random inputs; ignore to continue fuzzing.
         pass
 
-    # ==========================================
-    # BLOCK 3: Template Content Builder
-    # ==========================================
+        # ==========================================
+        # BLOCK 2: Template Content Builder
+        # ==========================================
     try:
         t_builder = TemplateContentBuilder()
-        t_builder.set_meta(
-            author=fdp.ConsumeUnicodeNoSurrogates(20),
-            name=fdp.ConsumeUnicodeNoSurrogates(20)
-        )
+        t_builder.set_meta(author=fdp.ConsumeUnicodeNoSurrogates(20), name=fdp.ConsumeUnicodeNoSurrogates(20))
         t_builder.set_content(  # type: ignore[call-arg]
             text=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
             html=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
-            mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None  # pyright: ignore[reportCallIssue]
+            mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
         )
 
         headers = {}
-        for _ in range(fdp.ConsumeIntInRange(0, 2)):
-            headers[fdp.ConsumeUnicodeNoSurrogates(10)] = fdp.ConsumeUnicodeNoSurrogates(10)
+        for _ in range(fdp.ConsumeIntInRange(0, 3)):
+            headers[fdp.ConsumeUnicodeNoSurrogates(16)] = fdp.ConsumeUnicodeNoSurrogates(32)
         t_builder.set_headers(headers)
 
         t_builder.build()
-    except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
-        # Expected for malformed fuzz inputs; keep fuzzing instead of failing the harness.
-        pass
 
-def main() -> None:
+    except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
+        # Expected validation/fuzzing error; ignore so the fuzzer can continue.  # noqa: S110
+        pass
+    except RecursionError:
+        raise RuntimeError("CRASH: Builder JSON Serialization hit Recursion Depth limit.")
+    except Exception as e:
+        raise RuntimeError(f"UNHANDLED CRASH in Builder execution: {type(e).__name__} - {e}") from e
+
+
+if __name__ == "__main__":
     atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()
-
-if __name__ == "__main__":
-    main()

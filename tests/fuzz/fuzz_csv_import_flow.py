@@ -1,6 +1,12 @@
+import logging
 import sys
-import atheris
 from typing import Any
+
+import atheris
+
+
+logging.getLogger().handlers.clear()
+logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports():
     from mailjet_rest import Client
@@ -10,20 +16,29 @@ with atheris.instrument_imports():
 # ==========================================
 client = Client(auth=("test", "test"), version="v3")
 
-class DumbResponse:
-    status_code = 200
-    def json(self) -> dict[str, Any]:
-        return {"ID": 12345, "Data": [{"ID": 67890}]}
 
-    @property
-    def text(self) -> str:
-        return ""
+class DumbResponse:
+    def __init__(self, status_code, json_data):
+        self.status_code = status_code
+        self._json = json_data
+        self.text = str(json_data)
+
+    def json(self):
+        return self._json
+
+    def raise_for_status(self):
+        # Mock successful status check
+        pass
+
 
 def dumb_mock_request(*args: Any, **kwargs: Any) -> DumbResponse:
-    return DumbResponse()
+    # Return a mocked 200 OK response with dummy json data
+    return DumbResponse(200, {"ID": 12345, "Data": [{"ID": 67890}]})
+
 
 # Intercept all outbound network requests
 client.session.request = dumb_mock_request  # type: ignore[method-assign, assignment]
+
 
 def TestOneInput(data: bytes) -> None:
     # Cap size to prevent memory bottlenecks during CSV string synthesis
@@ -57,6 +72,7 @@ def TestOneInput(data: bytes) -> None:
     except (ValueError, TypeError):
         # Expected for malformed fuzz inputs; ignore and continue fuzzing.
         pass
+
 
 if __name__ == "__main__":
     atheris.instrument_all()
