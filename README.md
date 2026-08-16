@@ -499,6 +499,8 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
 For complex scenarios like Send API v3.1, manually constructing nested dictionaries is error-prone.
 The `MessageBuilder` provides a fluent interface that handles structure, attachment encoding, and validation automatically.
 
+<!-- mdformat off -->
+
 ```python
 import os
 from mailjet_rest import Client
@@ -530,6 +532,8 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
     print(result.status_code)
     print(result.json())
 ```
+
+<!-- mdformat on -->
 
 ### Standard REST Actions (GET, POST, PUT, DELETE)
 
