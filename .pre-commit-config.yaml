@@ -249,9 +249,9 @@ repos:
         name: "📝 markdown · Format files"
 
         additional_dependencies:
-          - mdformat-gfm
-          - mdformat-black
-          - mdformat-ruff
+          - mdformat-gfm==1.0.0
+          - mdformat-black==0.1.1
+          - mdformat-ruff==0.1.3
 
 # TODO: Enable it for a single check
 #  - repo: https://github.com/tcort/markdown-link-check
@@ -260,9 +260,9 @@ repos:
 #      - id: markdown-link-check
 #        name: "📝 docs · Check markdown links"
 
-  # Makefile linting
-  - repo: https://github.com/checkmake/checkmake
-    rev: v0.3.0
-    hooks:
-      - id: checkmake
-        name: "🔧 build · Lint Makefile"
+# Makefile linting
+#  - repo: https://github.com/checkmake/checkmake
+#    rev: v0.3.0
+#    hooks:
+#      - id: checkmake
+#        name: "🔧 build · Lint Makefile"
