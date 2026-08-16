@@ -174,7 +174,7 @@ def test_client_verify_false_rejected(client_offline: Client, monkeypatch: pytes
     """Coverage: Ensure verify=False emits a UserWarning."""
     # Mock the internal request to prevent actual network execution after the warning is emitted
     monkeypatch.setattr(client_offline.session, "request", MagicMock(return_value=MagicMock(status_code=200)))
-    with pytest.warns(UserWarning, match="TLS verification is disabled"):
+    with pytest.raises(ValueError, match="TLS verification cannot be disabled"):
         client_offline.api_call("GET", "https://api.mailjet.com/v3/send", headers={}, verify=False)
 
 

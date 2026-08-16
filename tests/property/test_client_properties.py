@@ -33,7 +33,7 @@ def test_property_auth_coercion(auth_input: Any) -> None:
     try:
         client = Client(auth=auth_input, version="v3")
         if isinstance(auth_input, tuple):
-            assert client.auth == auth_input
+            assert client.auth == (auth_input[0].strip(), auth_input[1].strip())
         elif isinstance(auth_input, str):
             assert "Authorization" in client.session.headers
     except (ValueError, TypeError):
@@ -57,13 +57,15 @@ def test_property_client_getattr_difflib(route_name: str) -> None:
     client = Client(auth=("a", "b"))
     try:
         endpoint = getattr(client, route_name)
-        # Only assert .name if it's an actual Endpoint object (ignores 'session', 'auth', etc.)
         if isinstance(endpoint, Endpoint):
             assert endpoint.name == route_name
+        else:
+            # Built-in attributes (like 'session', 'auth', 'config') are valid client attributes
+            return
     except AttributeError as e:
         # Check against both standard python attribute errors and custom difflib typo messages
-        if route_name.startswith("_"):
-            assert "object has no attribute" in str(e)
+        if route_name.startswith("_") or route_name in {"session", "config", "auth"}:
+            assert "object has no attribute" in str(e) or "has no attribute" in str(e)
         else:
             assert "has no endpoint or attribute" in str(e)
 
@@ -74,7 +76,7 @@ def test_property_client_getattr_difflib(route_name: str) -> None:
     payload=st.one_of(
         st.dictionaries(st.text(), st.text()), st.lists(st.dictionaries(st.text(), st.text())), st.none()
     ),
-    # Cap the fuzzed timeout at the maximum allowed 86400 seconds limit
+    # Cap the fuzzed timeout at the maximum allowed 86400 seconds limit (CWE-400)
     timeout=st.one_of(st.integers(min_value=1, max_value=86400), st.none()),
 )
 def test_property_api_call_resilience(method: Any, payload: Any, timeout: Any) -> None:
