@@ -93,7 +93,6 @@ def upload_the_csv(list_id=0):
 
 
 def import_csv_content_to_a_list(list_id=0, data_id=0):
-    # FIX: Ensure ErrThreshold is intentionally misspelled to match the Mailjet API schema
     data = {"ErrThreshold": 1, "Method": "addnoforce", "ContactsListID": list_id, "DataID": data_id}
     return mailjet30.csvimport.create(data=data)
 
