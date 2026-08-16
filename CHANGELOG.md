@@ -1,8 +1,75 @@
-# CHANGELOG
+# Changelog
 
-We [keep a changelog.](http://keepachangelog.com/)
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+______________________________________________________________________
 
 ## [Unreleased]
+
+______________________________________________________________________
+
+## [1.8.0] - 2026-08-17
+
+### Security
+
+- **Secret Obfuscation (CWE-316):** Added `SecretAuth` transport adapter and recursive `RedactingFilter` to strictly prevent API credentials and sensitive payload data from leaking in memory dumps, tracebacks, or system logs.
+- **SpamGuard Analysis:** Implemented internal HTML static analyzer (`_SpamGuardParser`) to preemptively intercept and block known XSS vectors (e.g., `<script>`, `onerror=`) before network dispatch.
+- **Idempotency Fingerprinting:** Automatically generates a safe SHA-256 `Idempotency-Key` header for state-mutating requests (`POST`, `PUT`, `DELETE`) to prevent duplicate mutations during network retries.
+- **Punycode IDN Support (RFC 3490):** Automatically normalizes Internationalized Domain Names (IDNs) in sender and recipient addresses via `SecurityGuard.normalize_domain` to prevent Unicode Homograph attacks.
+- **Control Character & CRLF Validation (CWE-20, CWE-113):** Added strict rejection of unprintable ASCII control characters in HTTP headers and dynamic path segments (`SecurityGuard.sanitize_headers`, `SecurityGuard.sanitize_segment`).
+- **SSRF & Transport Security (CWE-918, CWE-319):** Strictly enforces HTTPS scheme and authorized hostnames (`mailjet.com` or local test loopbacks) during `Config` initialization; enforces minimum TLS 1.2+ via `SecureHTTPAdapter`. Disabling TLS verification now strictly raises `ValueError`.
+- **Resource Exhaustion Mitigations (CWE-400):** Capped `HTMLPart` and `TextPart` inputs at 5MB safe limits, validated numeric scalar/tuple timeouts (rejecting `NaN`, `Infinity`, and non-positive values), and enforced `chunk_size > 0` in generators.
+- **Supply Chain & CI/CD Hardening:** Integrated Google's ClusterFuzzLite, Zizmor, OpenSSF Scorecard, and OSV-Scanner into the GitHub Actions pipeline. Expanded the Atheris coverage-guided fuzzing suite.
+
+### Added
+
+- **Memory-Safe File Chunking:** Introduced `ChunkedStreamer` to iteratively read and base64-encode large file attachments in 512KB chunks, preventing Out-Of-Memory (OOM) allocation spikes.
+- **Jitter Retry Engine:** Implemented custom `JitterRetry` connection pooling policy utilizing exponential backoff and randomized full jitter for transient 429/5xx status codes to mitigate the "Thundering Herd" effect.
+- **Fluent Builders:** Added `SendPayloadBuilder` to construct root Send API v3.1 payload wrappers (supporting `SandboxMode` and `Globals`) and `TemplateContentBuilder` for Content API payloads.
+- **Inline Attachments:** Added `.attach_inline()` support to `MessageBuilder` for embedding inline images directly from disk.
+- **Expanded Route Registry:** Added explicit $O(1)$ routing entries in `ROUTE_MAP` for Messages, Bulk Contact Management, Campaigns, Newsletters, Template Content, DNS verifications, and Analytics endpoints.
+- **Fuzzer Seed Harvester:** Added dynamic corpus generation tool (`seed_harvester.py`) for automated security testing and schema discovery.
+
+### Changed
+
+- **O(1) Route Resolution:** Replaced dynamic `__getattr__` and procedural `if/elif` string concatenation chains with an immutable routing table (`ROUTE_MAP`) and dedicated fallback resolvers (`_resolve_registry_route`, `_resolve_dynamic_route`).
+- **Domain Exception Mapping:** `Client._execute_request` now maps HTTP errors to specific domain exceptions (`MailjetAuthError`, `ApiRateLimitError`, `DoesNotExistError`, `ValidationError`, `ApiError`) with extracted response messages instead of returning raw error responses.
+- **Stream Pagination Behavior:** `Endpoint.stream()` default `chunk_size` increased from 100 to 1000, and now respects user-supplied `Offset` parameters for stream resumption.
+- **Memory Density (`__slots__`):** Standardized `__slots__` across `Endpoint`, `_BaseContentBuilder`, `MessageBuilder`, `SendPayloadBuilder`, and `TemplateContentBuilder` to reduce RAM footprint and accelerate attribute access.
+- **Template Content Schema:** `TemplateContentBuilder` now generates standard kebab-case keys (`Text-part`, `Html-part`) matching the legacy v3 template endpoint expectations.
+- **Builder Immutability:** `MessageBuilder.build()` and `TemplateContentBuilder.build()` return deep/shallow dictionary copies (`.copy()`) to prevent downstream payload mutation.
+- **Payload Types:** Broadened `PayloadType` type alias in `mailjet_rest.types` to support `bytes` and `list[Any]` batch payloads.
+
+### Deprecated
+
+- **Legacy Serialization Parameters:** `ensure_ascii` and `data_encoding` arguments in `Endpoint.__call__`, `create()`, and `update()` emit `DeprecationWarning`; underlying `requests` handles JSON serialization natively.
+- **Legacy Utility Functions:** `mailjet_rest.client.parse_response` and `mailjet_rest.client.logging_handler` emit `DeprecationWarning` in favor of standard `requests.Response` methods and standard logging.
+- **Unbounded Timeouts:** Passing `timeout=None` emits a deprecation warning due to unbounded socket blocking risks (CWE-400).
+
+### Removed
+
+- **`Config.__getitem__` Routing Helper:** Removed undocumented dictionary-style routing accessor (`config[key]`) from `Config`; route resolution is fully managed by `ROUTE_MAP` and `Endpoint`.
+- **Procedural Route Functions:** Removed obsolete procedural routing helpers (`_route_send`, `_route_csv`, `_route_data`, `_route_rest`) and `Endpoint._build_csv_url` in favor of centralized `_resolve_registry_route` and `_resolve_dynamic_route`.
+- **`auth` Attribute Reflection:** Removed raw credentials exposure on `Client` instances to prevent accidental credential leakage in memory inspectors and debug traces.
+
+### Fixed
+
+- **Path Traversal Bypass (CWE-22):** Explicitly sanitized `action_id` and dynamic path segments in legacy routing fallbacks (`_resolve_dynamic_route`) to prevent unescaped directory traversal execution.
+- **Legacy Serialization for Lists:** Fixed `ensure_ascii` and `data_encoding` fallbacks in `Endpoint.__call__` to correctly serialize list batch payloads.
+- **Stream None Offset Crash:** Fixed `TypeError` in `Endpoint.stream()` when evaluating empty or `None` offsets.
+- **Builder Variable Serialization:** Handled non-serializable objects (such as `datetime` and `UUID`) in `MessageBuilder.build()` via `default=str` during variable length verification.
+
+### Pull Requests Merged
+
+- PR #135: Modernize SDK architecture, add fluent builders, implement O(1) routing, and harden OWASP security guardrails.
+- PR #142 - build(deps): bump ossf/scorecard-action from 2.4.0 to 2.4.4.
+- PR #141 — build(deps): bump github/codeql-action/analyze from 4.37.3 to 4.37.6 by @dependabot.
+- PR #140 — build(deps): bump actions/upload-artifact from 4.3.3 to 7.0.1 by @dependabot.
+- PR #139 — build(deps): bump codecov/codecov-action from 4.5.0 to 7.0.0 by @dependabot.
+- PR #138 — build(deps): bump github/codeql-action/upload-sarif from 4.37.3 to 4.37.6 by @dependabot.
 
 ## [1.7.0] - 2026-06-10
 
@@ -304,4 +371,5 @@ We [keep a changelog.](http://keepachangelog.com/)
 [1.5.1]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.5.1
 [1.6.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0
 [1.7.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.7.0
+[1.8.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.8.0
 [unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.7.0...HEAD
