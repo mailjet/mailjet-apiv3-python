@@ -2,33 +2,21 @@ import json
 import logging
 import os
 import tempfile
+import uuid
 from pathlib import Path
 
 from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
 from mailjet_rest import Client, ApiError, CriticalApiError, TimeoutError, DoesNotExistError
 
-# Optional: Enable built-in SDK logging to see request/response details
-logging.getLogger("mailjet_rest.client").setLevel(logging.DEBUG)
-logging.basicConfig(format="%(levelname)s - %(name)s - %(message)s")
+logging.getLogger("mailjet_rest.client").setLevel(logging.CRITICAL)
 
-mailjet30 = Client(
-    auth=(
-        os.environ.get("MJ_APIKEY_PUBLIC", ""),
-        os.environ.get("MJ_APIKEY_PRIVATE", ""),
-    ),
-)
-
+mailjet30 = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
 mailjet31 = Client(
-    auth=(
-        os.environ.get("MJ_APIKEY_PUBLIC", ""),
-        os.environ.get("MJ_APIKEY_PRIVATE", ""),
-    ),
-    version="v3.1",
+    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")), version="v3.1"
 )
 
 
 def send_messages():
-    """POST https://api.mailjet.com/v3.1/send"""
     message = (
         MessageBuilder()
         .set_sender("pilot@mailjet.com", "Mailjet Pilot")
@@ -39,23 +27,14 @@ def send_messages():
             html='<h3>Dear passenger 1, welcome to <a href="https://www.mailjet.com/">Mailjet</a>!<br />May the delivery force be with you!</h3>',
         )
     )
-
-    payload = (
-        SendPayloadBuilder()
-        .add_message(message)
-        .set_sandbox_mode(True)  # Remove to send real message.
-        .build()
-    )
+    payload = SendPayloadBuilder().add_message(message).set_sandbox_mode(True).build()
     return mailjet31.send.create(data=payload)
 
 
 def send_messages_with_builder():
-    """POST https://api.mailjet.com/v3.1/send"""
-
     with tempfile.TemporaryDirectory() as safe_dir:
         test_file = Path(safe_dir) / "flight_manifest.txt"
         test_file.write_text("Passenger: John Doe. Class: First. Status: Cleared.")
-
         message = (
             MessageBuilder()
             .set_sender("pilot@mailjet.com", "Mailjet Pilot")
@@ -67,127 +46,117 @@ def send_messages_with_builder():
                 text="Dear passenger, welcome to Mailjet!",
                 html="<h3>Welcome to <a href='https://www.mailjet.com/'>Mailjet</a>!</h3>",
             )
-            .attach_file(test_file, safe_base_dir=safe_dir)
+            .attach_file(test_file, base_dir=safe_dir)
         )
-
         payload = SendPayloadBuilder().add_message(message).set_sandbox_mode(True).build()
         return mailjet31.send.create(data=payload)
 
 
 def retrieve_messages_from_campaign():
-    """GET https://api.mailjet.com/v3/REST/message?CampaignID=$CAMPAIGNID"""
-    filters = {
-        "CampaignID": "*****",  # Put real ID to make it work.
-    }
-    return mailjet30.message.get(filters=filters)
+    # Dynamically fetch an active CampaignID
+    cmp_res = mailjet30.campaign.get(filters={"Limit": 1})
+    c_id = cmp_res.json()["Data"][0]["ID"] if cmp_res.status_code == 200 and cmp_res.json().get("Data") else 0
+    return mailjet30.message.get(filters={"CampaignID": c_id})
 
 
 def retrieve_message():
-    """GET https://api.mailjet.com/v3/REST/message/$MESSAGE_ID"""
-    _id = "*****************"  # Put real ID to make it work.
+    # Dynamically fetch an active MessageID
+    msg_res = mailjet30.message.get(filters={"Limit": 1})
+    _id = msg_res.json()["Data"][0]["ID"] if msg_res.status_code == 200 and msg_res.json().get("Data") else 0
+    if not _id:
+        return msg_res
     return mailjet30.message.get(id=_id)
 
 
 def view_message_history():
-    """GET https://api.mailjet.com/v3/REST/messagehistory/$MESSAGE_ID"""
-    _id = "*****************"  # Put real ID to make it work.
+    # Dynamically fetch an active MessageID
+    msg_res = mailjet30.message.get(filters={"Limit": 1})
+    _id = msg_res.json()["Data"][0]["ID"] if msg_res.status_code == 200 and msg_res.json().get("Data") else 0
+    if not _id:
+        return msg_res
     return mailjet30.messagehistory.get(id=_id)
 
 
 def retrieve_statistic():
-    """GET https://api.mailjet.com/v3/REST/statcounters?CounterSource=APIKey
-    \\&CounterTiming=Message\\&CounterResolution=Lifetime
-    """
-    filters = {
-        "CounterSource": "APIKey",
-        "CounterTiming": "Message",
-        "CounterResolution": "Lifetime",
-    }
+    filters = {"CounterSource": "APIKey", "CounterTiming": "Message", "CounterResolution": "Lifetime"}
     return mailjet30.statcounters.get(filters=filters)
 
 
 def setup_webhook():
-    """POST https://api.mailjet.com/v3/REST/eventcallbackurl"""
-    data = {
-        "EventType": "open",
-        "Url": "https://www.mydomain.com/webhook",
-        "Status": "alive",
-    }
+    data = {"EventType": "open", "Url": f"https://www.mydomain.com/webhook_{uuid.uuid4().hex[:6]}", "Status": "alive"}
+
+    # Mailjet only allows 1 webhook per EventType. Check if one already exists.
+    get_webhook = mailjet30.eventcallbackurl.get(filters={"EventType": "open"})
+    if get_webhook.status_code == 200 and get_webhook.json().get("Data"):
+        w_id = get_webhook.json()["Data"][0]["ID"]
+        return mailjet30.eventcallbackurl.update(id=w_id, data=data)
+
     return mailjet30.eventcallbackurl.create(data=data)
 
 
 def setup_parse_api():
-    """POST https://api.mailjet.com/v3/REST/parseroute"""
-    data = {"Url": "https://www.mydomain.com/mj_parse.php"}
+    data = {"Url": f"https://www.mydomain.com/mj_parse_{uuid.uuid4().hex[:6]}.php"}
+    get_parse = mailjet30.parseroute.get()
+    if get_parse.status_code == 200 and get_parse.json().get("Data"):
+        p_id = get_parse.json()["Data"][0]["ID"]
+        return mailjet30.parseroute.update(id=p_id, data=data)
     return mailjet30.parseroute.create(data=data)
 
 
 def create_segmentation_filter():
-    """POST https://api.mailjet.com/v3/REST/contactfilter"""
     data = {
-        "Description": "Will send only to contacts under 35 years of age.",
+        "Description": "Test Filter",
         "Expression": "(age<35)",
-        "Name": "Customers under 35",
+        "Name": f"Customers under 35 {uuid.uuid4().hex[:6]}",
     }
     return mailjet30.contactfilter.create(data=data)
 
 
 def manage_contacts_bulk():
-    """
-    POST /REST/contactslist/{id}/managemanycontacts
-    Demonstrates O(1) route resolution with URI template interpolation.
-    """
-    data = {"Action": "addnoforce", "Contacts": [{"Email": "passenger1@mailjet.com"}]}
-    return mailjet30.contactslist_managemanycontacts.create(id=123, data=data)
+    # Dynamically fetch an active ListID
+    lists_res = mailjet30.contactslist.get(filters={"Limit": 1})
+    if lists_res.status_code == 200 and lists_res.json().get("Data"):
+        list_id = lists_res.json()["Data"][0]["ID"]
+        data = {"Action": "addnoforce", "Contacts": [{"Email": "passenger1@mailjet.com"}]}
+        return mailjet30.contactslist_managemanycontacts.create(id=list_id, data=data)
+    return lists_res
 
 
 def update_template_content():
-    """
-    POST /REST/templates/{id}/contents
-    Demonstrates the new TemplateContentBuilder with fail-fast validation.
-    """
     payload = (
         TemplateContentBuilder()
         .set_content(html="<h1>Welcome to the Flight!</h1>")
         .set_headers({"X-Custom-Header": "Flight-Update", "X-Priority": "1"})
         .build()
     )
-
-    try:
-        # Resolves to v1/REST/templates/999/contents
-        return mailjet30.templates_contents.create(id=999, data=payload)
-    except DoesNotExistError:
-        print("⚠️ Resource 999 not found. Please verify the Template ID exists.")
-        return None
+    # Dynamically create a fresh template to ensure a valid ID exists
+    t_res = mailjet30.template.create(
+        data={"Name": f"Getting Started Template {uuid.uuid4().hex[:6]}", "Author": "Test", "EditMode": 1}
+    )
+    if t_res.status_code == 201:
+        t_id = t_res.json()["Data"][0]["ID"]
+        return mailjet30.template_detailcontent.create(id=t_id, data=payload)
+    return t_res
 
 
 if __name__ == "__main__":
-    try:
-        print("Running Template Content Update...")
-        res = update_template_content()
-        if res:
-            print(f"Status Code: {res.status_code}")
+    funcs = [
+        send_messages,
+        send_messages_with_builder,
+        retrieve_messages_from_campaign,
+        retrieve_message,
+        view_message_history,
+        retrieve_statistic,
+        setup_webhook,
+        setup_parse_api,
+        create_segmentation_filter,
+        manage_contacts_bulk,
+        update_template_content,
+    ]
 
-        # We use send_messages() here as a safe, SandboxMode-enabled test
-        result = send_messages()
-        print(f"1. Status Code: {result.status_code}")
-
+    for f in funcs:
         try:
-            print(json.dumps(result.json(), indent=4))
-        except ValueError:
-            print(result.text)
-
-        result_with_builder = send_messages_with_builder()
-        print(f"2. Status Code: {result_with_builder.status_code}")
-
-        try:
-            print(json.dumps(result_with_builder.json(), indent=4))
-        except ValueError:
-            print(result_with_builder.text)
-
-    except TimeoutError:
-        print("The request timed out. Please check your network or increase the timeout.")
-    except CriticalApiError as e:
-        print(f"Failed to connect to the Mailjet API: {e}")
-    except ApiError as e:
-        print(f"An unexpected Mailjet API error occurred: {e}")
+            r = f()
+            print(f"{f.__name__}: {r.status_code if hasattr(r, 'status_code') else r}")
+        except Exception as e:
+            print(f"{f.__name__} failed: {e}")

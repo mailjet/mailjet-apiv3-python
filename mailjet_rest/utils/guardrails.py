@@ -271,7 +271,9 @@ class SecurityGuard:
                     self.issues.append(f"Blocked event handler: {attr}")
 
     VOLATILE_IDEMPOTENCY_KEYS: ClassVar[frozenset[str]] = frozenset({"CustomID", "EventPayload", "SandboxMode"})
-    ALLOWED_KWARGS: ClassVar[frozenset[str]] = frozenset({"proxies", "cert", "stream", "verify", "allow_redirects"})
+    ALLOWED_KWARGS: ClassVar[frozenset[str]] = frozenset(
+        {"proxies", "cert", "stream", "verify", "allow_redirects", "files"}
+    )
 
     @staticmethod
     def enable_audit_logging() -> None:

@@ -148,18 +148,36 @@ def run_readme_tests():
 
         # Webhooks
         webhook_url = f"https://www.example.com/webhook_{uuid.uuid4().hex[:6]}"
-        res = mailjet_v3.eventcallbackurl.create(data={"EventType": "open", "Url": webhook_url, "Status": "alive"})
-        if res.status_code == 201:
+
+        # Prevent MJ18 Conflict by checking for an existing webhook first
+        get_webhook = mailjet_v3.eventcallbackurl.get()
+        if get_webhook.status_code == 200 and get_webhook.json().get("Data"):
+            w_id = get_webhook.json()["Data"][0]["ID"]
+            res = mailjet_v3.eventcallbackurl.update(
+                id=w_id, data={"Url": webhook_url, "Status": "alive", "EventType": "open"}
+            )
+        else:
+            res = mailjet_v3.eventcallbackurl.create(data={"EventType": "open", "Url": webhook_url, "Status": "alive"})
+
+        if res.status_code in (200, 201):
             w_id = res.json()["Data"][0]["ID"]
-            print("✅ Webhooks (eventcallbackurl) created.")
+            print("✅ Webhooks (eventcallbackurl) created/updated.")
             safe_cleanup(mailjet_v3.eventcallbackurl.delete, f"Webhook {w_id}", id=w_id)
 
         # Parse API
         parse_url = f"https://www.example.com/parse_{uuid.uuid4().hex[:6]}"
-        res = mailjet_v3.parseroute.create(data={"Url": parse_url})
-        if res.status_code == 201:
+
+        # Prevent MJ18 Conflict by checking for an existing route first
+        get_parse = mailjet_v3.parseroute.get()
+        if get_parse.status_code == 200 and get_parse.json().get("Data"):
+            p_id = get_parse.json()["Data"][0]["ID"]
+            res = mailjet_v3.parseroute.update(id=p_id, data={"Url": parse_url})
+        else:
+            res = mailjet_v3.parseroute.create(data={"Url": parse_url})
+
+        if res.status_code in (200, 201):
             p_id = res.json()["Data"][0]["ID"]
-            print("✅ Parse API (parseroute) created.")
+            print("✅ Parse API (parseroute) created/updated.")
             safe_cleanup(mailjet_v3.parseroute.delete, f"ParseRoute {p_id}", id=p_id)
 
         # Segmentation

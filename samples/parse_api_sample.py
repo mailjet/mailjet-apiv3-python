@@ -9,8 +9,19 @@ mailjet30 = Client(
 
 
 def basic_setup():
-    """POST https://api.mailjet.com/v3/REST/parseroute"""
+    """POST / PUT https://api.mailjet.com/v3/REST/parseroute"""
     data = {"Url": "https://www.mydomain.com/mj_parse.php"}
+
+    # 1. Mailjet allows only one default parseroute per API Key.
+    # We must check if one already exists to prevent the MJ18 Conflict error.
+    get_resp = mailjet30.parseroute.get()
+
+    if get_resp.status_code == 200 and get_resp.json().get("Data"):
+        # 2. If it exists, grab the ID and update the existing route
+        route_id = get_resp.json()["Data"][0]["ID"]
+        return mailjet30.parseroute.update(id=route_id, data=data)
+
+    # 3. Otherwise, safely create a new one
     return mailjet30.parseroute.create(data=data)
 
 

@@ -117,12 +117,12 @@ test_examples() {
     info "Starting Mailjet Examples Test Suite...\n"
 
     # Fail gracefully if the examples folder doesn't exist yet
-    if [ ! -d "${SRC_DIR}/examples" ]; then
-        warn "Examples directory '${SRC_DIR}/examples' not found. Skipping."
+    if [ ! -d "samples" ]; then
+        warn "Examples directory 'samples' not found. Skipping."
         return 0
     fi
 
-    for script in "${SRC_DIR}"/examples/*.py; do
+    for script in samples/*.py; do
         if [[ "$(basename "$script")" == "__init__.py" ]]; then
             continue
         fi

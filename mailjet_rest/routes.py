@@ -144,7 +144,7 @@ _ROUTE_MAP: RouteMapType = {
     "tokens": Route("v1", "REST/tokens"),
     "labels": Route("v1", "REST/labels"),
     "images": Route("v1", "REST/images"),
-    "data_images": Route("v1", "DATA/images"),
+    "data_images": Route("v1", "data/images"),
 }
 
 ROUTE_MAP: Final[MappingProxyType[str, Route]] = MappingProxyType(_ROUTE_MAP)

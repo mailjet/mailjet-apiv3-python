@@ -277,17 +277,32 @@ class Client:
         if e.response is not None:
             status = e.response.status_code
             body = e.response.text
+
+            # DX Improvement: Extract actionable error message from API response
+            error_detail = ""
+            with suppress(Exception):
+                resp_json = e.response.json()
+                if "ErrorMessage" in resp_json:
+                    error_detail = f": {resp_json['ErrorMessage']}"
+                elif resp_json.get("Messages"):
+                    errors = resp_json["Messages"][0].get("Errors", [])
+                    if errors:
+                        error_detail = f": {errors[0].get('ErrorMessage', '')}"
+
+            if not error_detail and body:
+                error_detail = f": {body}"
+
             if status in {401, 403}:
-                msg = "Authentication or Authorization failed"
+                msg = f"Authentication or Authorization failed{error_detail}"
                 raise MailjetAuthError(msg, status, body) from e
             if status == 429:
-                msg = "Rate limit exceeded"
+                msg = f"Rate limit exceeded{error_detail}"
                 raise ApiRateLimitError(msg, status, body) from e
             if status == 404:
-                msg = "Resource not found"
+                msg = f"Resource not found{error_detail}"
                 raise DoesNotExistError(msg, status, body) from e
             if status == 400:
-                msg = "Payload validation failed"
+                msg = f"Payload validation failed{error_detail}"
                 raise ValidationError(msg, status, body) from e
 
         msg = f"An unexpected Mailjet API network error occurred: {e}"
@@ -326,12 +341,9 @@ class Client:
         headers = SecurityGuard.sanitize_headers(headers)
 
         if not kwargs.get("verify", True):
-            warnings.warn(
-                "Security Warning: TLS verification is disabled. This is highly discouraged "
-                "and will be strictly blocked in SDK v2.0.0.",
-                UserWarning,
-                stacklevel=2,
-            )
+            sys.audit("mailjet.security.tls_disabled", url)
+            msg = "Security Violation: Mailjet API TLS verification cannot be disabled."
+            raise ValueError(msg)
 
         # Safely determine and validate active timeout bounds (CWE-400)
         active_timeout = timeout if timeout is not None else self.config.timeout
