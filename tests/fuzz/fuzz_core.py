@@ -114,8 +114,8 @@ def TestOneInput(data: bytes) -> int:
     global execution_counter
     execution_counter += 1
 
-    # Force garbage collection every 10,000 iterations
-    if execution_counter % 10000 == 0:
+    # Force garbage collection more frequently to prevent 2GB OOM peaks
+    if execution_counter % 2500 == 0:
         gc.collect()
 
     if len(data) < 5:
