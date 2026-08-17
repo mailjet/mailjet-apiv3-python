@@ -6,7 +6,7 @@ from mailjet_rest.errors import MailjetAuthError, ValidationError, MailjetApiErr
 
 
 # Instrument all internal modules
-with atheris.instrument_imports():
+with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest.client import Client
     from mailjet_rest.config import Config
     from mailjet_rest.utils.guardrails import SecurityGuard

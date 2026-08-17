@@ -9,12 +9,12 @@ import sys
 
 import atheris
 
-
-with atheris.instrument_imports():
+# Disable the custom loader override to silence Atheris warnings and fix coverage tracking
+with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest.utils.guardrails import SecurityGuard
+    from mailjet_rest.errors import ValidationError
 
 logging.disable(logging.CRITICAL)
-
 
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
@@ -22,7 +22,7 @@ def TestOneInput(data: bytes) -> None:
 
     fdp = atheris.FuzzedDataProvider(data)
 
-    # 1. Generate an explicitly malicious payload containing null bytes
+    # Generate an explicitly malicious payload containing null bytes
     # We mix \x00 with attack vectors (like \r\n or ../) to trigger the audit events
     malicious_core = fdp.PickValueInList([b"\r\n", b"../", b"<script>", b"http://"])
     fuzzed_bytes = fdp.ConsumeBytes(128) + b"\x00" + malicious_core + b"\x00"
@@ -47,7 +47,8 @@ def TestOneInput(data: bytes) -> None:
         elif target == 4:
             SecurityGuard.validate_attachment_path(fuzzed_string, "/tmp")
 
-    except (ValueError, FileNotFoundError, TypeError):
+    # Catch ValidationError so the fuzzer knows the SDK successfully blocked the attack
+    except (ValueError, FileNotFoundError, TypeError, ValidationError):
         # Expected Rejections. The goal is to survive without the sys.audit crashing.
         pass
     except Exception as e:
@@ -59,7 +60,6 @@ def TestOneInput(data: bytes) -> None:
                 "The SDK must sanitize strings before emitting audit events."
             ) from e
         raise RuntimeError(f"UNHANDLED CRASH in Audit Emission: {type(e).__name__} - {e}") from e
-
 
 if __name__ == "__main__":
     # Ensure audit logging is active for the fuzzer

@@ -19,7 +19,7 @@ import urllib3.exceptions
 
 
 # 1. Instrument SDK modules
-with atheris.instrument_imports():
+with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest import Client
     from mailjet_rest.errors import ApiError, ValidationError
 
