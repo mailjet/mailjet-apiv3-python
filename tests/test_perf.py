@@ -120,8 +120,6 @@ def test_sync_client_concurrent_throughput(benchmark: Any, mocked_mailjet: respo
     """Measures how fast the synchronous Client can dispatch concurrent requests.
     This proves that pool_maxsize=100 prevents ThreadPoolExecutor bottlenecks.
     """
-    BATCH_SIZE = 50
-    client = Client(auth=("api", "key"))
 
     def send_one_request(i: int) -> requests.Response:
         return client.contact.create(data={"Email": f"user_{i}@example.com"})
@@ -130,11 +128,9 @@ def test_sync_client_concurrent_throughput(benchmark: Any, mocked_mailjet: respo
         with ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
             list(executor.map(send_one_request, range(BATCH_SIZE)))
 
-    try:
+    BATCH_SIZE = 50
+    with Client(auth=("api", "key")) as client:
         benchmark.pedantic(dispatch_batch, rounds=10, iterations=5)
-    finally:
-        client.close()
-
 
 # ------------------------------------------------------------------------
 # BENCHMARK 6: MEMORY FOOTPRINT & LEAK PREVENTION (__slots__)

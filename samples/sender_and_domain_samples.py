@@ -1,4 +1,3 @@
-import json
 import os
 
 from mailjet_rest import Client

@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import tempfile
@@ -6,7 +5,7 @@ import uuid
 from pathlib import Path
 
 from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
-from mailjet_rest import Client, ApiError, CriticalApiError, TimeoutError, DoesNotExistError
+from mailjet_rest import Client
 
 logging.getLogger("mailjet_rest.client").setLevel(logging.CRITICAL)
 
