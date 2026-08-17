@@ -1,9 +1,13 @@
 """Regression tests for previously discovered security vulnerabilities."""
+from unittest.mock import patch
 
 import pytest
 
 from mailjet_rest.client import Client
 from mailjet_rest.config import Config
+from mailjet_rest.utils.guardrails import SecurityGuard
+from mailjet_rest.errors import ValidationError
+
 
 
 def test_csv_routing_traversal_prevention() -> None:
@@ -67,6 +71,7 @@ def test_cwe668_client_private_attribute_exposure_prevention() -> None:
     with pytest.raises(AttributeError, match="'Client' object has no attribute '_parse_response'"):
         _ = client._parse_response
 
+
 def test_cwe400_excessive_timeout_rejection() -> None:
     """Ensure excessively large timeouts that cause platform C-level OverflowError are rejected (CWE-400)."""
     with pytest.raises(ValueError, match="Timeout exceeds maximum allowed limit"):
@@ -75,8 +80,25 @@ def test_cwe400_excessive_timeout_rejection() -> None:
     with pytest.raises(ValueError, match="Timeout exceeds maximum allowed limit"):
         Config(timeout=(1e300, 10.0))
 
+
 def test_cwe400_astronomical_integer_timeout_rejection() -> None:
     """Ensure extremely large integers/floats causing float overflow are safely rejected (CWE-400)."""
     astronomical_overflow_val = 10**5000
     with pytest.raises(ValueError, match="Timeout value is out of range or invalid|exceeds maximum allowed limit"):
         Config(timeout=astronomical_overflow_val)
+
+
+@patch("mailjet_rest.utils.guardrails.SecurityGuard._SpamGuardParser.feed")
+def test_html_safety_dos_protection_rejects_malformed_tags(mock_feed):
+    """
+    Regression test for fuzzing crash-84534e0c7ecc6f0674e9283079563e63300cd0b3.
+    """
+    # Force the parser to simulate a catastrophic memory/recursion failure
+    mock_feed.side_effect = RecursionError("Simulated memory exhaustion")
+    malicious_payload = "<![<!doctypee\x00969866"
+
+    with pytest.raises(ValidationError) as exc_info:
+        SecurityGuard.analyze_html_safety(malicious_payload)
+
+    assert "Fatal HTML parsing error" in str(exc_info.value)
+    assert "DoS protection triggered" in str(exc_info.value)

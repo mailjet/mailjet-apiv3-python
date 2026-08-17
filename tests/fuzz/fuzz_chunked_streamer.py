@@ -11,7 +11,7 @@ from pathlib import Path
 import atheris
 
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest.builders import ChunkedStreamer
 
 logging.disable(logging.CRITICAL)

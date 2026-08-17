@@ -10,7 +10,7 @@ import atheris
 from urllib3.exceptions import MaxRetryError
 
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest.client import JitterRetry
 
 logging.disable(logging.CRITICAL)

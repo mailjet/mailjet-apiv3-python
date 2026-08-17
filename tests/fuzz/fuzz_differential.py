@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 import atheris
 
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest import Client
 
 # Initialize Clients globally to reduce instantiation overhead

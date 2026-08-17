@@ -1,16 +1,30 @@
-include LICENSE
-include README.md
-include CHANGELOG.md
-include PERFORMANCE.md
-include SECURITY.md
-recursive-include mailjet_rest *.py py.typed
+# MANIFEST.in
 
+# ---------------------------------------------------------
+# Core Build & Documentation Files
+# ---------------------------------------------------------
+include LICENSE
+include pyproject.toml
+include MANIFEST.in
+include *.md
+
+# ---------------------------------------------------------
+# Package Data & Type Markers
+# ---------------------------------------------------------
+recursive-include mailjet_rest *.py *.pyi py.typed
+
+# ---------------------------------------------------------
+# Exclude Test, Sample & CI Directories from sdist
+# ---------------------------------------------------------
 prune tests
 prune samples
 prune .github
 prune .clusterfuzzlite
 prune conda.recipe
 
+# ---------------------------------------------------------
+# Exclude Development / Local Tooling Files
+# ---------------------------------------------------------
 exclude manage.sh
 exclude Makefile
 exclude .editorconfig

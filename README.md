@@ -40,12 +40,13 @@
 - [Security Guardrails](#security-guardrails)
   - [Local-First Validation (Fail-Fast)](#local-first-validation-fail-fast)
   - [Runtime Security (PEP 578)](#runtime-security-pep-578)
+  - [Network Resilience & Retries](#network-resilience--retries)
 - [Request examples](#request-examples)
   - [Full list of supported endpoints](#full-list-of-supported-endpoints)
   - [Send API (v3.1)](#send-api-v31)
     - [Send a basic email](#send-a-basic-email)
   - [Send an email using a Mailjet Template](#send-an-email-using-a-mailjet-template)
-  - [MessageBuilder (Complex Payloads)](#building-complex-payloads-messagebuilder)
+  - [Building Complex Payloads (MessageBuilder & SendPayloadBuilder)](#building-complex-payloads-messagebuilder--sendpayloadbuilder)
   - [Standard REST Actions (GET, POST, PUT, DELETE)](#standard-rest-actions-get-post-put-delete)
     - [POST (Create)](#post-create)
     - [GET Request](#get-request)
@@ -356,6 +357,10 @@ Additional built-in protections:
 - **SSRF & Open Redirects:** Hard-disabled automatic redirects and enforced strict hostname validation.
 - **CRLF Injection:** Native string evaluation blocks header injection attempts via compromised Bearer tokens or custom headers.
 - **Downgrade Attacks:** Enforced TLS 1.2+ minimum version via a custom `SecureHTTPAdapter`.
+- **Idempotency Fingerprinting:** Automatically generates SHA-256 `Idempotency-Key` headers for `POST`, `PUT`, and `DELETE` requests to prevent duplicate mutations.
+- **SpamGuard Analysis:** Pre-flight HTML static analyzer that intercepts and blocks XSS vectors (e.g., `<script>`, `onerror=`) before network dispatch.
+- **Secret Obfuscation (CWE-316):** Utilizes a custom `SecretAuth` transport adapter and `RedactingFilter` to strictly prevent API credentials from leaking in tracebacks, logs, or memory dumps.
+- **Punycode IDN Support:** Automatically normalizes Internationalized Domain Names (IDNs) in sender and recipient addresses to prevent Homograph attacks.
 
 See our [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy and supported versions.
 
@@ -377,6 +382,48 @@ from mailjet_rest import Client, Config
 cfg = Config(enable_security_audit=True)
 with Client(auth=(api_key, api_secret), config=cfg) as mailjet:
     pass  # Your secure requests here
+```
+
+### Network Resilience & Retries
+
+The SDK incorporates a custom `JitterRetry` connection pooling policy to gracefully handle transient network drops, 5xx server errors, and `429 Too Many Requests` limits. It utilizes exponential backoff combined with randomized full jitter to prevent the "Thundering Herd" effect on Mailjet's upstream API during concurrent high-throughput batching.
+While the SDK automatically configures resilient retries natively, you can override the default connection pool by mounting a custom HTTPAdapter to the client's session.
+
+```python
+import os
+import random
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
+from mailjet_rest import Client
+
+
+class CustomJitterRetry(Retry):
+    """Stateless RetryPolicy with Full Jitter to prevent the Thundering Herd."""
+
+    def get_backoff_time(self) -> float:
+        backoff = super().get_backoff_time()
+        # Apply full jitter: randomly scale the backoff
+        return random.uniform(0, backoff) if backoff > 0 else 0
+
+
+# Configure custom total retries and backoff factor
+custom_retry_strategy = CustomJitterRetry(
+    total=5,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    raise_on_status=False,  # Let the client parse 429/500 into custom Mailjet exceptions
+)
+
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+
+with Client(auth=(api_key, api_secret)) as mailjet:
+    # Mount the custom adapter to the underlying requests session
+    adapter = HTTPAdapter(max_retries=custom_retry_strategy)
+    mailjet.session.mount("https://", adapter)
+
+    # Subsequent API calls will utilize your custom retry engine
+    result = mailjet.contact.get()
 ```
 
 ## Request examples
@@ -447,14 +494,21 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
     result = mailjet.send.create(data=data)
 ```
 
-### Building Complex Payloads (MessageBuilder)
+### Building Complex Payloads (MessageBuilder & SendPayloadBuilder)
 
 For complex scenarios like Send API v3.1, manually constructing nested dictionaries is error-prone.
 The `MessageBuilder` provides a fluent interface that handles structure, attachment encoding, and validation automatically.
 
+<!-- mdformat off -->
+
 ```python
-from mailjet_rest.builders import MessageBuilder
-from mailjet_rest.types import SendV31Payload
+import os
+from mailjet_rest import Client
+from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder
+
+api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
+api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
+
 
 # Fluently construct an email
 message = (
@@ -464,17 +518,22 @@ message = (
     .add_cc("copilot@mailjet.com")
     .set_subject("Your Boarding Pass")
     .set_content(html="<h3>Welcome aboard!</h3>")
-    .attach_file("tickets/pass.pdf")  # Automatically encodes and validates
+    .attach_file("tickets/pass.pdf")  # Safely encodes using memory-efficient ChunkedStreamer
+    .attach_inline("assets/logo.png")  # Adds inline attachments seamlessly
     .build()
 )
 
-payload: SendV31Payload = {
-    "Messages": [message],
-    "SandboxMode": True,  # Remove to send a real message.
-}
+# Safely wrap the message using the root payload builder
+payload = SendPayloadBuilder().add_message(message).set_sandbox_mode(True).build()
+
 # Send via client
-mailjet.send.create(data=payload)
+with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
+    result = mailjet.send.create(data=payload)
+    print(result.status_code)
+    print(result.json())
 ```
+
+<!-- mdformat on -->
 
 ### Standard REST Actions (GET, POST, PUT, DELETE)
 

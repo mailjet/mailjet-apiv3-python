@@ -8,7 +8,7 @@ import sys
 import atheris
 
 
-with atheris.instrument_imports():
+with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest.utils.guardrails import SecurityGuard
 
 
