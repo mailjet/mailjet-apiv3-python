@@ -34,6 +34,10 @@ def generate_deep_dict(fdp: atheris.FuzzedDataProvider, depth: int = 0) -> Any:
             fdp.ConsumeUnicodeNoSurrogates(10): generate_deep_dict(fdp, depth + 1)
             for _ in range(fdp.ConsumeIntInRange(1, 3))
         }
+    choice = fdp.ConsumeIntInRange(0, 5)
+    if choice == 4:
+        # Fuzz Set and Object redaction pathways
+        return {fdp.ConsumeUnicodeNoSurrogates(16) for _ in range(fdp.ConsumeIntInRange(1, 3))}
     return None
 
 

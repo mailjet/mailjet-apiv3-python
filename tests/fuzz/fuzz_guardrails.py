@@ -49,6 +49,25 @@ def TestOneInput(data: bytes) -> None:
             payload = fdp.ConsumeUnicodeNoSurrogates(256)
             SecurityGuard.check_control_characters("fuzzed_field", payload)
 
+        elif target == 5:
+            # Target 6: Auth coercion (Tuple vs String Token vs Malformed)
+            auth_val = fdp.ConsumeUnicodeNoSurrogates(128) if fdp.ConsumeBool() else (
+                fdp.ConsumeUnicodeNoSurrogates(32),
+                fdp.ConsumeUnicodeNoSurrogates(32),
+            )
+            SecurityGuard.validate_and_coerce_auth(auth_val)
+
+        elif target == 6:
+            # Target 7: HTML SpamGuard static parser
+            html = fdp.ConsumeUnicodeNoSurrogates(512)
+            SecurityGuard.analyze_html_safety(html)
+
+        elif target == 7:
+            # Target 8: Safe Kwargs Filtering (Mass Assignment / CWE-915)
+            k = fdp.ConsumeUnicodeNoSurrogates(16)
+            v = fdp.ConsumeUnicodeNoSurrogates(16)
+            SecurityGuard.filter_safe_kwargs({k: v})
+
     except (ValueError, TypeError, FileNotFoundError, AttributeError):
         # SECURITY SUCCESS: The fail-closed architecture intercepted the malformed data.
         pass
