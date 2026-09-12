@@ -197,20 +197,20 @@ class Endpoint:
 
         return url
 
-    def _build_headers(self, custom_headers: dict[str, str] | None = None) -> dict[str, str]:
+    def _build_headers(self, custom_headers: Mapping[str, str | None] | None = None) -> dict[str, str | None]:
         """Build headers based on the endpoint requirements.
 
         Args:
-            custom_headers (dict[str, str] | None): Custom headers to merge.
+            custom_headers: Custom headers to merge.
 
         Returns:
-            dict[str, str]: The composed dictionary of HTTP headers.
+            dict[str, str | None]: The composed dictionary of HTTP headers.
         """
         base_headers = _TEXT_HEADERS if self._name_lower.endswith("_csvdata") else _JSON_HEADERS
 
         if custom_headers:
-            clean_custom = SecurityGuard.sanitize_headers(custom_headers)
-            merged = dict(base_headers)
+            clean_custom = SecurityGuard.sanitize_headers(dict(custom_headers))
+            merged: dict[str, str | None] = dict(base_headers)
             merged.update(clean_custom)
             return merged
         return dict(base_headers)
@@ -292,6 +292,7 @@ class Endpoint:
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
         timeout: TimeoutType = None,
+        headers: Mapping[str, str | None] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Execute the specific HTTP method on the constructed endpoint.
@@ -303,6 +304,7 @@ class Endpoint:
             filters (dict[str, Any] | None): Query string URL parameters.
             action_id (int | str | None): Sub-action ID.
             timeout (TimeoutType): Request timeout.
+            headers (Mapping[str, str | None] | None): Custom HTTP request headers.
             **kwargs (Any): Additional arguments.
 
         Returns:
@@ -421,7 +423,7 @@ class Endpoint:
         data: PayloadType = None,
         id: int | str | None = None,
         action_id: int | str | None = None,
-        headers: dict[str, str] | None = None,
+        headers: Mapping[str, str | None] | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
@@ -456,7 +458,7 @@ class Endpoint:
         id: int | str,
         data: PayloadType = None,
         action_id: int | str | None = None,
-        headers: dict[str, str] | None = None,
+        headers: Mapping[str, str | None] | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,

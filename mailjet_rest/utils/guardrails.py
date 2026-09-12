@@ -27,6 +27,8 @@ from urllib.parse import quote, unquote, urlparse
 
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import requests
 
     from mailjet_rest.types import TimeoutType
@@ -375,15 +377,15 @@ class SecurityGuard:
             warnings.warn("Security Warning: Unencrypted HTTP proxy detected.", UserWarning, stacklevel=3)
 
     @staticmethod
-    def sanitize_headers(headers: dict[str, str]) -> dict[str, str]:
+    def sanitize_headers(headers: Mapping[str, str | None]) -> dict[str, str | None]:
         """Prevent HTTP Header Injection (CWE-113).
 
         Returns:
             dict[str, str]: The sanitized headers safely screened for CRLF injections.
         """
-        clean_headers = {}
+        clean_headers: dict[str, str | None] = {}
         for k, v in headers.items():
-            if _CRLF_RE.search(k) or _CRLF_RE.search(str(v)):
+            if _CRLF_RE.search(k) or (v is not None and _CRLF_RE.search(str(v))):
                 sys.audit("mailjet.security.header_injection", k)
                 msg = f"Security Violation: CRLF injection detected in header '{k}'"
                 raise ValueError(msg)

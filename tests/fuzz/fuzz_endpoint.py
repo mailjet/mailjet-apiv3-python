@@ -80,6 +80,7 @@ def TestOneInput(data: bytes) -> None:
                     if idx > 5:
                         break
             except (ValueError, TypeError, ValidationError):
+                # Expected for malformed fuzzed inputs traversing validation logic
                 pass
 
         payload = {fdp.ConsumeUnicodeNoSurrogates(5): fdp.ConsumeUnicodeNoSurrogates(10)}
