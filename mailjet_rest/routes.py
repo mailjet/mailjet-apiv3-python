@@ -20,6 +20,33 @@ class Route(NamedTuple):
 
 RouteMapType = dict[str, Route]
 
+# Advisory mapping for legacy and deprecated endpoints
+DEPRECATION_ADVISORY: Final[MappingProxyType[str, str]] = MappingProxyType(
+    {
+        # Newsletters -> Campaign Drafts (Official Mailjet Deprecation)
+        "newsletter": "campaigndraft",
+        "newsletter_detailcontent": "campaigndraft_detailcontent",
+        "newsletter_schedule": "campaigndraft_schedule",
+        "newsletter_send": "campaigndraft_send",
+        "newsletter_status": "campaigndraft_status",
+        "newsletter_test": "campaigndraft_test",
+        # Legacy Statistics -> Statcounters & Recipient ESP (Official Mailjet Deprecation)
+        "apikeytotals": "statcounters",  # pragma: allowlist secret
+        "campaigngraphstatistics": "statcounters",
+        "campaignstatistics": "statcounters",
+        "domainstatistics": "statistics_recipientEsp",
+        "graphstatistics": "statcounters",
+        "liststatistics": "statcounters",
+        "messagestatistics": "statcounters",
+        "openstatistics": "statcounters",
+        "senderstatistics": "statcounters",
+        # Non-existent SDK route alias -> Official REST resource
+        "webhook": "eventcallbackurl",
+        # Redundant / Ambiguous Template routes
+        "template_update": "template.update(id=...)",
+        "templates_contents": "template_detailcontent (v3) or template_contents (v1)",
+    }
+)
 
 _ROUTE_MAP: RouteMapType = {
     # ==========================================
@@ -145,6 +172,14 @@ _ROUTE_MAP: RouteMapType = {
     "labels": Route("v1", "REST/labels"),
     "images": Route("v1", "REST/images"),
     "data_images": Route("v1", "data/images"),
+    # ==========================================
+    # Added New Static Routes (v1.9.0)
+    # ==========================================
+    "contactslist_csvdata": Route(None, "DATA/contactslist/{id}/CSVData/text:plain"),
+    "batchjob_csverror": Route(None, "DATA/batchjob/{id}/CSVError/text:csv"),
+    "contact_data": Route(None, "REST/contact/{id}/data"),
+    "widget": Route(None, "REST/widget"),
+    "widgetcustomdesign": Route(None, "REST/widgetcustomdesign"),
 }
 
 ROUTE_MAP: Final[MappingProxyType[str, Route]] = MappingProxyType(_ROUTE_MAP)
