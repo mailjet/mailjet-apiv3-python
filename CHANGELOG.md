@@ -9,7 +9,48 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
-______________________________________________________________________
+### Added
+
+- **Static O(1) Route Additions:** Registered missing static route definitions in `ROUTE_MAP` for `contactslist_csvdata` and `batchjob_csverror`.
+- **Sub-Action Hyphenation:** Re-implemented native CamelCase-to-kebab-case transformation for sub-actions in `Endpoint.__init__` (e.g., `statistics_linkClick` $\\rightarrow$ `statistics/link-click`).
+- **Stream Query Parameter Casting:** Added `Endpoint._cast_query_param` and `_normalize_stream_filters` to automatically parse and cast multidict query filter values (such as those from `urllib.parse.parse_qs`) to `int`, `float`, `bool`, `list`, `tuple`, or `set`.
+- **Custom Headers Support:** Added optional `headers` parameter to `Endpoint.__call__`, `create()`, and `update()`.
+- **Fuzz Dictionary Expansion:** Added route tokens, streaming keywords, HTML/XSS triggers, IDN tags, and secret patterns to `tests/fuzz/fuzzer.dict`.
+
+### Changed
+
+- **Stream Generator Termination:** Enhanced `Endpoint.stream()` to check `Total` from response bodies, automatically halting iteration when `current_offset + len(data) >= total`.
+- **Redaction of Complex Types:** Expanded `RedactingFilter` to recursively sanitize `typing.NamedTuple` instances (preserving structure), objects with `model_dump()` (e.g., Pydantic models), `__dict__`-based instances, and `set`/`frozenset` collections.
+- **Path Control Character Neutralization:** `SecurityGuard.sanitize_log_trace` now cleans unprintable ASCII control characters (`[\x00-\x1f\x7f]`) before whitespace normalization.
+- **Email IDN Parsing:** Switched IDN extraction in `SecurityGuard.normalize_domain` to `rpartition("@")` and scoped exception interception directly to `UnicodeError`.
+- **Sample Updates:** Refactored `samples/segments_sample.py` to use `campaigndraft` and updated `samples/smoke_readme_runner.py` health checks to use canonical endpoints `eventcallbackurl` and `template_contents`.
+
+### Deprecated
+
+- **Deprecation Advisory Mapping:** Introduced `DEPRECATION_ADVISORY` in `routes.py` to emit non-breaking `DeprecationWarning` notices pointing to recommended replacements:
+  - `newsletter` and sub-resources (`newsletter_*`) $\\rightarrow$ `campaigndraft` / `campaigndraft_*`
+  - Legacy statistics (`apikeytotals`, `campaignstatistics`, `liststatistics`, `domainstatistics`, etc.) $\\rightarrow$ `statcounters` and `statistics_recipientEsp`
+  - Removed SDK alias `webhook` $\\rightarrow$ official REST resource `eventcallbackurl`
+  - Legacy template endpoints (`template_update`, `templates_contents`) $\\rightarrow$ `template.update(id=...)` or `template_detailcontent` (v3) / `template_contents` (v1)
+
+### Security
+
+- **Strict Timeout Type Guard:** Explicitly blocked boolean flags (`True`/`False`) in `SecurityGuard.validate_timeout` to prevent coercion to numeric `1.0`/`0.0` seconds.
+- **Regular File Validation (CWE-400):** Added explicit `Path.is_file()` verification in `SecurityGuard.check_file_size` before evaluating file stats.
+- **Header Injection Screen (CWE-113):** Broadened header sanitization in `Client.api_call` to accept `Mapping[str, str | None]` and screen non-`None` values against CRLF injection patterns.
+
+### Removed
+
+- **ClusterFuzzLite Workflows:** Removed redundant `.github/workflows/cflite_build.yml` and `.github/workflows/cflite_cron.yml` CI tasks.
+
+### Pull Requests Merged
+
+- PR #149: Deprecate endpoints.
+- PR #148: build(deps): bump github/codeql-action/upload-sarif from 4.37.7 to 4.37.9.
+- PR #147: build(deps): bump github/codeql-action/analyze from 4.37.7 to 4.37.9.
+- PR #146: build(deps): bump github/codeql-action/analyze from 4.37.6 to 4.37.7.
+- PR #145: build(deps): bump github/codeql-action/upload-sarif from 4.37.6 to 4.37.7.
+- PR #144: build(deps): bump google/osv-scanner-action/osv-scanner-action from 2.5.0 to 2.5.1.
 
 ## [1.8.0] - 2026-08-17
 

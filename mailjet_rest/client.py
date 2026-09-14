@@ -43,6 +43,7 @@ from mailjet_rest.utils.guardrails import (
 
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from types import TracebackType
 
     from mailjet_rest.types import HttpMethod, PayloadType, TimeoutType
@@ -242,7 +243,7 @@ class Client:
         url: str,
         headers: dict[str, Any],
         data: Any,
-        params: dict[str, Any] | None,
+        params: Mapping[str, str | None] | None,
         timeout: Any,
         **kwargs: Any,
     ) -> requests.Response:
@@ -314,7 +315,7 @@ class Client:
         url: str,
         filters: dict[str, Any] | None = None,
         data: PayloadType = None,
-        headers: dict[str, str] | None = None,
+        headers: Mapping[str, str | None] | None = None,
         timeout: TimeoutType = None,
         **kwargs: Any,
     ) -> requests.Response:
@@ -325,20 +326,15 @@ class Client:
             url (str): The fully constructed API URL.
             filters (dict[str, Any] | None, optional): Query parameters.
             data (PayloadType, optional): Request payload.
-            headers (dict[str, str] | None, optional): Custom HTTP headers.
+            headers (Mapping[str, str | None] | None, optional): Custom HTTP headers.
             timeout (TimeoutType, optional): Request timeout.
             **kwargs (Any): Additional arguments passed to 'requests.Session.request'.
 
         Returns:
             requests.Response: The authenticated HTTP response from Mailjet.
         """
-        # Ensure headers is a dictionary to prevent crashes if a legacy call explicitly passes None,
-        # or relies on the default fallback, before we attempt to mutate it for Idempotency keys.
-        if headers is None:
-            headers = {}
-
-        # CWE-113: Prevent Request Smuggling / CRLF Injection in headers
-        headers = SecurityGuard.sanitize_headers(headers)
+        # Ensure headers is a dictionary and screened for CRLF injections (CWE-113)
+        req_headers: dict[str, str | None] = {} if headers is None else SecurityGuard.sanitize_headers(headers)
 
         if not kwargs.get("verify", True):
             sys.audit("mailjet.security.tls_disabled", url)
@@ -364,19 +360,19 @@ class Client:
                 return mock
 
             # Allow idempotency hashing for valid batch lists
-            if isinstance(data, (dict, list)) and "Idempotency-Key" not in headers:
-                headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(data)
+            if isinstance(data, (dict, list)) and "Idempotency-Key" not in req_headers:
+                req_headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(data)
 
         # Strip None filters
         clean_filters = {k: v for k, v in filters.items() if v is not None} if filters else None
 
-        trace_suffix, _ = self._extract_telemetry(data, headers)
+        trace_suffix, _ = self._extract_telemetry(data, req_headers)
 
         try:
             response = self._execute_request(
                 method=method,
                 url=url,
-                headers=headers,
+                headers=req_headers,
                 data=data,
                 params=clean_filters,
                 timeout=req_timeout,
@@ -417,11 +413,12 @@ class Client:
             logger.debug("API Success %s | %s %s%s", getattr(response, "status_code", 200), method, url, trace_str)
 
     @staticmethod
-    def _extract_telemetry(data: Any, _headers: dict[str, str] | None) -> tuple[str, dict[str, str]]:
+    def _extract_telemetry(data: Any, _headers: Mapping[str, str | None] | None) -> tuple[str, dict[str, str]]:
         """Extract tracing identifiers for safe logging and structured telemetry.
 
         Args:
             data (Any): The request payload.
+            _headers (Mapping[str, str | None] | None): Request headers.
 
         Returns:
             tuple[str, dict[str, str]]: A tuple containing the formatted telemetry trace suffix

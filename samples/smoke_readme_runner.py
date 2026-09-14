@@ -27,7 +27,6 @@ def section(title: str) -> None:
 def safe_cleanup(action, name, **kwargs):
     """Executes a cleanup action without failing on permission (401) or consistency (404) errors."""
     try:
-        # Temporarily silence SDK error logs for cleanup to keep output clean
         client_logger = logging.getLogger("mailjet_rest.client")
         old_level = client_logger.level
         client_logger.setLevel(logging.CRITICAL)
@@ -42,7 +41,6 @@ def safe_cleanup(action, name, **kwargs):
     except MailjetAuthError:
         print(f"⚠️ CLEANUP: {name} skipped (Permission denied: Operation not allowed).")
     except DoesNotExistError:
-        # The SDK now correctly raises DoesNotExistError for 404 responses
         print(f"⚠️ CLEANUP: {name} skipped (Not found: likely eventual consistency delay).")
     except Exception as e:
         print(f"❌ CLEANUP: {name} raised unexpected exception: {e}")
@@ -57,17 +55,13 @@ def run_readme_tests():
         print("⚠️ Missing Mailjet API credentials in environment variables.")
         return
 
-    # Using the Context Manager (Best Practice for resource management)
     with (
         Client(auth=(api_key, api_secret), version="v3.1") as mailjet_v31,
         Client(auth=(api_key, api_secret), version="v3") as mailjet_v3,
         Client(auth=content_token or (api_key, api_secret), version="v1") as mailjet_v1,
     ):
-        # ---------------------------------------------------------------------
-        # 1. SEND API (v3.1) - Sanitized Telemetry
-        # ---------------------------------------------------------------------
+        # 1. SEND API (v3.1)
         section("Send API (v3.1) - Basic Email & Telemetry")
-
         message = (
             MessageBuilder()
             .set_sender("pilot@mailjet.com", "Mailjet Pilot")
@@ -75,58 +69,42 @@ def run_readme_tests():
             .set_subject("README Test: Your email flight plan!")
             .set_content(text="Welcome to Mailjet!")
         ).build()
-
-        # Verification: Check logs to see this sanitized to '_' (CWE-117)
         message["CustomID"] = "Readme_Test\n[CRITICAL]_INJECTION_ATTEMPT"
-
         payload = SendPayloadBuilder().add_message(message).set_sandbox_mode(True).build()
-
         res = mailjet_v31.send.create(data=payload)
         assert res.status_code == 200, f"Failed Send API: {res.text}"
         print("✅ Send API passed (Check logs for sanitized CustomID).")
 
-        # ---------------------------------------------------------------------
-        # 2. SECURITY GUARDRAILS (Poka-Yoke Verification)
-        # ---------------------------------------------------------------------
+        # 2. SECURITY GUARDRAILS
         section("Security Guardrails (Active Protection)")
-
-        # 1. Test CRLF Injection
         try:
             mailjet_v3.contact.get(headers={"X-Injected": "value\r\nBadHeader: true"})
             assert False, "SDK failed to block CRLF injection."
         except ValueError as e:
             print(f"✅ Guardrail Success: Blocked Header Injection - '{e}'")
 
-        # 2. Test TLS Bypass (MITM Prevention)
         try:
-            # We explicitly test that the SDK refuses insecure connections
             mailjet_v3.contact.get(verify=False)
             assert False, "SDK allowed insecure TLS connection."
         except ValueError as e:
             print(f"✅ Guardrail Success: Blocked Insecure TLS - '{e}'")
 
-        # ---------------------------------------------------------------------
-        # 3. STANDARD REST ACTIONS (Contact Lifecycle)
-        # ---------------------------------------------------------------------
+        # 3. STANDARD REST ACTIONS
         section("Standard REST Actions (Contact Lifecycle)")
-
         test_email = f"readme_test_{uuid.uuid4().hex[:8]}@mailjet.com"
         res = mailjet_v3.contact.create(data={"Email": test_email})
         assert res.status_code == 201
         contact_id = res.json()["Data"][0]["ID"]
         print(f"✅ POST (Create Contact) passed. Created ID: {contact_id}")
 
-        # GET (Read all & Filtering & Pagination)
         res = mailjet_v3.contact.get(filters={"limit": 2, "sort": "Email desc"})
         assert res.status_code == 200
         print("✅ GET (Read all/Pagination) passed.")
 
-        # GET (Read one)
         res = mailjet_v3.contact.get(id=contact_id)
         assert res.status_code == 200
         print("✅ GET (Read one) passed.")
 
-        # PUT (Update Contact Metadata)
         prop_name = f"test_prop_{uuid.uuid4().hex[:6]}"
         res_meta = mailjet_v3.contactmetadata.create(data={"Datatype": "str", "Name": prop_name, "NameSpace": "static"})
         if res_meta.status_code == 201:
@@ -135,21 +113,13 @@ def run_readme_tests():
             res = mailjet_v3.contactdata.update(id=contact_id, data=update_data)
             assert res.status_code == 200
             print("✅ PUT (Update Contact Data) passed.")
-            # Resilient Teardown: Metadata
             safe_cleanup(mailjet_v3.contactmetadata.delete, f"Metadata {prop_id}", id=prop_id)
 
-        # Resilient Teardown: Contact
         safe_cleanup(mailjet_v3.contact.delete, f"Contact {contact_id}", id=contact_id)
 
-        # ---------------------------------------------------------------------
-        # 4. EMAIL API ECOSYSTEM (Webhooks, Parse, Segmentation, Stats)
-        # ---------------------------------------------------------------------
+        # 4. EMAIL API ECOSYSTEM
         section("Email API Ecosystem")
-
-        # Webhooks
         webhook_url = f"https://www.example.com/webhook_{uuid.uuid4().hex[:6]}"
-
-        # Prevent MJ18 Conflict by checking for an existing webhook first
         get_webhook = mailjet_v3.eventcallbackurl.get()
         if get_webhook.status_code == 200 and get_webhook.json().get("Data"):
             w_id = get_webhook.json()["Data"][0]["ID"]
@@ -164,10 +134,7 @@ def run_readme_tests():
             print("✅ Webhooks (eventcallbackurl) created/updated.")
             safe_cleanup(mailjet_v3.eventcallbackurl.delete, f"Webhook {w_id}", id=w_id)
 
-        # Parse API
         parse_url = f"https://www.example.com/parse_{uuid.uuid4().hex[:6]}"
-
-        # Prevent MJ18 Conflict by checking for an existing route first
         get_parse = mailjet_v3.parseroute.get()
         if get_parse.status_code == 200 and get_parse.json().get("Data"):
             p_id = get_parse.json()["Data"][0]["ID"]
@@ -180,7 +147,6 @@ def run_readme_tests():
             print("✅ Parse API (parseroute) created/updated.")
             safe_cleanup(mailjet_v3.parseroute.delete, f"ParseRoute {p_id}", id=p_id)
 
-        # Segmentation
         res = mailjet_v3.contactfilter.create(
             data={
                 "Description": "README Test Filter",
@@ -193,19 +159,14 @@ def run_readme_tests():
             print("✅ Segmentation (contactfilter) created.")
             safe_cleanup(mailjet_v3.contactfilter.delete, f"ContactFilter {f_id}", id=f_id)
 
-        # Statcounters
         res = mailjet_v3.statcounters.get(
             filters={"CounterSource": "APIKey", "CounterTiming": "Message", "CounterResolution": "Lifetime"}
         )
         assert res.status_code == 200
         print("✅ Statcounters passed.")
 
-        # ---------------------------------------------------------------------
-        # 5. CONTENT API (v1) - Full Image Lifecycle
-        # ---------------------------------------------------------------------
+        # 5. CONTENT API (v1)
         section("Content API (v1)")
-
-        # Negative Upload (Verifying error handling)
         client_logger = logging.getLogger("mailjet_rest.client")
         prev_level = client_logger.level
         client_logger.setLevel(logging.CRITICAL)
@@ -219,7 +180,6 @@ def run_readme_tests():
         finally:
             client_logger.setLevel(prev_level)
 
-        # Real Multipart Upload & Resilient Cleanup
         b64_string = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
         files_payload = {
             "metadata": (None, '{"name": "readme_logo.png", "Status": "open"}', "application/json"),
@@ -230,10 +190,7 @@ def run_readme_tests():
         if res.status_code == 201:
             image_id = res.json()["Data"][0]["ID"]
             print(f"✅ Content API Upload passed. Image ID: {image_id}")
-
-            # CRITICAL: Wait 1 second for the server to process the upload before trying to delete it.
             time.sleep(1)
-
             try:
                 safe_cleanup(mailjet_v1.data_images.delete, f"Image {image_id}", id=image_id)
             except Exception:
@@ -241,20 +198,16 @@ def run_readme_tests():
         else:
             print(f"⚠️ Content API Upload skipped/failed: {res.status_code}")
 
-        # ---------------------------------------------------------------------
-        # 6. ADDITIONAL HEALTH CHECKS (Read-Only & RPC-Actions)
-        # ---------------------------------------------------------------------
+        # 6. ADDITIONAL HEALTH CHECKS
         section("Additional Health Checks (Read-Only & RPC-Actions)")
-
-        # Strategy: 'stream' for list/GET-collections, 'ping' for POST/RPC-actions
         health_checks = [
             ("Send", mailjet_v3.send, "ping", None),
             ("Contacts", mailjet_v3.contact, "stream", None),
-            ("Webhooks", mailjet_v3.webhook, "ping", None),
+            ("Webhooks", mailjet_v3.eventcallbackurl, "ping", None),
             ("Sender Validate", mailjet_v3.sender_validate, "ping", 999999),
             ("Tokens (v1)", mailjet_v1.tokens, "stream", None),
             ("Labels (v1)", mailjet_v1.labels, "stream", None),
-            ("Template Contents", mailjet_v1.templates_contents, "stream", 999999),
+            ("Template Contents (v1)", mailjet_v1.template_contents, "stream", 999999),
             ("Senders", mailjet_v3.sender, "stream", None),
             ("Campaigns", mailjet_v3.campaign, "stream", None),
             ("Messages", mailjet_v3.message, "stream", None),
@@ -266,7 +219,6 @@ def run_readme_tests():
                 if strategy == "stream":
                     iterator = endpoint.stream(id=resource_id, chunk_size=1)
                     item = next(iterator, None)
-
                     if item is not None:
                         print(f"✅ {name} (stream) passed (Found items).")
                     else:
@@ -279,7 +231,6 @@ def run_readme_tests():
                         assert False, f"Unexpected status {res.status_code}"
 
             except Exception as e:
-                # Check if the status code is on the domain exception, or nested inside the HTTP error cause
                 status = getattr(e, "status_code", None)
                 if status is None and getattr(e, "__cause__", None) is not None:
                     response = getattr(e.__cause__, "response", None)

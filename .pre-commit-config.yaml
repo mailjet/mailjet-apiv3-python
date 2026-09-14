@@ -105,7 +105,7 @@ repos:
 
   # Git commit quality
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.17.0
+    rev: v4.18.0
     hooks:
       - id: commitizen
         name: "🌳 git · Validate commit message"
@@ -134,7 +134,7 @@ repos:
         additional_dependencies: [".[toml]"]
 
   - repo: https://github.com/semgrep/pre-commit
-    rev: 'v1.173.0'
+    rev: 'v1.177.0'
     hooks:
       - id: semgrep
         name: "🔒 security · Static analysis (semgrep)"
@@ -145,16 +145,17 @@ repos:
     hooks:
       - id: pip-audit
         name: "🔒 security · Audit Python dependencies"
+        additional_dependencies: ["pip>=26.2"]
 
   - repo: https://github.com/woodruffw/zizmor-pre-commit
-    rev: v1.29.0
+    rev: v1.30.1
     hooks:
       - id: zizmor
         name: "🔒 security · Scan GitHub Actions (zizmor)"
 
   # Spelling and typos
   - repo: https://github.com/crate-ci/typos
-    rev: v1.49.0
+    rev: v1.50.1
     hooks:
       - id: typos
         name: "📝 spelling · Check typos"
@@ -170,7 +171,7 @@ repos:
         files: ^\.github/workflows/.*\.ya?ml$
 
   - repo: https://github.com/ariebovenberg/slotscheck
-    rev: v0.20.1
+    rev: v0.21.0
     hooks:
       - id: slotscheck
         name: "🔍 check · slotscheck"
@@ -183,7 +184,7 @@ repos:
           - hypothesis
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.3
+    rev: v0.16.7
     hooks:
       - id: ruff-check
         name: "🐍 lint · Check with Ruff"
@@ -213,14 +214,14 @@ repos:
         exclude: ^samples/
 
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.411
+    rev: v1.1.414
     hooks:
       - id: pyright
         name: "🐍 types · Check with pyright"
 
   # Python project configuration
   - repo: https://github.com/abravalheri/validate-pyproject
-    rev: v0.25
+    rev: '0.26'
     hooks:
       - id: validate-pyproject
         name: "🐍 config · Validate pyproject.toml"

@@ -27,7 +27,7 @@ def create_a_campaign_with_a_segmentation_filter(segmentation_id=0):
         "ContactsListID": 0,
         "SegmentationID": segmentation_id,
     }
-    return mailjet30.newsletter.create(data=data)
+    return mailjet30.campaigndraft.create(data=data)
 
 
 if __name__ == "__main__":

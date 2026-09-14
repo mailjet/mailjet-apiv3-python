@@ -67,6 +67,22 @@ def TestOneInput(data: bytes) -> None:
             for _ in range(fdp.ConsumeIntInRange(1, 5)):
                 dynamic_headers[fdp.ConsumeUnicodeNoSurrogates(15)] = fdp.ConsumeUnicodeNoSurrogates(30)
 
+        # Target pagination and generator parsing
+        if fdp.ConsumeBool():
+            chunk_size = fdp.ConsumeIntInRange(-10, 2000)
+            try:
+                for idx, _ in enumerate(endpoint.stream(
+                    id=id_val,
+                    action_id=action_id,
+                    filters=filters,
+                    chunk_size=chunk_size,
+                )):
+                    if idx > 5:
+                        break
+            except (ValueError, TypeError, ValidationError):
+                # Expected for malformed fuzzed inputs traversing validation logic
+                pass
+
         payload = {fdp.ConsumeUnicodeNoSurrogates(5): fdp.ConsumeUnicodeNoSurrogates(10)}
 
         if method_idx == 0:

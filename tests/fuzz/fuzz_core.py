@@ -1,9 +1,12 @@
 import sys
+import warnings
 import atheris
 import gc
 
 from mailjet_rest.errors import MailjetAuthError, ValidationError, MailjetApiError
 
+# Silence deprecation warnings during fuzzing to reduce overhead and log noise
+warnings.simplefilter("ignore")
 
 # Instrument all internal modules
 with atheris.instrument_imports(enable_loader_override=False):
@@ -25,7 +28,6 @@ class DummyResponse:
 _mock_client.session.request = lambda *args, **kwargs: DummyResponse()  # type: ignore[method-assign, assignment]
 
 
-
 def fuzz_config(fdp: atheris.FuzzedDataProvider) -> int:
     """Target 1: Config Validation."""
     try:
@@ -37,6 +39,7 @@ def fuzz_config(fdp: atheris.FuzzedDataProvider) -> int:
         )
         return 0
     except (ValueError, TypeError):
+        # We expect ValueError, TypeError
         return -1
 
 
@@ -83,7 +86,8 @@ def fuzz_telemetry_and_difflib(fdp: atheris.FuzzedDataProvider) -> int:
     try:
         getattr(_mock_client, fdp.ConsumeUnicodeNoSurrogates(150))
     except AttributeError:
-        pass  # We expect typos to raise AttributeError
+        # We expect typos to raise AttributeError
+        pass
 
     # Fuzz telemetry extractor with lists and dicts
     num_keys = fdp.ConsumeIntInRange(1, 10)
@@ -114,8 +118,9 @@ def TestOneInput(data: bytes) -> int:
     global execution_counter
     execution_counter += 1
 
-    # Force garbage collection more frequently to prevent 2GB OOM peaks
-    if execution_counter % 2500 == 0:
+    # Periodically flush the client endpoint cache and run garbage collection
+    if execution_counter % 1000 == 0:
+        _mock_client._endpoint_cache.clear()
         gc.collect()
 
     if len(data) < 5:

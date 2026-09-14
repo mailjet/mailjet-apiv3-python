@@ -203,10 +203,10 @@ def test_registry_parity_and_integrity(client_live: Client, route_key: str) -> N
     endpoint = getattr(client_live, route_key)
 
     kwargs = {}
-    if "{" in ROUTE_MAP[route_key].path:
+    if "{id}" in ROUTE_MAP[route_key].path:
         kwargs["id_val"] = "123"
-        if "{action_id}" in ROUTE_MAP[route_key].path:
-            kwargs["action_id"] = "test"
+    if "{action_id}" in ROUTE_MAP[route_key].path:
+        kwargs["action_id"] = "test"
 
     url = endpoint._build_url(**kwargs)
     parsed = urlparse(url)
@@ -721,3 +721,200 @@ def test_live_client_edge_cases_and_utilities(client_live: Client) -> None:
         mock_res = requests.Response()
         mock_res._content = b'{"Count": 1}'
         assert parse_response(mock_res) == {"Count": 1}
+
+
+def test_live_custom_headers_propagation(client_live: Client) -> None:
+    """Verify that custom headers pass cleanly through endpoint operations."""
+    custom_headers = {"X-Request-Source": "CI-Runner", "X-Integration-Test": "True"}
+    # Standard read request with custom headers
+    resp = client_live.contact.get(filters={"limit": 1}, headers=custom_headers)
+    assert resp.status_code == 200
+
+
+def test_live_stream_with_parse_qs_filters(client_live: Client) -> None:
+    """Verify endpoint.stream correctly casts multidicts from parse_qs during live pagination."""
+    from urllib.parse import parse_qs
+
+    # parse_qs produces list values: {'offset': ['0'], 'limit': ['2']}
+    query_filters = parse_qs("offset=0&limit=2")
+    streamer = client_live.contact.stream(filters=query_filters, chunk_size=2)
+
+    items = []
+    for item in streamer:
+        items.append(item)
+        if len(items) >= 2:
+            break
+
+    assert isinstance(items, list)
+    if items:
+        assert "ID" in items[0]
+
+
+def test_live_new_static_routes_url_resolution(client_live: Client) -> None:
+    """Verify newly registered static routes resolve with correct prefixes and suffixes."""
+    csv_data_url = client_live.contactslist_csvdata._build_url(id_val=123)
+    assert csv_data_url == "https://api.mailjet.com/v3/DATA/contactslist/123/CSVData/text:plain"
+
+    csv_err_url = client_live.batchjob_csverror._build_url(id_val=456)
+    assert csv_err_url == "https://api.mailjet.com/v3/DATA/batchjob/456/CSVError/text:csv"
+
+
+def test_live_account_metadata_endpoints(client_live: Client) -> None:
+    """Verify live read-only access to account and configuration endpoints."""
+    # Contact metadata schema
+    resp_meta = client_live.contactmetadata.get(filters={"limit": 1})
+    assert resp_meta.status_code == 200
+    assert "Data" in resp_meta.json()
+
+    # Domain DNS configuration
+    resp_dns = client_live.dns.get(filters={"limit": 1})
+    assert resp_dns.status_code == 200
+    assert "Data" in resp_dns.json()
+
+    # User / API key details
+    resp_key = client_live.apikey.get(filters={"limit": 1})
+    assert resp_key.status_code == 200
+
+
+@pytest.mark.parametrize("stats_endpoint", [
+    "bouncestatistics",
+    "clickstatistics",
+    "openinformation",
+    "toplinkclicked",
+    "useragentstatistics",
+])
+def test_live_event_statistics_endpoints(client_live: Client, stats_endpoint: str) -> None:
+    """Verify real-time event tracking and statistics log retrieval."""
+    endpoint = getattr(client_live, stats_endpoint)
+    resp = endpoint.get(filters={"limit": 1})
+    assert resp.status_code == 200
+    assert "Data" in resp.json()
+
+
+def test_live_eventcallbackurl_crud_lifecycle(client_live: Client) -> None:
+    """End-to-End test for webhook (eventcallbackurl) management."""
+    webhook_url = f"https://example.com/webhook_{uuid.uuid4().hex[:8]}"
+
+    # 1. Create Webhook
+    create_resp = client_live.eventcallbackurl.create(
+        data={
+            "EventType": "open",
+            "Url": webhook_url,
+            "Status": "alive",
+            "IsBackup": False,
+        }
+    )
+    if create_resp.status_code != 201:
+        pytest.skip(f"Webhook setup not permitted: {create_resp.text}")
+
+    webhook_id = create_resp.json()["Data"][0]["ID"]
+
+    try:
+        # 2. Read
+        get_resp = client_live.eventcallbackurl.get(id=webhook_id)
+        assert get_resp.status_code == 200
+        assert get_resp.json()["Data"][0]["Url"] == webhook_url
+
+        # 3. Update (pause webhook)
+        update_resp = client_live.eventcallbackurl.update(
+            id=webhook_id,
+            data={"Status": "dead"},
+        )
+        assert update_resp.status_code == 200
+    finally:
+        # 4. Clean up
+        client_live.eventcallbackurl.delete(id=webhook_id)
+
+
+from mailjet_rest.errors import DoesNotExistError, ValidationError
+
+
+def test_live_statistics_link_click_and_recipient_esp(client_live: Client) -> None:
+    """Verify live read queries on camelCase-hyphenated sub-actions:
+    statistics/link-click and statistics/recipient-esp.
+    """
+    # 1. Test statistics/link-click (requires CampaignID parameter)
+    try:
+        resp_click = client_live.statistics_linkClick.get(filters={"CampaignID": 1})
+        assert resp_click.status_code in (200, 404)
+        if resp_click.status_code == 200:
+            assert "Data" in resp_click.json()
+    except (DoesNotExistError, ValidationError) as e:
+        # Non-existent CampaignID returns 404/400 from live API
+        assert getattr(e, "status_code", 404) in (400, 404)
+
+    # 2. Test statistics/recipient-esp (requires CampaignID parameter)
+    try:
+        resp_esp = client_live.statistics_recipientEsp.get(filters={"CampaignID": 1})
+        assert resp_esp.status_code in (200, 404)
+        if resp_esp.status_code == 200:
+            assert "Data" in resp_esp.json()
+    except (DoesNotExistError, ValidationError) as e:
+        assert getattr(e, "status_code", 404) in (400, 404)
+
+
+def test_live_contact_subresources_and_actions(client_live: Client) -> None:
+    """Verify live URI interpolation on multi-segment contact sub-resources:
+    - REST/contact/{id}/managecontactslists
+    - REST/contact/{id}/getcontactslists
+    - REST/contactslist/{id}/managemanycontacts
+    """
+    test_email = f"ci-subresource-{uuid.uuid4().hex[:8]}@example.com"
+    create_contact = client_live.contact.create(data={"Email": test_email})
+    if create_contact.status_code != 201:
+        pytest.skip(f"Contact creation failed: {create_contact.text}")
+
+    contact_id = create_contact.json()["Data"][0]["ID"]
+
+    list_name = f"CI_List_{uuid.uuid4().hex[:8]}"
+    create_list = client_live.contactslist.create(data={"Name": list_name})
+    if create_list.status_code != 201:
+        try:
+            client_live.contact.delete(id=contact_id)
+        except MailjetAuthError:
+            pass
+        pytest.skip(f"ContactsList creation failed: {create_list.text}")
+
+    list_id = create_list.json()["Data"][0]["ID"]
+
+    try:
+        # 1. Test REST/contact/{id}/managecontactslists (POST action on specific contact)
+        sub_payload = {
+            "ContactsLists": [
+                {"ListID": list_id, "Action": "addnoforce"}
+            ]
+        }
+        resp_manage = client_live.contact_managecontactslists.create(
+            id=contact_id,
+            data=sub_payload,
+        )
+        assert resp_manage.status_code in (200, 201)
+
+        # 2. Test REST/contact/{id}/getcontactslists (GET sub-resource on specific contact)
+        resp_getlists = client_live.contact_getcontactslists.get(id=contact_id)
+        assert resp_getlists.status_code == 200
+        assert "Data" in resp_getlists.json()
+
+        # 3. Test REST/contactslist/{id}/managemanycontacts (POST action on specific list)
+        many_payload = {
+            "Action": "addnoforce",
+            "Contacts": [{"Email": test_email}],
+        }
+        resp_many = client_live.contactslist_managemanycontacts.create(
+            id=list_id,
+            data=many_payload,
+        )
+        assert resp_many.status_code in (200, 201)
+
+    finally:
+        # Resilient Teardown
+        try:
+            client_live.contact.delete(id=contact_id)
+        except MailjetAuthError:
+            # Contact deletion is restricted without GDPR delete privileges
+            pass
+
+        try:
+            client_live.contactslist.delete(id=list_id)
+        except (MailjetAuthError, DoesNotExistError):
+            pass

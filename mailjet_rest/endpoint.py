@@ -6,13 +6,13 @@ import json
 import warnings
 from typing import TYPE_CHECKING, Any
 
-from mailjet_rest.routes import ROUTE_MAP
+from mailjet_rest.routes import DEPRECATION_ADVISORY, ROUTE_MAP
 from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, HttpMethod, PayloadType, TimeoutType
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Generator, Mapping
 
     import requests
 
@@ -33,8 +33,28 @@ class Endpoint:
         self.client = client
         self.name = name
         self._name_lower = name.lower()
-        self._action_parts = self._name_lower.split("_")
-        self._resource_lower = self._action_parts[0]
+        parts = name.split("_")
+
+        # Base resource ignores CamelCase-to-dash conversion
+        self._resource_lower = parts[0].lower()
+        self._action_parts = [self._resource_lower]
+
+        # Re-implement camelCase-to-dash conversion natively for sub-actions
+        if len(parts) > 1:
+            for part in parts[1:]:
+                dashed = "".join("-" + c.lower() if c.isupper() else c for c in part)
+                self._action_parts.append(dashed.lstrip("-"))
+
+    def _check_deprecation(self) -> None:
+        """Emit a non-breaking warning when a deprecated route is invoked."""
+        target = self._name_lower if self._name_lower in DEPRECATION_ADVISORY else self._resource_lower
+        if target in DEPRECATION_ADVISORY:
+            replacement = DEPRECATION_ADVISORY[target]
+            warnings.warn(
+                f"Endpoint '{target}' is deprecated in the Mailjet API. Migrate to '{replacement}'.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
 
     def _resolve_registry_route(
         self, base_url: str, version: str, id_val: int | str | None, action_id: int | str | None
@@ -146,6 +166,7 @@ class Endpoint:
         Returns:
             str: The fully qualified, sanitized secure URL.
         """
+        self._check_deprecation()
         version = self.client.config.version
 
         # Test Parity DX warning:
@@ -176,23 +197,92 @@ class Endpoint:
 
         return url
 
-    def _build_headers(self, custom_headers: dict[str, str] | None = None) -> dict[str, str]:
+    def _build_headers(self, custom_headers: Mapping[str, str | None] | None = None) -> dict[str, str | None]:
         """Build headers based on the endpoint requirements.
 
         Args:
-            custom_headers (dict[str, str] | None): Custom headers to merge.
+            custom_headers: Custom headers to merge.
 
         Returns:
-            dict[str, str]: The composed dictionary of HTTP headers.
+            dict[str, str | None]: The composed dictionary of HTTP headers.
         """
         base_headers = _TEXT_HEADERS if self._name_lower.endswith("_csvdata") else _JSON_HEADERS
 
         if custom_headers:
-            clean_custom = SecurityGuard.sanitize_headers(custom_headers)
-            merged = dict(base_headers)
+            clean_custom = SecurityGuard.sanitize_headers(dict(custom_headers))
+            merged: dict[str, str | None] = dict(base_headers)
             merged.update(clean_custom)
             return merged
         return dict(base_headers)
+
+    @staticmethod
+    def _cast_query_param(orig_ref: Any, raw_values: Any) -> Any:
+        """Cast query string values to match the target filter parameter type.
+
+        Handles single values or lists from urllib.parse.parse_qs and casts them
+        to bool, int, float, list, tuple, set, or str based on orig_ref.
+
+        Args:
+            orig_ref: Reference value or type indicating the intended target type.
+            raw_values: List of string values or a single scalar value.
+
+        Returns:
+            The parsed value cast to the target type.
+        """
+        vals = list(raw_values) if isinstance(raw_values, (list, tuple, set)) else [raw_values]
+
+        if not vals:
+            empty_defaults: dict[type, Any] = {
+                bool: False,
+                int: 0,
+                float: 0.0,
+                list: [],
+                tuple: (),
+                set: set(),
+            }
+            return empty_defaults.get(type(orig_ref), "")
+
+        first_val = vals[0]
+        if isinstance(orig_ref, bool):
+            return str(first_val).strip().lower() in {"true", "1", "yes", "t"}
+
+        converters: dict[type, Any] = {
+            int: lambda: int(first_val),
+            float: lambda: float(first_val),
+            list: lambda: list(vals),
+            tuple: lambda: tuple(vals),
+            set: lambda: set(vals),
+        }
+        converter = converters.get(type(orig_ref))
+        if converter:
+            return converter()
+
+        return first_val if len(vals) == 1 else vals
+
+    @classmethod
+    def _normalize_stream_filters(
+        cls, filters: Mapping[str, Any] | None, chunk_size: int
+    ) -> tuple[dict[str, Any], int]:
+        """Normalize filter keys and extract initial offset for pagination.
+
+        Returns:
+            tuple[dict[str, Any], int]: A tuple containing the sanitized filters
+            dictionary (with Limit set) and the validated starting offset.
+        """
+        current_filters = dict(filters) if filters else {}
+        raw_offset = current_filters.pop("offset", None)
+        if raw_offset is None:
+            raw_offset = current_filters.get("Offset")
+
+        try:
+            current_offset: int = cls._cast_query_param(0, raw_offset) if raw_offset is not None else 0
+        except (ValueError, TypeError) as e:
+            msg = f"stream() Offset filter must be an integer, got: {raw_offset!r}"
+            raise ValueError(msg) from e
+
+        current_filters.pop("limit", None)
+        current_filters["Limit"] = chunk_size
+        return current_filters, current_offset
 
     def __call__(
         self,
@@ -202,6 +292,7 @@ class Endpoint:
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
         timeout: TimeoutType = None,
+        headers: Mapping[str, str | None] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
         """Execute the specific HTTP method on the constructed endpoint.
@@ -213,13 +304,18 @@ class Endpoint:
             filters (dict[str, Any] | None): Query string URL parameters.
             action_id (int | str | None): Sub-action ID.
             timeout (TimeoutType): Request timeout.
+            headers (Mapping[str, str | None] | None): Custom HTTP request headers.
             **kwargs (Any): Additional arguments.
 
         Returns:
             requests.Response: The resulting HTTP response from the request execution.
         """
-        # Pop deprecated/HTTP kwargs safely
-        headers = kwargs.pop("headers", None)
+        # Pop deprecated/HTTP kwargs safely without overwriting the explicit 'headers' argument
+        if headers is None:
+            headers = kwargs.pop("headers", None)
+        else:
+            kwargs.pop("headers", None)
+
         ensure_ascii = kwargs.pop("ensure_ascii", None)
         data_encoding = kwargs.pop("data_encoding", None)
 
@@ -233,10 +329,13 @@ class Endpoint:
                 data_str = json.dumps(data, ensure_ascii=ensure_ascii if ensure_ascii is not None else True)
                 data = data_str.encode(data_encoding) if data_encoding else data_str
 
+        # Screen and merge headers through _build_headers
+        merged_headers = self._build_headers(headers)
+
         return self.client.api_call(
             method=method,
             url=self._build_url(id_val=id, action_id=action_id),
-            headers=self._build_headers(headers),
+            headers=merged_headers,
             data=data,
             filters=filters,
             timeout=timeout,
@@ -248,73 +347,92 @@ class Endpoint:
         id: int | str | None = None,
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Perform a GET request.
+        """Perform a GET request on the constructed endpoint.
 
         Args:
-            id (int | str | None): The primary resource ID.
-            filters (dict[str, Any] | None): Query string URL parameters.
-            action_id (int | str | None): Sub-action ID.
-            **kwargs (Any): Additional args passed to requests.
+            id: The primary resource ID.
+            filters: Query string URL parameters.
+            action_id: Sub-action ID.
+            headers: Custom HTTP request headers.
+            **kwargs: Additional arguments passed to the request layer.
 
         Returns:
-            requests.Response: The resulting HTTP response for the GET request.
+            requests.Response: The resulting HTTP response from the GET request.
         """
-        return self(method="GET", id=id, filters=filters, action_id=action_id, **kwargs)
+        return self(method="GET", id=id, filters=filters, action_id=action_id, headers=headers, **kwargs)
 
     def stream(
         self,
         id: int | str | None = None,
-        filters: dict[str, Any] | None = None,
+        filters: Mapping[str, Any] | None = None,
         action_id: int | str | None = None,
         chunk_size: int = 1000,
+        method: HttpMethod = "GET",
         **kwargs: Any,
     ) -> Generator[dict[str, Any], None, None]:
         """Automatically paginates over GET requests yielding resource dictionaries.
 
         Args:
-            id (int | str | None): The primary resource ID.
-            filters (dict[str, Any] | None): Query string URL parameters.
-            action_id (int | str | None): Sub-action ID.
-            chunk_size (int): Objects returned per loop (Limit). Defaults to 1000.
-            **kwargs (Any): Additional args passed to requests.
+            id: The primary resource ID.
+            filters: Query string URL parameters. Accepts dicts, MappingProxy, or parse_qs multi-dicts.
+            action_id: Sub-action ID.
+            chunk_size: Objects returned per loop (Limit). Defaults to 1000.
+            method: The HTTP method to use (must be GET).
+            **kwargs: Additional arguments passed to requests.
 
         Yields:
             dict[str, Any]: Individual resource objects from the paginated API response.
+
+        Raises:
+            ValueError: If method is not GET, chunk_size <= 0, or Offset is invalid.
         """
-        # Prevent infinite CPU/Network loops if 0 or negative numbers are passed
+        if method.upper() != "GET":
+            msg = f"stream() is designed for GET requests only, got {method}"
+            raise ValueError(msg)
+
         if chunk_size <= 0:
             msg = "stream() chunk_size must be a strictly positive integer."
             raise ValueError(msg)
 
-        current_filters = dict(filters) if filters else {}
-        current_filters["Limit"] = chunk_size
-
-        # Respect user-provided offsets to allow stream resumption.
-        # Cast to int to prevent TypeError when adding chunk_size later.
-        # Protect against 'None' values throwing a TypeError when cast to int
-        offset_val = current_filters.get("Offset")
-        current_filters["Offset"] = int(offset_val) if offset_val is not None else 0
+        current_filters, current_offset = self._normalize_stream_filters(filters, chunk_size)
 
         while True:
-            response = self.get(id=id, filters=current_filters, action_id=action_id, **kwargs)
-            body = response.json()
-            data = body.get("Data", [])
+            current_filters["Offset"] = current_offset
+            response = self.get(id=id, filters=current_filters.copy(), action_id=action_id, **kwargs)
+
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+
+            try:
+                body = response.json()
+            except (ValueError, AttributeError):
+                break
+
+            if not isinstance(body, dict):
+                break
+
+            data = body.get("Data") or []
+            if not isinstance(data, list):
+                break
 
             yield from data
 
-            # Break early if we've reached the absolute end
-            if not data or len(data) < chunk_size:
+            total = body.get("Total")
+            reached_total = isinstance(total, int) and (current_offset + len(data) >= total)
+            if not data or len(data) < chunk_size or reached_total:
                 break
 
-            current_filters["Offset"] += chunk_size
+            current_offset += chunk_size
 
     def create(
         self,
         data: PayloadType = None,
         id: int | str | None = None,
         action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
@@ -325,8 +443,9 @@ class Endpoint:
             data (PayloadType): Request payload.
             id (int | str | None): The primary resource ID.
             action_id (int | str | None): The sub-action ID.
-            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
-            data_encoding (str | None): Data encoding string (Deprecated).
+            headers (dict[str, str] | None): Custom headers.
+            ensure_ascii (bool | None): Ensure ASCII encoding (deprecated).
+            data_encoding (str | None): Data encoding (deprecated).
             **kwargs (Any): Additional arguments.
 
         Returns:
@@ -337,6 +456,7 @@ class Endpoint:
             id=id,
             data=data,
             action_id=action_id,
+            headers=headers,
             ensure_ascii=ensure_ascii,
             data_encoding=data_encoding,
             **kwargs,
@@ -347,6 +467,7 @@ class Endpoint:
         id: int | str,
         data: PayloadType = None,
         action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
         ensure_ascii: bool | None = None,
         data_encoding: str | None = None,
         **kwargs: Any,
@@ -355,10 +476,11 @@ class Endpoint:
 
         Args:
             id (int | str): The primary resource ID.
-            data (PayloadType): Updated payload.
+            data (PayloadType): Request payload.
             action_id (int | str | None): The sub-action ID.
-            ensure_ascii (bool | None): Ensure ASCII serialization (Deprecated).
-            data_encoding (str | None): Data encoding string (Deprecated).
+            headers (dict[str, str] | None): Custom headers.
+            ensure_ascii (bool | None): Ensure ASCII encoding (deprecated).
+            data_encoding (str | None): Data encoding (deprecated).
             **kwargs (Any): Additional arguments.
 
         Returns:
@@ -369,6 +491,7 @@ class Endpoint:
             id=id,
             data=data,
             action_id=action_id,
+            headers=headers,
             ensure_ascii=ensure_ascii,
             data_encoding=data_encoding,
             **kwargs,

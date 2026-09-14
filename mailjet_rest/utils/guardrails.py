@@ -27,6 +27,8 @@ from urllib.parse import quote, unquote, urlparse
 
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import requests
 
     from mailjet_rest.types import TimeoutType
@@ -198,15 +200,49 @@ class RedactingFilter(logging.Filter):
         except Exception:  # ruff: ignore[blind-except]
             return "[REDACTION_FAILED_UNSAFE_STRING]"
 
+    def _redact_tuple(self, data: tuple[Any, ...], depth: int) -> tuple[Any, ...]:
+        """Recursively sanitize tuple items preserving namedtuple structure.
+
+        Returns:
+            The sanitized tuple or NamedTuple instance.
+        """
+        if hasattr(data, "_fields"):  # Preserves typing.NamedTuple
+            with contextlib.suppress(Exception):
+                return type(data)(*(self._deep_redact(item, depth + 1) for item in data))
+        return tuple(self._deep_redact(item, depth + 1) for item in data)
+
+    def _redact_object(self, data: Any, depth: int) -> Any:
+        """Recursively sanitize custom objects, dataclasses, and Pydantic models.
+
+        Returns:
+            The sanitized dictionary, string, or primitive representation.
+        """
+        if hasattr(data, "model_dump") and callable(data.model_dump):
+            with contextlib.suppress(Exception):
+                return self._deep_redact(data.model_dump(), depth + 1)
+
+        if hasattr(data, "__dict__"):
+            with contextlib.suppress(Exception):
+                return self._deep_redact(vars(data), depth + 1)
+
+        try:
+            str_val = str(data)
+        except Exception:  # ruff: ignore[blind-except]
+            return ""
+
+        return self._redact_str(str_val)
+
     def _deep_redact(self, data: Any, depth: int = 0) -> Any:
         """Recursively search and scrub secrets from complex nested data structures.
 
         Returns:
-            Any: The fully scrubbed and redacted data structure representation.
+            The fully sanitized data structure representation.
         """
         if depth > self.MAX_REDACTION_DEPTH:
             return "[MAX_DEPTH_REACHED]"
 
+        if isinstance(data, (int, float, bool, type(None))):
+            return data
         if isinstance(data, str):
             return self._redact_str(data)
         if isinstance(data, dict):
@@ -214,11 +250,11 @@ class RedactingFilter(logging.Filter):
         if isinstance(data, list):
             return [self._deep_redact(item, depth + 1) for item in data]
         if isinstance(data, tuple):
-            return tuple(self._deep_redact(item, depth + 1) for item in data)
+            return self._redact_tuple(data, depth)
         if isinstance(data, set):
             return {self._deep_redact(item, depth + 1) for item in data}
 
-        return data
+        return self._redact_object(data, depth)
 
     @override
     def filter(self, record: logging.LogRecord) -> bool:
@@ -341,15 +377,15 @@ class SecurityGuard:
             warnings.warn("Security Warning: Unencrypted HTTP proxy detected.", UserWarning, stacklevel=3)
 
     @staticmethod
-    def sanitize_headers(headers: dict[str, str]) -> dict[str, str]:
+    def sanitize_headers(headers: Mapping[str, str | None]) -> dict[str, str | None]:
         """Prevent HTTP Header Injection (CWE-113).
 
         Returns:
             dict[str, str]: The sanitized headers safely screened for CRLF injections.
         """
-        clean_headers = {}
+        clean_headers: dict[str, str | None] = {}
         for k, v in headers.items():
-            if _CRLF_RE.search(k) or _CRLF_RE.search(str(v)):
+            if _CRLF_RE.search(k) or (v is not None and _CRLF_RE.search(str(v))):
                 sys.audit("mailjet.security.header_injection", k)
                 msg = f"Security Violation: CRLF injection detected in header '{k}'"
                 raise ValueError(msg)
@@ -492,9 +528,14 @@ class SecurityGuard:
     @staticmethod
     def check_file_size(path: Path, max_size_bytes: int = 15 * 1024 * 1024) -> None:
         """Prevent Resource Exhaustion (CWE-400). Limit defaults to 15MB."""
-        size = path.stat().st_size
+        target = Path(path)
+        if not target.is_file():
+            msg = f"Security Alert (CWE-400): Path is not a regular file: {target}"
+            raise ValueError(msg)
+
+        size = target.stat().st_size
         if size > max_size_bytes:
-            msg = f"Security Violation: File '{path.name}' exceeds safe threshold."
+            msg = f"Security Violation: File '{target.name}' exceeds safe threshold."
             raise ValueError(msg)
 
     @staticmethod
@@ -507,7 +548,8 @@ class SecurityGuard:
         Returns:
             float: The validated scalar timeout in seconds.
         """
-        if not isinstance(timeout, (int, float)):
+        # Explicitly check for bool to prevent True/False coercing to 1.0/0.0
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
             msg = f"Timeout must be a numeric float or int, got {type(timeout).__name__}."
             raise TypeError(msg)
 
@@ -580,23 +622,21 @@ class SecurityGuard:
         """
         if not email_or_domain:
             return email_or_domain
-        parts = email_or_domain.rsplit("@", 1)
 
-        if len(parts) == 2:
-            local, domain = parts
+        local_part, sep, domain_part = email_or_domain.rpartition("@")
+        if sep:
             try:
-                puny_domain = domain.encode("idna").decode("ascii")
-            except Exception as e:
+                puny_domain = domain_part.encode("idna").decode("ascii")
+            except UnicodeError as e:
                 msg = f"Invalid IDN in email: {email_or_domain}"
                 raise ValueError(msg) from e
-            else:
-                return f"{local}@{puny_domain}"
-        else:
-            try:
-                return email_or_domain.encode("idna").decode("ascii")
-            except Exception as e:
-                msg = f"Invalid IDN: {email_or_domain}"
-                raise ValueError(msg) from e
+            return f"{local_part}@{puny_domain}"
+
+        try:
+            return email_or_domain.encode("idna").decode("ascii")
+        except UnicodeError as e:
+            msg = f"Invalid IDN: {email_or_domain}"
+            raise ValueError(msg) from e
 
     @staticmethod
     def sanitize_segment(segment: Any) -> str:
@@ -669,7 +709,10 @@ class SecurityGuard:
         """
         if not trace_val:
             return ""
-        return re.sub(r"\s+", "_", str(trace_val))
+
+        # Neutralize control characters [\x00-\x1f\x7f] and normalize whitespace
+        clean_str = _PATH_CONTROL_CHAR_RE.sub("_", str(trace_val))
+        return re.sub(r"\s+", "_", clean_str)
 
     @staticmethod
     def _validate_token(auth: str) -> str:

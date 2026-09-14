@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import warnings
 from typing import Any
 
@@ -16,6 +17,7 @@ from mailjet_rest.errors import (
     DoesNotExistError,
     ValidationError,
 )
+from mailjet_rest.routes import DEPRECATION_ADVISORY
 
 
 def test_legacy_exceptions_exist_and_inherit_properly() -> None:
@@ -104,3 +106,16 @@ def test_legacy_encoding_injection(monkeypatch: pytest.MonkeyPatch) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         client.contact.create(data={"Name": "Test"}, data_encoding="utf-8")
+
+
+@pytest.mark.parametrize("route_name,replacement", DEPRECATION_ADVISORY.items())
+def test_deprecated_endpoint_emits_warning(route_name: str, replacement: str) -> None:
+    """Ensure every registered deprecated route emits an actionable DeprecationWarning."""
+    client = Client(auth=("key", "secret"))
+    endpoint = getattr(client, route_name)
+
+    expected_msg = f"Endpoint '{route_name}' is deprecated in the Mailjet API. Migrate to '{replacement}'."
+    with pytest.warns(DeprecationWarning, match=re.escape(expected_msg)):
+        # Passing id_val=1 satisfies endpoints requiring an '{id}' URI parameter
+        # while safely appending as an ID segment for unparameterized routes
+        endpoint._build_url(id_val=1)
