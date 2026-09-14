@@ -518,7 +518,8 @@ message = (
     .add_cc("copilot@mailjet.com")
     .set_subject("Your Boarding Pass")
     .set_content(html="<h3>Welcome aboard!</h3>")
-    .attach_file("tickets/pass.pdf")  # Safely encodes using memory-efficient ChunkedStreamer
+    # Safely encodes using memory-efficient ChunkedStreamer
+    .attach_file("tickets/pass.pdf")
     .attach_inline("assets/logo.png")  # Adds inline attachments seamlessly
     .build()
 )
