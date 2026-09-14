@@ -9,6 +9,8 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-09-14
+
 ### Added
 
 - **Static O(1) Route Additions:** Registered missing static route definitions in `ROUTE_MAP` for `contactslist_csvdata` and `batchjob_csverror`.
@@ -45,6 +47,7 @@ ______________________________________________________________________
 
 ### Pull Requests Merged
 
+- PR #150: Release 1.9.0.
 - PR #149: Deprecate endpoints.
 - PR #148: build(deps): bump github/codeql-action/upload-sarif from 4.37.7 to 4.37.9.
 - PR #147: build(deps): bump github/codeql-action/analyze from 4.37.7 to 4.37.9.
