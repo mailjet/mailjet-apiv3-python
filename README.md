@@ -551,6 +551,16 @@ result = mailjet.contact.create(data=data)
 print(result.json())
 ```
 
+The support for explicit per-request custom HTTP headers (e.g. tracking or custom metadata) across `create()`, `update()`, and direct endpoint calls.
+
+```python
+# Pass custom per-request headers (screened for CRLF safety)
+result = mailjet.contact.create(
+    data={"Email": "pilot@mailjet.com"},
+    headers={"X-Custom-Source": "Onboarding-Service"},
+)
+```
+
 ##### Using actions
 
 ```python
@@ -636,6 +646,17 @@ Stop writing `while` loops to fetch thousands of contacts. Use `.stream()` to re
 ```python
 # Fetch all contacts seamlessly. Memory-safe and clean.
 for contact in mailjet.contact.stream(chunk_size=500):
+    print(contact["Email"])
+```
+
+Resuming pagination from an existing offset or raw query parameters
+
+```python
+from urllib.parse import parse_qs
+
+# Seamlessly handles multidicts from parse_qs (offset, limit)
+query = parse_qs("offset=500&limit=100")
+for contact in mailjet.contact.stream(filters=query, chunk_size=100):
     print(contact["Email"])
 ```
 
@@ -785,6 +806,15 @@ The SDK includes an active native Python deprecation system to protect your appl
 
 If you attempt to use legacy arguments (like `ensure_ascii` or `data_encoding`), obsolete utility functions (`parse_response`), or ambiguous routing (`v1` with `/template`), the SDK will **not** break your code.
 It will successfully execute the request but will emit a non-breaking `DeprecationWarning` to help you gracefully migrate to modern standards.
+
+### Deprecated API Endpoints & Routes
+
+When calling retired Mailjet endpoints, the SDK executes the request but emits an actionable `DeprecationWarning` directing you to canonical replacements:
+
+- **Newsletters (`newsletter*`):** Migrate to `campaigndraft` and `campaigndraft_*`.
+- **Legacy Statistics (`campaignstatistics`, `liststatistics`, `domainstatistics`, `apikeytotals`):** Migrate to `statcounters` or `statistics_recipientEsp`.
+- **Webhook Alias (`client.webhook`):** Use the official REST resource `client.eventcallbackurl`.
+- **Ambiguous Templates (`templates_contents`):** Use `template_detailcontent` (v3) or `template_contents` (v1).
 
 ## Type Hinting
 

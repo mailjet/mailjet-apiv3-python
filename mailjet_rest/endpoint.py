@@ -310,8 +310,12 @@ class Endpoint:
         Returns:
             requests.Response: The resulting HTTP response from the request execution.
         """
-        # Pop deprecated/HTTP kwargs safely
-        headers = kwargs.pop("headers", None)
+        # Pop deprecated/HTTP kwargs safely without overwriting the explicit 'headers' argument
+        if headers is None:
+            headers = kwargs.pop("headers", None)
+        else:
+            kwargs.pop("headers", None)
+
         ensure_ascii = kwargs.pop("ensure_ascii", None)
         data_encoding = kwargs.pop("data_encoding", None)
 
@@ -325,10 +329,13 @@ class Endpoint:
                 data_str = json.dumps(data, ensure_ascii=ensure_ascii if ensure_ascii is not None else True)
                 data = data_str.encode(data_encoding) if data_encoding else data_str
 
+        # Screen and merge headers through _build_headers
+        merged_headers = self._build_headers(headers)
+
         return self.client.api_call(
             method=method,
             url=self._build_url(id_val=id, action_id=action_id),
-            headers=self._build_headers(headers),
+            headers=merged_headers,
             data=data,
             filters=filters,
             timeout=timeout,
@@ -340,20 +347,22 @@ class Endpoint:
         id: int | str | None = None,
         filters: dict[str, Any] | None = None,
         action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Perform a GET request.
+        """Perform a GET request on the constructed endpoint.
 
         Args:
-            id (int | str | None): The primary resource ID.
-            filters (dict[str, Any] | None): Query string URL parameters.
-            action_id (int | str | None): Sub-action ID.
-            **kwargs (Any): Additional args passed to requests.
+            id: The primary resource ID.
+            filters: Query string URL parameters.
+            action_id: Sub-action ID.
+            headers: Custom HTTP request headers.
+            **kwargs: Additional arguments passed to the request layer.
 
         Returns:
-            requests.Response: The resulting HTTP response for the GET request.
+            requests.Response: The resulting HTTP response from the GET request.
         """
-        return self(method="GET", id=id, filters=filters, action_id=action_id, **kwargs)
+        return self(method="GET", id=id, filters=filters, action_id=action_id, headers=headers, **kwargs)
 
     def stream(
         self,
