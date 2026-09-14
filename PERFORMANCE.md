@@ -68,6 +68,23 @@ The modern v1.8.0 release incorporates security hardening, input sanitization, a
 
 *Note: Benchmarks measure network-isolated internal overhead using mocked `responses`. Testing hardware: Darwin-CPython-3.12-64bit.*
 
+### v1.8.0 vs. Current Refined (v1.9.0)
+
+Version 1.9.0 introduces route deprecation advisories, dynamic stream parameter casting, and custom header forwarding without adding measurable latency to the request execution hot path.
+
+| Metric                              | Baseline (v1.8.0) | Current Refined (v1.9.0) | Delta / Notes                         |
+| :---------------------------------- | :---------------- | :----------------------- | :------------------------------------ |
+| **Routing Speed (Mean)**            | ~87.15 ns         | **~87.25 ns**            | **Identical (>11.4 Million Ops/sec)** |
+| **Routing Speed (Min)**             | ~76.25 ns         | **~76.25 ns**            | **Zero Latency Regression**           |
+| **Routing Ops/Sec**                 | ~11,475 Kops/s    | **~11,461 Kops/s**       | **High Throughput Maintained**        |
+| **Request Cycle (Mean)**            | ~177.46 µs        | **~180.98 µs**           | **Stable (\<2% Mock Delta)**          |
+| **Cold-Boot Init Time**             | ~0.142 s          | **~0.102 s**             | **~28.2% Profiler Speedup**           |
+| **Wall-Clock Startup Time**         | ~0.194 s          | **~0.152 s**             | **~21.3% Faster Startup**             |
+| **Message Builder Validation**      | ~1.17 µs          | **~1.17 µs**             | **Stable**                            |
+| **Idempotency Fingerprint Hashing** | ~2.98 µs          | **~2.99 µs**             | **Stable**                            |
+
+*Note: Benchmarks measure network-isolated internal overhead using mocked `responses`. Testing hardware: Apple M4 Pro, Darwin-CPython-3.12-64bit.*
+
 ______________________________________________________________________
 
 ## Profiling the Codebase
