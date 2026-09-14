@@ -6,8 +6,8 @@ We currently provide security updates for the active major version of the Mailje
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.8.x   | :white_check_mark: |
-| < 1.8.0 | :x:                |
+| 1.9.x   | :white_check_mark: |
+| < 1.9.0 | :x:                |
 
 # Vulnerability Disclosure
 
