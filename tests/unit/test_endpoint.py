@@ -7,6 +7,26 @@ from mailjet_rest.client import Client
 from mailjet_rest.endpoint import Endpoint
 
 
+@pytest.mark.parametrize("offset", [0, 10])
+@pytest.mark.parametrize("size", [3, 4])
+@responses.activate
+def test_stream_with_page_local_total(offset: int, size: int) -> None:
+    """REST responses report Total for the current page, not the whole collection."""
+    data = [{"ID": index} for index in range(offset, offset + size)]
+    for start in range(0, size + 1, 2):
+        page = data[start : start + 2]
+        responses.add(
+            responses.GET,
+            "https://api.mailjet.com/v3/REST/contact",
+            match=[responses.matchers.query_param_matcher({"Offset": offset + start, "Limit": 2})],
+            json={"Count": len(page), "Total": len(page), "Data": page},
+        )
+
+    with Client(auth=("test", "test"), version="v3") as client:
+        assert list(client.contact.stream(filters={"Offset": offset}, chunk_size=2)) == data
+    assert len(responses.calls) == size // 2 + 1
+
+
 @pytest.fixture
 def client_offline() -> Client:
     """Local fixture to provide a basic Client instance."""
