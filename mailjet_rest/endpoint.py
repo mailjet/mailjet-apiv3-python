@@ -420,9 +420,9 @@ class Endpoint:
 
             yield from data
 
-            total = body.get("Total")
-            reached_total = isinstance(total, int) and (current_offset + len(data) >= total)
-            if not data or len(data) < chunk_size or reached_total:
+            # REST endpoints report a page-local Total unless countOnly is used.
+            # Continue through full pages rather than treating it as a collection size.
+            if not data or len(data) < chunk_size:
                 break
 
             current_offset += chunk_size

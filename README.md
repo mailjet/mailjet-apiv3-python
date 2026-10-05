@@ -644,6 +644,8 @@ print(result.json())
 
 Stop writing `while` loops to fetch thousands of contacts. Use `.stream()` to return a native Python Generator. The SDK will automatically manage `Limit`, `Offset`, and network pagination under the hood.
 
+Streaming continues until a short or empty page is returned. It does not use `Total` as the collection size, since normal REST responses report the number of elements in the current page.
+
 ```python
 # Fetch all contacts seamlessly. Memory-safe and clean.
 for contact in mailjet.contact.stream(chunk_size=500):
