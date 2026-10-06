@@ -439,4 +439,6 @@ ______________________________________________________________________
 [1.6.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0
 [1.7.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.7.0
 [1.8.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.8.0
-[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.7.0...HEAD
+[1.9.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.9.0
+[1.9.1]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.9.0...v1.9.1
+[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.9.1...HEAD
