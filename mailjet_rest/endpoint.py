@@ -28,6 +28,9 @@ class Endpoint:
 
     __slots__ = ("_action_parts", "_name_lower", "_resource_lower", "client", "name")
 
+    # Mailjet API pagination ceiling (https://dev.mailjet.com/docs/api-reference#pagination--sorting)
+    MAX_LIMIT: int = 1000
+
     def __init__(self, client: Client, name: str) -> None:
         """Initialize the endpoint handler with the parent client and route name."""
         self.client = client
@@ -280,8 +283,11 @@ class Endpoint:
             msg = f"stream() Offset filter must be an integer, got: {raw_offset!r}"
             raise ValueError(msg) from e
 
+        # Clean both 'limit' and 'Limit' from input filters so chunk_size governs the page window
         current_filters.pop("limit", None)
+        current_filters.pop("Limit", None)
         current_filters["Limit"] = chunk_size
+
         return current_filters, current_offset
 
     def __call__(
@@ -379,7 +385,7 @@ class Endpoint:
             id: The primary resource ID.
             filters: Query string URL parameters. Accepts dicts, MappingProxy, or parse_qs multi-dicts.
             action_id: Sub-action ID.
-            chunk_size: Objects returned per loop (Limit). Defaults to 1000.
+            chunk_size: Objects returned per loop (Limit). Defaults to 1000 (Mailjet max limit).
             method: The HTTP method to use (must be GET).
             **kwargs: Additional arguments passed to requests.
 
@@ -395,6 +401,13 @@ class Endpoint:
 
         if chunk_size <= 0:
             msg = "stream() chunk_size must be a strictly positive integer."
+            raise ValueError(msg)
+
+        if chunk_size > self.MAX_LIMIT:
+            msg = (
+                f"stream() chunk_size ({chunk_size}) exceeds Mailjet's maximum Limit of {self.MAX_LIMIT}. "
+                f"Set chunk_size <= {self.MAX_LIMIT}."
+            )
             raise ValueError(msg)
 
         current_filters, current_offset = self._normalize_stream_filters(filters, chunk_size)

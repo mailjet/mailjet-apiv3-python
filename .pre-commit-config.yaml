@@ -105,7 +105,7 @@ repos:
 
   # Git commit quality
   - repo: https://github.com/commitizen-tools/commitizen
-    rev: v4.18.1
+    rev: v4.19.1
     hooks:
       - id: commitizen
         name: "🌳 git · Validate commit message"
@@ -134,7 +134,7 @@ repos:
         additional_dependencies: [".[toml]"]
 
   - repo: https://github.com/semgrep/pre-commit
-    rev: 'v1.177.0'
+    rev: 'v1.179.0'
     hooks:
       - id: semgrep
         name: "🔒 security · Static analysis (semgrep)"
@@ -155,14 +155,14 @@ repos:
 
   # Spelling and typos
   - repo: https://github.com/crate-ci/typos
-    rev: v1.50.1
+    rev: v1.50.3
     hooks:
       - id: typos
         name: "📝 spelling · Check typos"
 
   # CI/CD validation
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.38.0
+    rev: 0.38.2
     hooks:
       - id: check-dependabot
         name: "🔧 ci/cd · Validate Dependabot config"
@@ -176,7 +176,7 @@ repos:
       - id: slotscheck
         name: "🔍 check · slotscheck"
         additional_dependencies:
-          - requests>=2.32.5
+          - requests>=2.33.0
           - pytest>=7.0.0
           - typing-extensions>=4.7.1
           - responses
@@ -184,7 +184,7 @@ repos:
           - hypothesis
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.7
+    rev: v0.16.10
     hooks:
       - id: ruff-check
         name: "🐍 lint · Check with Ruff"
@@ -203,7 +203,7 @@ repos:
 
   # Python type checking
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.1
+    rev: v2.4.0
     hooks:
       - id: mypy
         name: "🐍 types · Check with mypy"
