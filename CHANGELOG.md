@@ -9,6 +9,29 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-06
+
+### Fixed
+
+- **Premature Stream Termination:** Fixed auto-pagination in `Endpoint.stream()` aborting after the first page due to Mailjet's page-local `Total` metadata (`Total == len(Data)`). Iteration now continues across full pages until receiving a short or empty page (`len(data) < chunk_size`).
+- **Stream Limit Parameter Normalization:** `Endpoint._normalize_stream_filters` now strips both `"limit"` and `"Limit"` from input filters so `chunk_size` strictly dictates the request page window.
+- **Integration Webhook Collision:** Added idempotent pre-test cleanup to `test_live_eventcallbackurl_crud_lifecycle` to remove leftover `"open"` webhooks and avoid HTTP 400 `MJ18` uniqueness constraint failures.
+
+### Added
+
+- **API Ceiling Guardrail:** Enforced `Endpoint.MAX_LIMIT = 1000` to reject `chunk_size > 1000` with a descriptive `ValueError`, preventing silent page truncation from Mailjet's upstream 1,000-record limit.
+- **Pagination Examples & CI Checks:** Added `stream_all_contacts` to `samples/contacts_sample.py`, and added live verification for `.stream()`, offset resumption, and multidict query filters to `samples/smoke_readme_runner.py`.
+- **Pagination Unit Tests:** Added test coverage in `tests/unit/test_endpoint.py` verifying page-local totals across varied offsets, empty collection exits, casing normalization, and maximum limit rejections.
+
+### Changed
+
+- **Documentation:** Updated `README.md` with explicit examples comparing manual single-page `GET` queries (`Limit`, `Offset`, `Sort`) with lazy `.stream()` auto-pagination and stream resumption.
+- **CI & Maintenance:** Reduced ClusterFuzzLite batch fuzzing schedule to monthly, clarified the security scan workflow schedule, and bumped pre-commit hook revisions (`commitizen`, `semgrep`, `typos`, `check-jsonschema`, `ruff`, and `mypy`).
+
+### Pull Requests Merged
+
+- PR #158: Fix stream pagination premature termination on page-local Total.
+
 ## [1.9.0] - 2026-09-14
 
 ### Added
