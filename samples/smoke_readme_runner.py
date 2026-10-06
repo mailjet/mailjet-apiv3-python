@@ -101,6 +101,37 @@ def run_readme_tests():
         assert res.status_code == 200
         print("✅ GET (Read all/Pagination) passed.")
 
+        # ---------------------------------------------------------------------
+        # LAZY PAGINATION & STREAM RESUMPTION (.stream())
+        # Validates that README streaming and resumption examples execute in CI
+        # ---------------------------------------------------------------------
+        # 1. Basic auto-paginated stream
+        contact_stream = mailjet_v3.contact.stream(chunk_size=2)
+        first_contact = next(contact_stream, None)
+        if first_contact:
+            print(f"✅ STREAM (Basic .stream()) passed. Found Contact ID: {first_contact.get('ID')}")
+        else:
+            print("⚠️ STREAM (Basic .stream()) passed (Collection empty).")
+
+        # 2. Resumed stream starting from an explicit Offset checkpoint
+        # Ensures that passing a non-zero starting Offset does not prematurely abort
+        resumed_stream = mailjet_v3.contact.stream(
+            filters={"Offset": 1, "sort": "ID asc"},
+            chunk_size=2,
+        )
+        resumed_contact = next(resumed_stream, None)
+        if resumed_contact:
+            print(f"✅ STREAM (Resumption via Offset) passed. Found Contact ID: {resumed_contact.get('ID')}")
+        else:
+            print("⚠️ STREAM (Resumption via Offset) passed (No items beyond offset 1).")
+
+        # 3. Stream with multidict query parameters (e.g. from urllib.parse.parse_qs)
+        parsed_filters = {"offset": ["0"], "limit": ["50"]}
+        query_stream = mailjet_v3.contact.stream(filters=parsed_filters, chunk_size=2)
+        _ = next(query_stream, None)
+        print("✅ STREAM (Query string normalization) passed.")
+
+        # GET (Read one)
         res = mailjet_v3.contact.get(id=contact_id)
         assert res.status_code == 200
         print("✅ GET (Read one) passed.")

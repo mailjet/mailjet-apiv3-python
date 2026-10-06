@@ -647,19 +647,42 @@ Stop writing `while` loops to fetch thousands of contacts. Use `.stream()` to re
 Streaming continues until a short or empty page is returned. It does not use `Total` as the collection size, since normal REST responses report the number of elements in the current page.
 
 ```python
-# Fetch all contacts seamlessly. Memory-safe and clean.
+# -------------------------------------------------------------
+# 1. Manual Single-Page Query (GET)
+# Best when building custom paginated UI tables (e.g., page 5)
+# -------------------------------------------------------------
+page_filters = {
+    "Limit": 50,  # Max 1000 per Mailjet API specification
+    "Offset": 100,  # Skips first 100 records
+    "Sort": "ID ASC",
+}
+response = mailjet.contact.get(filters=page_filters)
+contacts_page = response.json().get("Data", [])
+print(f"Retrieved {len(contacts_page)} contacts on this page.")
+
+# -------------------------------------------------------------
+# 2. Lazy Auto-Streaming (stream)
+# Best for processing large datasets without loading everything into RAM
+# -------------------------------------------------------------
+# Automatically increments Offset and requests pages in chunks of 500
 for contact in mailjet.contact.stream(chunk_size=500):
     print(contact["Email"])
 ```
 
-Resuming pagination from an existing offset or raw query parameters
+Resuming Streams and Query Parsing from an existing offset or raw query parameters
 
 ```python
 from urllib.parse import parse_qs
 
-# Seamlessly handles multidicts from parse_qs (offset, limit)
-query = parse_qs("offset=500&limit=100")
-for contact in mailjet.contact.stream(filters=query, chunk_size=100):
+# Resuming a stream from a saved progress checkpoint:
+# Begins fetching from record 1000 onwards in chunks of 250
+for contact in mailjet.contact.stream(filters={"Offset": 1000}, chunk_size=250):
+    process_contact(contact)
+
+# Consuming parsed URL query parameters directly:
+# Normalizes list values like {"offset": ["500"]} safely
+query_params = parse_qs("offset=500&sort=Email+desc")
+for contact in mailjet.contact.stream(filters=query_params, chunk_size=100):
     print(contact["Email"])
 ```
 
