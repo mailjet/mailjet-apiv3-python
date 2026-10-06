@@ -31,6 +31,7 @@ ______________________________________________________________________
 ### Pull Requests Merged
 
 - PR #158: Fix stream pagination premature termination on page-local Total.
+- PR #159: Release 1.9.1.
 
 ## [1.9.0] - 2026-09-14
 
