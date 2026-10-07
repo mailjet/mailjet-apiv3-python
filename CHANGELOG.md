@@ -9,7 +9,7 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
-## [1.9.1] - 2026-10-07
+## [1.9.1] - 2026-10-08
 
 ### Fixed
 
@@ -36,6 +36,8 @@ ______________________________________________________________________
 
 ### Pull Requests Merged
 
+- PR #161: build(deps): bump github/codeql-action/analyze from 4.38.1 to 4.38.2.
+- PR #160: build(deps): bump github/codeql-action/upload-sarif from 4.38.1 to 4.38.2.
 - PR #159: Release 1.9.1.
 - PR #158: Fix stream pagination premature termination on page-local Total.
 - PR #157: build(deps): bump github/codeql-action/analyze from 4.38.0 to 4.38.1.
