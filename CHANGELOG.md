@@ -9,7 +9,7 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
-## [1.9.1] - 2026-10-06
+## [1.9.1] - 2026-10-07
 
 ### Fixed
 
@@ -23,15 +23,28 @@ ______________________________________________________________________
 - **Pagination Examples & CI Checks:** Added `stream_all_contacts` to `samples/contacts_sample.py`, and added live verification for `.stream()`, offset resumption, and multidict query filters to `samples/smoke_readme_runner.py`.
 - **Pagination Unit Tests:** Added test coverage in `tests/unit/test_endpoint.py` verifying page-local totals across varied offsets, empty collection exits, casing normalization, and maximum limit rejections.
 
+### Security
+
+- **HTML Tag Bomb DoS Mitigation (CWE-400):** Introduced `SecurityGuard.MAX_TAG_COUNT = 10000` and tag-counting enforcement in `_SpamGuardParser` across all tag types and comments, raising `ValidationError` on nested tag flood attacks.
+- **Security Policy Update:** Updated `SECURITY.md` supported releases table to designate versions `< 1.9.1` as end-of-life.
+
 ### Changed
 
 - **Documentation:** Updated `README.md` with explicit examples comparing manual single-page `GET` queries (`Limit`, `Offset`, `Sort`) with lazy `.stream()` auto-pagination and stream resumption.
-- **CI & Maintenance:** Reduced ClusterFuzzLite batch fuzzing schedule to monthly, clarified the security scan workflow schedule, and bumped pre-commit hook revisions (`commitizen`, `semgrep`, `typos`, `check-jsonschema`, `ruff`, and `mypy`).
+- **CI & Maintenance:** Reduced ClusterFuzzLite batch fuzzing schedule to monthly, clarified the security scan workflow schedule, and bumped pre-commit hook revisions (`commitizen`, `semgrep`, `typos`, `check-jsonschema`, `slotscheck`, `ruff`, and `mypy`).
+- **Workflow Dependencies:** Upgraded GitHub Actions dependencies across CI workflows (`codeql-action`, `setup-miniconda`, `codecov-action`, and `osv-scanner-action`).
 
 ### Pull Requests Merged
 
-- PR #158: Fix stream pagination premature termination on page-local Total.
 - PR #159: Release 1.9.1.
+- PR #158: Fix stream pagination premature termination on page-local Total.
+- PR #157: build(deps): bump github/codeql-action/analyze from 4.38.0 to 4.38.1.
+- PR #156: build(deps): bump github/codeql-action/upload-sarif from 4.38.0 to 4.38.1.
+- PR #155: build(deps): bump conda-incubator/setup-miniconda from 4.0.1 to 4.1.0.
+- PR #154: build(deps): bump codecov/codecov-action from 7.0.0 to 7.1.1.
+- PR #153: build(deps): bump google/osv-scanner-action/osv-scanner-action from 2.5.1 to 2.6.0.
+- PR #152: build(deps): bump github/codeql-action/analyze from 4.37.9 to 4.38.0.
+- PR #151: build(deps): bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.0.
 
 ## [1.9.0] - 2026-09-14
 
