@@ -285,31 +285,68 @@ class RedactingFilter(logging.Filter):
 class SecurityGuard:
     """Centralized OWASP API security and payload guardrails."""
 
-    class _SpamGuardParser(HTMLParser):
-        """Internal lightweight HTML analyzer to preemptively catch XSS."""
+    MAX_HTML_SIZE: int = 5 * 1024 * 1024  # 5MB safe limit (CWE-400)
+    MAX_TAG_COUNT: int = 10000  # DoS protection against tag bombs (CWE-400)
 
-        def __init__(self) -> None:
+    VOLATILE_IDEMPOTENCY_KEYS: ClassVar[frozenset[str]] = frozenset({"CustomID", "EventPayload", "SandboxMode"})
+    ALLOWED_KWARGS: ClassVar[frozenset[str]] = frozenset(
+        {"proxies", "cert", "stream", "verify", "allow_redirects", "files"}
+    )
+
+    class _SpamGuardParser(HTMLParser):
+        """Internal lightweight HTML analyzer to preemptively catch XSS and tag bombs."""
+
+        def __init__(self, max_tags: int = 10000) -> None:
             super().__init__()
+            self.has_script: bool = False
+            self.is_safe: bool = True
             self.issues: list[str] = []
-            self.has_script = False
+            self.tag_count: int = 0
+            self.max_tags: int = max_tags
+
+        def _count_tag(self) -> None:
+            self.tag_count += 1
+            if self.tag_count > self.max_tags:
+                msg = f"HTML structure exceeds maximum tag limit ({self.max_tags}): DoS protection triggered."
+                raise ValidationError(msg)
 
         @override
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self._count_tag()
             # Catch known executable injection points
             if tag.lower() in {"script", "iframe", "object", "embed", "applet"}:
                 self.has_script = True
+                self.is_safe = False
                 self.issues.append(f"Blocked executable tag: <{tag}>")
 
             # Catch any injected event handlers (e.g., onerror, onclick)
             for attr, _ in attrs:
                 if attr.lower().startswith("on"):
                     self.has_script = True
+                    self.is_safe = False
                     self.issues.append(f"Blocked event handler: {attr}")
 
-    VOLATILE_IDEMPOTENCY_KEYS: ClassVar[frozenset[str]] = frozenset({"CustomID", "EventPayload", "SandboxMode"})
-    ALLOWED_KWARGS: ClassVar[frozenset[str]] = frozenset(
-        {"proxies", "cert", "stream", "verify", "allow_redirects", "files"}
-    )
+        @override
+        def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            self._count_tag()
+            if tag.lower() in {"script", "iframe", "object", "embed", "applet"}:
+                self.has_script = True
+                self.is_safe = False
+                self.issues.append(f"Blocked executable tag: <{tag}>")
+
+            for attr, _ in attrs:
+                if attr.lower().startswith("on"):
+                    self.has_script = True
+                    self.is_safe = False
+                    self.issues.append(f"Blocked event handler: {attr}")
+
+        @override
+        def handle_endtag(self, tag: str) -> None:
+            self._count_tag()
+
+        @override
+        def handle_comment(self, data: str) -> None:
+            self._count_tag()
 
     @staticmethod
     def enable_audit_logging() -> None:
@@ -405,14 +442,15 @@ class SecurityGuard:
         """SpamGuard: Analyzes HTML payloads for XSS triggers and poor deliverability markers.
 
         Returns:
-            dict[str, Any]: The analysis report containing boolean 'is_safe' and any 'issues' strings.
+            dict[str, Any]: The analysis report containing boolean 'is_safe' and any
+            'issues' strings.
         """
-        if not html_content or html_content.isspace():
+        if not html_content or (isinstance(html_content, str) and html_content.isspace()):
             return {"is_safe": True, "issues": []}
 
         # Defense-in-Depth against Memory/CPU exhaustion (CWE-400)
         # Cap HTML processing at 5MB prior to standard library parsing.
-        if len(html_content) > 5 * 1024 * 1024:
+        if len(html_content) > SecurityGuard.MAX_HTML_SIZE:
             sys.audit("mailjet.security.resource_exhaustion", "HTMLPart")
             msg = "Security Violation: HTML payload exceeds maximum safe length."
             raise ValueError(msg)
@@ -422,9 +460,16 @@ class SecurityGuard:
             msg = "Security Violation: HTML contains executable Javascript/XSS vectors."
             raise ValueError(msg)
 
+        # Instantiate without args so mock parsers (like CrashParser) don't fail with TypeError
         parser = SecurityGuard._SpamGuardParser()
+        if hasattr(parser, "max_tags"):
+            parser.max_tags = SecurityGuard.MAX_TAG_COUNT
+
         try:
             parser.feed(html_content)
+            parser.close()
+        except ValidationError:
+            raise
         except Exception as e:
             # Failsafe: Catch RecursionError, MemoryError, etc. to prevent DoS crashes
             msg = f"Fatal HTML parsing error (DoS protection triggered): {e}"
@@ -435,7 +480,10 @@ class SecurityGuard:
             msg = "Security Violation: HTML contains blocked script/event execution tags."
             raise ValueError(msg)
 
-        return {"is_safe": not parser.has_script, "issues": parser.issues}
+        return {
+            "is_safe": parser.is_safe and not parser.has_script,
+            "issues": parser.issues,
+        }
 
     @staticmethod
     def generate_payload_fingerprint(payload: dict[str, Any] | list[Any]) -> str:

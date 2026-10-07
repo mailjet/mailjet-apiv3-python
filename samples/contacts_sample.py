@@ -148,6 +148,28 @@ def delete_the_contact(contact_id=0):
         return MockResp()
 
 
+def stream_all_contacts(start_offset: int = 0, batch_size: int = 100):
+    """Demonstrates memory-safe lazy pagination using .stream().
+
+    Args:
+        start_offset (int): Starting index (useful for resuming jobs).
+        batch_size (int): Records per network page (Limit <= 1000).
+    """
+    print(f"\n--- Streaming contacts starting at offset {start_offset} ---")
+    contact_stream = mailjet30.contact.stream(
+        filters={"Offset": start_offset},
+        chunk_size=batch_size,
+    )
+
+    count = 0
+    for contact in contact_stream:
+        count += 1
+        print(f"[{count}] Contact ID: {contact.get('ID')} - Email: {contact.get('Email')}")
+        if count >= 10:  # Break early to keep demo concise
+            print("... stopped demo stream after 10 contacts.")
+            break
+
+
 if __name__ == "__main__":
     c_res = create_a_contact()
     print(f"create_a_contact: {c_res.status_code}")
@@ -216,6 +238,7 @@ if __name__ == "__main__":
     run_step("using_contact_managemanycontacts", using_contact_managemanycontacts)
     run_step("using_csvimport", using_csvimport, data_id=data_id)
     run_step("retrieve_a_contact", retrieve_a_contact, contact_id=cid)
+    run_step("stream_all_contacts", stream_all_contacts)
 
     # Gracefully handle the GDPR deletion block natively here
     try:

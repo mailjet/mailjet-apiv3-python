@@ -27,6 +27,43 @@ def test_stream_with_page_local_total(offset: int, size: int) -> None:
     assert len(responses.calls) == size // 2 + 1
 
 
+@responses.activate
+def test_stream_empty_collection_exits_immediately() -> None:
+    """Ensure an empty collection returns an empty generator after a single request."""
+    responses.add(
+        responses.GET,
+        "https://api.mailjet.com/v3/REST/contact",
+        match=[responses.matchers.query_param_matcher({"Offset": 0, "Limit": 10})],
+        json={"Count": 0, "Total": 0, "Data": []},
+    )
+
+    with Client(auth=("test", "test"), version="v3") as client:
+        assert list(client.contact.stream(chunk_size=10)) == []
+
+    assert len(responses.calls) == 1
+
+
+def test_stream_chunk_size_max_limit_rejection() -> None:
+    """Ensure chunk_size values exceeding Mailjet's API limit (1000) are rejected."""
+    client = Client(auth=("key", "secret"))
+
+    with pytest.raises(ValueError, match=r"exceeds Mailjet's maximum Limit of 1000"):
+        next(client.contact.stream(chunk_size=1001))
+
+    with pytest.raises(ValueError, match=r"exceeds Mailjet's maximum Limit of 1000"):
+        next(client.contact.stream(chunk_size=5000))
+
+
+def test_stream_filter_strips_both_limit_casings() -> None:
+    """Verify both 'limit' and 'Limit' in input filters are cleanly normalized to chunk_size."""
+    filters = {"limit": 50, "Limit": 100, "Offset": 0}
+    clean_filters, offset = Endpoint._normalize_stream_filters(filters, chunk_size=500)
+
+    assert offset == 0
+    assert clean_filters["Limit"] == 500
+    assert "limit" not in clean_filters
+
+
 @pytest.fixture
 def client_offline() -> Client:
     """Local fixture to provide a basic Client instance."""

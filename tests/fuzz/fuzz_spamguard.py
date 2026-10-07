@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Fuzz test for the Mailjet SpamGuard and HTML static analyzer.
-Targets ReDoS, infinite recursion, memory exhaustion bypasses in the HTML parser.
+
+Targets ReDoS, infinite recursion, memory exhaustion bypasses in the HTML
+parser.
 """
 
 import logging
 import sys
-
 import atheris
-
 
 with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest.errors import ValidationError
     from mailjet_rest.utils.guardrails import SecurityGuard
 
 logging.disable(logging.CRITICAL)
+
+MAX_HTML_LIMIT = 5 * 1024 * 1024  # 5MB
 
 
 def TestOneInput(data: bytes) -> None:
@@ -22,12 +24,14 @@ def TestOneInput(data: bytes) -> None:
 
     fdp = atheris.FuzzedDataProvider(data)
 
-    # Generate chaotic HTML (mix of valid tags, malformed attributes, and binary noise)
-    html_content = fdp.ConsumeUnicodeNoSurrogates(1024)
+    # Generate chaotic HTML (tags, malformed attributes, binary noise)
+    # Limit base size to 4096 chars to keep per-iteration execution speed high
+    html_content = fdp.ConsumeUnicodeNoSurrogates(4096)
 
-    # Occasionally synthesize a >5MB string to trigger the Resource Exhaustion exception
-    if fdp.ConsumeBool():
-        html_content = html_content * fdp.ConsumeIntInRange(5000, 6000)
+    # Truly occasionally (1% of runs) verify the >5MB Resource Exhaustion rejection.
+    # Guarantee it exceeds 5MB directly so it triggers the O(1) length check instantly.
+    if fdp.ConsumeIntInRange(1, 100) == 1:
+        html_content = html_content + ("A" * (MAX_HTML_LIMIT + 1024))
 
     try:
         report = SecurityGuard.analyze_html_safety(html_content)
@@ -41,9 +45,14 @@ def TestOneInput(data: bytes) -> None:
         # SECURITY SUCCESS: Normal Python rejections for XSS, OOM Limits, or malformed edge cases
         pass
     except RecursionError:
-        raise RuntimeError("CRITICAL SECURITY BUG: Malformed HTML caused a RecursionError in _SpamGuardParser!")
+        raise RuntimeError(
+            "CRITICAL SECURITY BUG: Malformed HTML caused a RecursionError in"
+            " _SpamGuardParser!"
+        )
     except Exception as e:
-        raise RuntimeError(f"UNHANDLED CRASH in SpamGuard: {type(e).__name__} - {e}") from e
+        raise RuntimeError(
+            f"UNHANDLED CRASH in SpamGuard: {type(e).__name__} - {e}"
+        ) from e
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ import requests
 from mailjet_rest import MailjetAuthError
 from mailjet_rest.client import Client
 from mailjet_rest.routes import ROUTE_MAP
+from mailjet_rest.errors import DoesNotExistError, ValidationError
 from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
 
 
@@ -793,6 +794,12 @@ def test_live_event_statistics_endpoints(client_live: Client, stats_endpoint: st
 
 def test_live_eventcallbackurl_crud_lifecycle(client_live: Client) -> None:
     """End-to-End test for webhook (eventcallbackurl) management."""
+    # 0. Clean up any leftover 'open' webhook from prior interrupted test runs
+    existing = client_live.eventcallbackurl.get(filters={"EventType": "open", "IsBackup": False})
+    if existing.status_code == 200 and existing.json().get("Data"):
+        for item in existing.json()["Data"]:
+            client_live.eventcallbackurl.delete(id=item["ID"])
+
     webhook_url = f"https://example.com/webhook_{uuid.uuid4().hex[:8]}"
 
     # 1. Create Webhook
@@ -824,9 +831,6 @@ def test_live_eventcallbackurl_crud_lifecycle(client_live: Client) -> None:
     finally:
         # 4. Clean up
         client_live.eventcallbackurl.delete(id=webhook_id)
-
-
-from mailjet_rest.errors import DoesNotExistError, ValidationError
 
 
 def test_live_statistics_link_click_and_recipient_esp(client_live: Client) -> None:

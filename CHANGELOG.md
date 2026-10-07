@@ -9,6 +9,45 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-08
+
+### Fixed
+
+- **Premature Stream Termination:** Fixed auto-pagination in `Endpoint.stream()` aborting after the first page due to Mailjet's page-local `Total` metadata (`Total == len(Data)`). Iteration now continues across full pages until receiving a short or empty page (`len(data) < chunk_size`).
+- **Stream Limit Parameter Normalization:** `Endpoint._normalize_stream_filters` now strips both `"limit"` and `"Limit"` from input filters so `chunk_size` strictly dictates the request page window.
+- **Integration Webhook Collision:** Added idempotent pre-test cleanup to `test_live_eventcallbackurl_crud_lifecycle` to remove leftover `"open"` webhooks and avoid HTTP 400 `MJ18` uniqueness constraint failures.
+
+### Added
+
+- **API Ceiling Guardrail:** Enforced `Endpoint.MAX_LIMIT = 1000` to reject `chunk_size > 1000` with a descriptive `ValueError`, preventing silent page truncation from Mailjet's upstream 1,000-record limit.
+- **Pagination Examples & CI Checks:** Added `stream_all_contacts` to `samples/contacts_sample.py`, and added live verification for `.stream()`, offset resumption, and multidict query filters to `samples/smoke_readme_runner.py`.
+- **Pagination Unit Tests:** Added test coverage in `tests/unit/test_endpoint.py` verifying page-local totals across varied offsets, empty collection exits, casing normalization, and maximum limit rejections.
+
+### Security
+
+- **HTML Tag Bomb DoS Mitigation (CWE-400):** Introduced `SecurityGuard.MAX_TAG_COUNT = 10000` and tag-counting enforcement in `_SpamGuardParser` across all tag types and comments, raising `ValidationError` on nested tag flood attacks.
+- **Security Policy Update:** Updated `SECURITY.md` supported releases table to designate versions `< 1.9.1` as end-of-life.
+
+### Changed
+
+- **Documentation:** Updated `README.md` with explicit examples comparing manual single-page `GET` queries (`Limit`, `Offset`, `Sort`) with lazy `.stream()` auto-pagination and stream resumption.
+- **CI & Maintenance:** Reduced ClusterFuzzLite batch fuzzing schedule to monthly, clarified the security scan workflow schedule, and bumped pre-commit hook revisions (`commitizen`, `semgrep`, `typos`, `check-jsonschema`, `slotscheck`, `ruff`, and `mypy`).
+- **Workflow Dependencies:** Upgraded GitHub Actions dependencies across CI workflows (`codeql-action`, `setup-miniconda`, `codecov-action`, and `osv-scanner-action`).
+
+### Pull Requests Merged
+
+- PR #161: build(deps): bump github/codeql-action/analyze from 4.38.1 to 4.38.2.
+- PR #160: build(deps): bump github/codeql-action/upload-sarif from 4.38.1 to 4.38.2.
+- PR #159: Release 1.9.1.
+- PR #158: Fix stream pagination premature termination on page-local Total.
+- PR #157: build(deps): bump github/codeql-action/analyze from 4.38.0 to 4.38.1.
+- PR #156: build(deps): bump github/codeql-action/upload-sarif from 4.38.0 to 4.38.1.
+- PR #155: build(deps): bump conda-incubator/setup-miniconda from 4.0.1 to 4.1.0.
+- PR #154: build(deps): bump codecov/codecov-action from 7.0.0 to 7.1.1.
+- PR #153: build(deps): bump google/osv-scanner-action/osv-scanner-action from 2.5.1 to 2.6.0.
+- PR #152: build(deps): bump github/codeql-action/analyze from 4.37.9 to 4.38.0.
+- PR #151: build(deps): bump github/codeql-action/upload-sarif from 4.37.9 to 4.38.0.
+
 ## [1.9.0] - 2026-09-14
 
 ### Added
@@ -416,4 +455,6 @@ ______________________________________________________________________
 [1.6.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.6.0
 [1.7.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.7.0
 [1.8.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.8.0
-[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.7.0...HEAD
+[1.9.0]: https://github.com/mailjet/mailjet-apiv3-python/releases/tag/v1.9.0
+[1.9.1]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.9.0...v1.9.1
+[unreleased]: https://github.com/mailjet/mailjet-apiv3-python/compare/v1.9.1...HEAD
