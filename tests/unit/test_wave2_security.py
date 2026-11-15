@@ -142,6 +142,8 @@ def test_auto_idempotency_modes(monkeypatch: pytest.MonkeyPatch) -> None:
 
     client_off = Client(auth=("pub", "priv"), auto_idempotency_mode="off")
     monkeypatch.setattr(client_off, "_execute_request", mock_exec)
+    client_off = Client(auth=("pub", "priv"), auto_idempotency_mode="off")
+    monkeypatch.setattr(client_off, "_execute_request", mock_exec)
     client_off.api_call("POST", "https://api.mailjet.com/v3/REST/contact", data={"a": 1})
     assert "Idempotency-Key" not in captured_headers[-1]
 
