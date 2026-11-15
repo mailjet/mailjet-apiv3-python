@@ -53,6 +53,7 @@ stats.print_stats(20)
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
 
         end_time = time.perf_counter()

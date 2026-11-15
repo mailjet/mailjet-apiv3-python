@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 
 from mailjet_rest import Client
-from mailjet_rest.errors import MailjetAuthError
+from mailjet_rest.errors import ApiError, MailjetAuthError
 
 mailjet30 = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")))
 
@@ -28,8 +28,8 @@ def edit_contact_data():
     for prop in ["first_name", "last_name"]:
         try:
             mailjet30.contactmetadata.create(data={"Datatype": "str", "Name": prop, "NameSpace": "static"})
-        except Exception:
-            pass
+        except ApiError as exc:
+            print(f"Metadata setup note for '{prop}': {exc}")
     data = {"Data": [{"Name": "first_name", "Value": "John"}, {"Name": "last_name", "Value": "Smith"}]}
     return mailjet30.contactdata.update(id=contact_id, data=data)
 

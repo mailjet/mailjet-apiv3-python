@@ -48,7 +48,10 @@ def test_cwe22_registry_uri_interpolation_traversal_prevention() -> None:
     endpoint = client.templates_contents
 
     # The output URL generation must completely neutralize and block the traversal
-    with pytest.raises(ValueError, match="Path traversal attempt"):
+    with (
+        pytest.warns(DeprecationWarning, match="templates_contents"),
+        pytest.raises(ValueError, match="Path traversal attempt"),
+    ):
         endpoint._build_url(id_val=malicious_id)
 
 

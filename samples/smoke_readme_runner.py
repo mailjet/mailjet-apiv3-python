@@ -224,8 +224,8 @@ def run_readme_tests():
             time.sleep(1)
             try:
                 safe_cleanup(mailjet_v1.data_images.delete, f"Image {image_id}", id=image_id)
-            except Exception:
-                pass
+            except (ApiError, OSError) as exc:
+                print(f"Cleanup skipped for Image {image_id}: {exc}")
         else:
             print(f"⚠️ Content API Upload skipped/failed: {res.status_code}")
 

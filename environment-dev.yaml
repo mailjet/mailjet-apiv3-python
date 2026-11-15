@@ -34,9 +34,12 @@ dependencies:
   - python-dotenv >=1.2.2
   - types-jsonschema
   - pip:
-      - atheris
+      # Optional: requires Clang/libFuzzer; install via: pip install -e ".[fuzzing]"
+      # - atheris
       - bandit
+      - pip-audit
       - scalene >=1.3.16
+      - slotscheck
       - snakeviz
       - typos
       - vulture

@@ -350,9 +350,7 @@ disable_error_code = ["untyped-decorator", "unreachable", "no-untyped-def", "no-
 [tool.bandit]
 # usage: bandit -c pyproject.toml -r .
 targets = ["mailjet_rest"]
-exclude_dirs = ["tests", "tests.py"]
-tests = ["B201", "B301"]
-skips = ["B101", "B601"]
+exclude_dirs = ["tests", "samples", "docs"]
 severity = "low"
 
 [tool.bandit.any_other_function_with_shell_equals_true]

@@ -248,20 +248,24 @@ If your account has been moved to Mailjet's **US architecture**, the URL value y
 
 ### Error Handling
 
-The client safely wraps network-level exceptions. Standard HTTP errors (like `404 Not Found` or `400 Bad Request`) **do not** raise exceptions; they return the `requests.Response` object directly so you can inspect `status_code` and `.json()`.
+The client raises typed exceptions inheriting from `ApiError` for both network failures and HTTP `4xx`/`5xx` error responses (`ValidationError` on `400`, `MailjetAuthError` on `401`/`403`, `DoesNotExistError` on `404`, `ApiRateLimitError` on `429`, `MailjetApiError` on other HTTP errors, and `TimeoutError` / `CriticalApiError` on transport failures).
 
 ```python
-from mailjet_rest import CriticalApiError, TimeoutError, ApiError
+from mailjet_rest import ApiError, CriticalApiError, MailjetAuthError, TimeoutError, ValidationError
 
 try:
     result = mailjet.contact.get()
-    if result.status_code != 200:
-        print(f"API Error: {result.status_code} - {result.text}")
-
+    print(result.json())
 except TimeoutError:
     print("The request to the Mailjet API timed out.")
 except CriticalApiError as e:
     print(f"Network connection failed: {e}")
+except MailjetAuthError as e:
+    print(f"Authentication failed ({e.status_code}): {e}")
+except ValidationError as e:
+    print(f"Validation error ({e.status_code}): {e}")
+except ApiError as e:
+    print(f"API error: {e}")
 ```
 
 ## Logging & Debugging

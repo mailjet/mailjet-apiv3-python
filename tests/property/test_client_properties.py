@@ -4,6 +4,7 @@ Powered by Hypothesis.
 
 from typing import Any
 from unittest.mock import MagicMock
+import warnings
 
 from hypothesis import given, settings, strategies as st, example
 
@@ -31,7 +32,9 @@ def test_property_telemetry_extraction_resilience(payload: Any) -> None:
 def test_property_auth_coercion(auth_input: Any) -> None:
     """INVARIANT: Client must successfully auth or reject with clear Type/Value error."""
     try:
-        client = Client(auth=auth_input, version="v3")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            client = Client(auth=auth_input, version="v3")
         if isinstance(auth_input, tuple):
             assert client.auth == (auth_input[0].strip(), auth_input[1].strip())
         elif isinstance(auth_input, str):
