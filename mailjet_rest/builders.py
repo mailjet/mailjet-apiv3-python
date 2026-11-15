@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import errno
 import json
-import mimetypes
 import os
 import stat
 import sys
@@ -29,6 +28,8 @@ if TYPE_CHECKING:
 
 class ChunkedStreamer:
     """Generator for encoding large file attachments."""
+
+    __slots__ = ()
 
     @staticmethod
     def encode_file(
@@ -254,7 +255,12 @@ class MessageBuilder(_BaseContentBuilder):
         target = SecurityGuard.validate_attachment_path(file_path, base_dir)
         SecurityGuard.check_file_size(target)
 
-        ctype = content_type or mimetypes.guess_type(target)[0] or "application/octet-stream"
+        if content_type is not None:
+            ctype = content_type
+        else:
+            import mimetypes  # ruff: ignore[import-outside-top-level]
+
+            ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
 
         if "Attachments" not in self._payload:
             self._payload["Attachments"] = []
@@ -279,7 +285,12 @@ class MessageBuilder(_BaseContentBuilder):
         target = SecurityGuard.validate_attachment_path(file_path, base_dir)
         SecurityGuard.check_file_size(target)
 
-        ctype = content_type or mimetypes.guess_type(target)[0] or "application/octet-stream"
+        if content_type is not None:
+            ctype = content_type
+        else:
+            import mimetypes  # ruff: ignore[import-outside-top-level]
+
+            ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
 
         if "InlinedAttachments" not in self._payload:
             self._payload["InlinedAttachments"] = []

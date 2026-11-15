@@ -231,9 +231,7 @@ class Endpoint:
 
         if custom_headers:
             clean_custom = SecurityGuard.sanitize_headers(dict(custom_headers))
-            merged: dict[str, str | None] = dict(base_headers)
-            merged.update(clean_custom)
-            return merged
+            return {**base_headers, **clean_custom}
         return dict(base_headers)
 
     @staticmethod

@@ -7,7 +7,6 @@ dynamic endpoint resolution, and request execution.
 
 from __future__ import annotations
 
-import difflib
 import logging
 import secrets
 import sys
@@ -98,6 +97,8 @@ class Client:
     endpoint attributes based on the static routing registry.
     """
 
+    __slots__ = ("_closed", "_endpoint_cache", "_lock", "_session", "auth", "config")
+
     _MUTATING_METHODS: ClassVar[frozenset[str]] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
     _RETRY_STRATEGY: ClassVar[JitterRetry] = JitterRetry(
@@ -138,37 +139,61 @@ class Client:
 
         self._lock = threading.RLock()
         self._closed = False
+        self._session: requests.Session | None = None
+        self._endpoint_cache: dict[str, Endpoint] = {}
         self.config = Config(**kwargs) if config is None else config
-        self.session = requests.Session()
-        resolved_verify = SecurityGuard.resolve_tls_verify(self.config.verify)
-        self.session.verify = resolved_verify
+        SecurityGuard.resolve_tls_verify(self.config.verify)
 
         # Delegate auth validation and coercion to SecurityGuard
         self.auth = SecurityGuard.validate_and_coerce_auth(auth)
 
-        if isinstance(self.auth, str):
-            self.session.auth = None
-            self.session.headers.update({"Authorization": f"Bearer {self.auth}"})
-        elif isinstance(self.auth, SecretAuth):
-            self.session.auth = self.auth
-        else:
-            self.session.auth = None  # type: ignore[unreachable]
+        if getattr(self.config, "enable_security_audit", False):
+            SecurityGuard.enable_audit_logging()
 
-        self.session.headers.update({"User-Agent": self.config.user_agent})
+    def _build_session(self) -> requests.Session:
+        resolved_verify = SecurityGuard.resolve_tls_verify(self.config.verify)
+        session = requests.Session()
+        session.verify = resolved_verify
+
+        session.auth = self.auth if isinstance(self.auth, SecretAuth) else None
+        if isinstance(self.auth, str):
+            session.headers.update({"Authorization": f"Bearer {self.auth}"})
+
+        session.headers.update({"User-Agent": self.config.user_agent})
 
         ca_bundle = resolved_verify if isinstance(resolved_verify, str) else None
         adapter = SecureHTTPAdapter(
             ca_bundle=ca_bundle,
-            pool_connections=100,
-            pool_maxsize=100,
+            pool_connections=self.config.pool_connections,
+            pool_maxsize=self.config.pool_maxsize,
             max_retries=self._RETRY_STRATEGY,
         )
-        self.session.mount("https://", adapter)
+        session.mount("https://", adapter)
+        return session
 
-        self._endpoint_cache: dict[str, Endpoint] = {}
+    @property
+    def session(self) -> requests.Session:
+        """Lazily create and return the underlying thread-safe HTTP session.
 
-        if getattr(self.config, "enable_security_audit", False):
-            SecurityGuard.enable_audit_logging()
+        Returns:
+            requests.Session: The configured session instance.
+        """
+        with self._lock:
+            if self._session is None:
+                if self._closed:
+                    closed_session = requests.Session()
+                    closed_session.auth = None
+                    closed_session.headers.clear()
+                    closed_session.close()
+                    self._session = closed_session
+                else:
+                    self._session = self._build_session()
+            return self._session
+
+    @session.setter
+    def session(self, value: requests.Session | None) -> None:
+        with self._lock:
+            self._session = value
 
     def __enter__(self) -> Self:
         """Enter the context manager and return the client instance.
@@ -213,11 +238,27 @@ class Client:
         """Secure resource teardown closing internal sockets."""
         with self._lock:
             self._closed = True
-            session = getattr(self, "session", None)
+            session = self._session
             if session is not None:
                 session.auth = None
                 session.headers.clear()
                 session.close()
+
+    def __del__(self) -> None:
+        """Optionally emit ResourceWarning on GC teardown when Config.warn_unclosed is enabled."""
+        try:
+            cfg = object.__getattribute__(self, "config")
+            session = object.__getattribute__(self, "_session")
+            closed = object.__getattribute__(self, "_closed")
+        except (OSError, RuntimeError, AttributeError):
+            return
+
+        if getattr(cfg, "warn_unclosed", False) and session is not None and not closed:
+            warnings.warn(
+                "Unclosed Mailjet Client session; call client.close() or use a context manager.",
+                ResourceWarning,
+                stacklevel=2,
+            )
 
     def __getattr__(self, name: str) -> Endpoint:
         """O(1) Route mapping.
@@ -238,9 +279,12 @@ class Client:
         # Fail fast for typos: Only check simple un-composited names.
         # A cutoff of 0.8 catches obvious mistakes like 'snd'->'send' or 'session'->'session',
         # but allows legitimate dynamic endpoints to pass through to the fallback.
-        if "_" not in name and name not in ROUTE_MAP and difflib.get_close_matches(name, dir(self), n=1, cutoff=0.8):
-            msg = f"'{self.__class__.__name__}' has no endpoint or attribute '{name}'."
-            raise AttributeError(msg)
+        if "_" not in name and name not in ROUTE_MAP:
+            import difflib  # ruff: ignore[import-outside-top-level]
+
+            if difflib.get_close_matches(name, dir(self), n=1, cutoff=0.8):
+                msg = f"'{self.__class__.__name__}' has no endpoint or attribute '{name}'."
+                raise AttributeError(msg)
 
         # If it doesn't exist, we fall back to assuming it's a dynamic path
         # which will be safely encoded by sanitize_segment during _build_url
@@ -416,8 +460,6 @@ class Client:
         # Strip None filters
         clean_filters = {k: v for k, v in filters.items() if v is not None} if filters else None
 
-        trace_suffix, _ = self._extract_telemetry(data, req_headers)
-
         try:
             response = self._execute_request(
                 method=method,
@@ -443,7 +485,8 @@ class Client:
             self._handle_api_error(e)
 
         else:
-            if response.status_code in {200, 201, 204}:
+            if response.status_code in {200, 201, 204} and logger.isEnabledFor(logging.DEBUG):
+                trace_suffix, _ = self._extract_telemetry(data, req_headers)
                 self._log_request(method, url, response, trace_suffix)
             return response
 

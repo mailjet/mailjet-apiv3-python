@@ -73,7 +73,7 @@ def test_custom_ca_bundle_isolated_context(tmp_path: Path) -> None:
     mock_ctx_default = MagicMock(spec=ssl.SSLContext)
 
     with patch(
-        "mailjet_rest.utils.guardrails._build_tls_context",
+        "mailjet_rest.utils.transport_security._build_tls_context",
         side_effect=[mock_ctx_one, mock_ctx_two, mock_ctx_default],
     ) as build_ctx:
         cfg = Config(verify=ca_one)
@@ -129,26 +129,24 @@ def test_auto_idempotency_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify fingerprint, uuid4, off, and case-insensitive header preservation."""
     captured_headers: list[dict[str, Any]] = []
 
-    def mock_exec(method: str, url: str, headers: dict[str, Any], *args: Any, **kwargs: Any) -> requests.Response:
+    def mock_exec(
+        self: Any, method: str, url: str, headers: dict[str, Any], *args: Any, **kwargs: Any
+    ) -> requests.Response:
         captured_headers.append(dict(headers))
         r = requests.Response()
         r.status_code = 200
         return r
 
+    monkeypatch.setattr(Client, "_execute_request", mock_exec)
+
     client_uuid = Client(auth=("pub", "priv"), auto_idempotency_mode="uuid4")
-    monkeypatch.setattr(client_uuid, "_execute_request", mock_exec)
     client_uuid.api_call("POST", "https://api.mailjet.com/v3/REST/contact", data={"a": 1})
     assert len(captured_headers[-1]["Idempotency-Key"]) == 36
 
     client_off = Client(auth=("pub", "priv"), auto_idempotency_mode="off")
-    monkeypatch.setattr(client_off, "_execute_request", mock_exec)
-    client_off = Client(auth=("pub", "priv"), auto_idempotency_mode="off")
-    monkeypatch.setattr(client_off, "_execute_request", mock_exec)
     client_off.api_call("POST", "https://api.mailjet.com/v3/REST/contact", data={"a": 1})
     assert "Idempotency-Key" not in captured_headers[-1]
-
     client_fp = Client(auth=("pub", "priv"), auto_idempotency_mode="fingerprint")
-    monkeypatch.setattr(client_fp, "_execute_request", mock_exec)
     client_fp.api_call(
         "POST",
         "https://api.mailjet.com/v3/REST/contact",

@@ -40,7 +40,7 @@ AutoIdempotencyMode: TypeAlias = Literal["fingerprint", "uuid4", "off"]
 _DEFAULT_TIMEOUT: Final[int] = 60
 _JSON_HEADERS: Final = MappingProxyType({"Content-Type": "application/json"})
 _TEXT_HEADERS: Final = MappingProxyType({"Content-Type": "text/plain"})
-_ALLOWED_TRACE_FIELDS: Final[set[str]] = {"CustomID", "TemplateID"}
+_ALLOWED_TRACE_FIELDS: Final[frozenset[str]] = frozenset({"CustomID", "TemplateID"})
 
 
 class EmailAddress(TypedDict):

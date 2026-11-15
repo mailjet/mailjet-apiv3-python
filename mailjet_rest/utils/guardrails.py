@@ -7,46 +7,53 @@ CWE-918 (SSRF), CWE-400 (Resource Exhaustion), and CWE-117 (Log Forging).
 
 from __future__ import annotations
 
-import base64
 import contextlib
 import hashlib
-import hmac
 import json
 import logging
 import math
 import os
 import re
-import ssl
 import sys
-import tempfile
 import traceback
 import unicodedata
 import warnings
 from functools import lru_cache
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn
+from typing import TYPE_CHECKING, Any, ClassVar, Final
 from urllib.parse import quote, unquote, urlparse
+
+from mailjet_rest.errors import ValidationError
+from mailjet_rest.utils.transport_security import (
+    SecretAuth,
+    SecureHTTPAdapter,
+    _build_tls_context,
+    get_secure_ssl_context,
+    resolve_tls_verify,
+)
 
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    import requests
+    from html.parser import HTMLParser
 
     from mailjet_rest.types import TimeoutType
 
-from requests.adapters import HTTPAdapter
-from requests.auth import AuthBase
-from requests.utils import DEFAULT_CA_BUNDLE_PATH
-
-from mailjet_rest.errors import ValidationError
-
 
 if sys.version_info >= (3, 12):
-    from typing import TYPE_CHECKING, override
+    from typing import override
 else:
     from typing_extensions import override
+
+
+__all__ = [
+    "RedactingFilter",
+    "SecretAuth",
+    "SecureHTTPAdapter",
+    "SecurityGuard",
+    "_build_tls_context",
+    "get_secure_ssl_context",
+]
 
 
 _CRLF_RE: Final = re.compile(r"[\r\n]")
@@ -73,149 +80,19 @@ def _get_secret_pattern() -> re.Pattern[str]:
     )
 
 
-def _build_tls_context(ca_bundle: str | None = None) -> ssl.SSLContext:
-    """Create a hardened SSL context enforcing TLS 1.2+, cert checks, and isolated CA trust stores.
-
-    Returns:
-        ssl.SSLContext: Configured SSL context.
-    """
-    if ca_bundle is not None:
-        context = ssl.create_default_context(cafile=ca_bundle)
-    else:
-        context = ssl.create_default_context()
-        if DEFAULT_CA_BUNDLE_PATH and Path(DEFAULT_CA_BUNDLE_PATH).is_file():
-            context.load_verify_locations(cafile=DEFAULT_CA_BUNDLE_PATH)
-    context.minimum_version = ssl.TLSVersion.TLSv1_2
-    context.check_hostname = True
-    context.verify_mode = ssl.CERT_REQUIRED
-    context.options |= getattr(ssl, "OP_NO_COMPRESSION", 0)
-    return context
+_SECRET_SENTINELS: Final[tuple[str, ...]] = (
+    "authorization",
+    "api_key",
+    "api-key",
+    "api_secret",
+    "api-secret",
+    "token",
+)
 
 
-class SecureHTTPAdapter(HTTPAdapter):
-    """Custom HTTP Adapter enforcing modern TLS versions and isolated CA trust stores (CWE-319, CWE-295)."""
-
-    def __init__(self, ca_bundle: str | None = None, **kwargs: Any) -> None:
-        """Initialize the TLS adapter with an optional custom CA bundle path."""
-        self._ca_bundle = ca_bundle
-        self._ssl_context = _build_tls_context(ca_bundle)
-        super().__init__(**kwargs)
-
-    @staticmethod
-    def _get_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
-        """Create and return a hardened SSL context enforcing TLS 1.2+.
-
-        Returns:
-            ssl.SSLContext: The configured SSL context.
-        """
-        return _build_tls_context(ca_bundle)
-
-    @override
-    def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
-        kwargs["ssl_context"] = self._ssl_context
-        super().init_poolmanager(*args, **kwargs)
-
-    @override
-    def proxy_manager_for(self, proxy: str, **proxy_kwargs: Any) -> Any:
-        """Ensure proxy connections also strictly enforce TLS 1.2+.
-
-        Returns:
-            Any: The proxy manager instance.
-        """
-        proxy_kwargs["ssl_context"] = self._ssl_context
-        return super().proxy_manager_for(proxy, **proxy_kwargs)
-
-    @override
-    def cert_verify(self, conn: Any, url: str, verify: Any, cert: Any) -> None:
-        """Enforce strict TLS verification and isolate per-call CA/client-cert SSL contexts."""
-        resolved = SecurityGuard.resolve_tls_verify(verify)
-        super().cert_verify(conn, url, resolved, cert)  # type: ignore[no-untyped-call]
-        if url.lower().startswith("https"):
-            needs_isolated_ctx = (
-                cert is not None
-                or (isinstance(resolved, str) and resolved != self._ca_bundle)
-                or (resolved is True and self._ca_bundle is not None)
-            )
-            if needs_isolated_ctx:
-                target_ca = resolved if isinstance(resolved, str) else None
-                conn.ssl_context = _build_tls_context(target_ca)
-            else:
-                conn.ssl_context = self._ssl_context
-            # Clear ca_certs/ca_cert_dir because conn.ssl_context already holds the exact trust store;
-            # otherwise urllib3 mutates the shared SSLContext on handshake.
-            conn.ca_certs = None
-            conn.ca_cert_dir = None
-
-
-class SecretAuth(AuthBase):
-    """OWASP: Obfuscate credentials in memory dumps and tracebacks (CWE-316).
-
-    Inherits from AuthBase instead of tuple to prevent index/iteration exposure.
-    """
-
-    def __init__(self, auth_tuple: tuple[str, str]) -> None:
-        """Initialize with API credentials."""
-        __tracebackhide__ = True
-        self._api_key = auth_tuple[0]
-        self._api_secret = auth_tuple[1]
-
-    def __call__(self, r: requests.PreparedRequest) -> requests.PreparedRequest:
-        """Apply Basic Auth headers to the request.
-
-        Returns:
-            requests.PreparedRequest: The modified request.
-        """
-        __tracebackhide__ = True
-        auth_str = f"{self._api_key}:{self._api_secret}".encode("latin1")
-        r.headers["Authorization"] = "Basic " + base64.b64encode(auth_str).decode("ascii")
-        return r
-
-    def __hash__(self) -> int:
-        """Hash the credentials for dictionary lookups.
-
-        Returns:
-            int: The computed hash value.
-        """
-        return hash((self._api_key, self._api_secret))
-
-    def __eq__(self, other: object) -> bool:
-        """Compare credentials in constant time using hmac.compare_digest.
-
-        Returns:
-            bool: True if equal, False otherwise.
-        """
-        if isinstance(other, SecretAuth):
-            other_key = other._api_key
-            other_secret = other._api_secret
-        elif isinstance(other, tuple) and len(other) == 2 and all(isinstance(item, str) for item in other):
-            other_key, other_secret = other
-        else:
-            return False
-
-        try:
-            key_match = hmac.compare_digest(self._api_key.encode("utf-8"), other_key.encode("utf-8"))
-            secret_match = hmac.compare_digest(self._api_secret.encode("utf-8"), other_secret.encode("utf-8"))
-        except UnicodeEncodeError:
-            return False
-        return bool(key_match & secret_match)
-
-    def __getitem__(self, index: int) -> NoReturn:
-        """Prevent Credential extraction via tuple unpacking / indexing."""
-        msg = "Credential extraction via indexing is blocked for security (CWE-316)."
-        raise TypeError(msg)
-
-    def __iter__(self) -> Any:
-        """Prevent Credential extraction via iteration."""
-        msg = "Credential extraction via iteration is blocked for security (CWE-316)."
-        raise TypeError(msg)
-
-    def __repr__(self) -> str:
-        """Return a safe representation of the credential."""
-        return "SecretAuth(***REDACTED***)"
-
-    def __str__(self) -> str:
-        """Return a safe string representation of the credential."""
-        return "SecretAuth(***REDACTED***)"
+def _may_contain_secret(text: str) -> bool:
+    lower = text.lower()
+    return any(token in lower for token in _SECRET_SENTINELS)
 
 
 class RedactingFilter(logging.Filter):
@@ -289,6 +166,12 @@ class RedactingFilter(logging.Filter):
         except Exception:  # ruff: ignore[blind-except]
             return "[REDACTION_FAILED_UNSAFE_STRING]"
 
+    @classmethod
+    def _redact_str_fast(cls, data: str) -> str:
+        if not _may_contain_secret(data):
+            return data
+        return cls._redact_str(data)
+
     def _redact_tuple(self, data: tuple[Any, ...], depth: int) -> tuple[Any, ...]:
         """Recursively sanitize tuple items preserving namedtuple structure.
 
@@ -319,7 +202,7 @@ class RedactingFilter(logging.Filter):
         except Exception:  # ruff: ignore[blind-except]
             return ""
 
-        return self._redact_str(str_val)
+        return self._redact_str_fast(str_val)
 
     def _deep_redact(self, data: Any, depth: int = 0) -> Any:
         """Recursively search and scrub secrets from complex nested data structures.
@@ -333,7 +216,7 @@ class RedactingFilter(logging.Filter):
         if isinstance(data, (int, float, bool, type(None))):
             return data
         if isinstance(data, str):
-            return self._redact_str(data)
+            return self._redact_str_fast(data)
         if isinstance(data, dict):
             return {
                 k: ("********" if self._is_sensitive_key(k, v) else self._deep_redact(v, depth + 1))
@@ -352,11 +235,11 @@ class RedactingFilter(logging.Filter):
 
     def _redact_exc_info(self, record: logging.LogRecord) -> None:
         if isinstance(record.exc_text, str):
-            record.exc_text = self._redact_str(record.exc_text)
+            record.exc_text = self._redact_str_fast(record.exc_text)
 
         if isinstance(record.exc_info, tuple) and len(record.exc_info) == 3:
             formatted = "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
-            record.exc_text = self._redact_str(formatted)
+            record.exc_text = self._redact_str_fast(formatted)
             record.exc_info = None
 
     def _redact_extra_attrs(self, record: logging.LogRecord) -> None:
@@ -375,33 +258,49 @@ class RedactingFilter(logging.Filter):
             bool: Always True (permits the log to write but strictly scrubs the content beforehand).
         """
         try:  # ruff: ignore[too-many-statements-in-try-clause]
-            if isinstance(record.msg, str):
-                record.msg = self._redact_str(record.msg)
+            has_args = bool(isinstance(record.args, (dict, tuple)) and record.args)
+            has_exc = record.exc_text is not None or record.exc_info is not None
+            has_extras = any(attr not in self._STANDARD_ATTRS for attr in record.__dict__)
 
-            if isinstance(record.args, (dict, tuple)):
+            if isinstance(record.msg, str) and _may_contain_secret(record.msg):
+                record.msg = self._redact_str(record.msg)
+            elif not has_args and not has_exc and not has_extras:
+                return True
+
+            if has_args:
                 record.args = self._deep_redact(record.args)
 
-            self._redact_extra_attrs(record)
-            self._redact_exc_info(record)
+            if has_extras:
+                self._redact_extra_attrs(record)
+            if has_exc:
+                self._redact_exc_info(record)
         except Exception as e:  # ruff: ignore[blind-except]
             # Failsafe: Never let logging filters crash application execution
             logging.getLogger(__name__).debug("Redaction filter failed: %s", e)
         return True
 
 
-class SecurityGuard:
-    """Centralized OWASP API security and payload guardrails."""
+def _inspect_starttag(parser: Any, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    parser._count_tag()  # ruff: ignore[private-member-access]
+    if tag.lower() in {"script", "iframe", "object", "embed", "applet"}:
+        parser.has_script = True
+        parser.is_safe = False
+        parser.issues.append(f"Blocked executable tag: <{tag}>")
 
-    MAX_HTML_SIZE: int = 5 * 1024 * 1024  # 5MB safe limit (CWE-400)
-    MAX_TAG_COUNT: int = 10000  # DoS protection against tag bombs (CWE-400)
+    for attr, _ in attrs:
+        if attr.lower().startswith("on"):
+            parser.has_script = True
+            parser.is_safe = False
+            parser.issues.append(f"Blocked event handler: {attr}")
 
-    VOLATILE_IDEMPOTENCY_KEYS: ClassVar[frozenset[str]] = frozenset({"CustomID", "EventPayload", "SandboxMode"})
-    ALLOWED_KWARGS: ClassVar[frozenset[str]] = frozenset(
-        {"proxies", "cert", "stream", "verify", "allow_redirects", "files"}
-    )
+
+def _build_spam_guard_parser() -> type[Any]:
+    from html.parser import HTMLParser  # ruff: ignore[import-outside-top-level]
 
     class _SpamGuardParser(HTMLParser):
         """Internal lightweight HTML analyzer to preemptively catch XSS and tag bombs."""
+
+        __slots__ = ("has_script", "is_safe", "issues", "max_tags", "tag_count")
 
         def __init__(self, max_tags: int = 10000) -> None:
             super().__init__()
@@ -419,19 +318,7 @@ class SecurityGuard:
 
         @override
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-            self._count_tag()
-            # Catch known executable injection points
-            if tag.lower() in {"script", "iframe", "object", "embed", "applet"}:
-                self.has_script = True
-                self.is_safe = False
-                self.issues.append(f"Blocked executable tag: <{tag}>")
-
-            # Catch any injected event handlers (e.g., onerror, onclick)
-            for attr, _ in attrs:
-                if attr.lower().startswith("on"):
-                    self.has_script = True
-                    self.is_safe = False
-                    self.issues.append(f"Blocked event handler: {attr}")
+            _inspect_starttag(self, tag, attrs)
 
         @override
         def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -445,6 +332,73 @@ class SecurityGuard:
         def handle_comment(self, data: str) -> None:
             self._count_tag()
 
+    return _SpamGuardParser
+
+
+class _LazyGuardMeta(type):
+    """Defer importing html.parser until HTML safety checks run."""
+
+    def __getattr__(cls, name: str) -> Any:
+        if name == "_SpamGuardParser":
+            parser_cls = _build_spam_guard_parser()
+            type.__setattr__(cls, "_SpamGuardParser", parser_cls)
+            return parser_cls
+        msg = f"type object {cls.__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+
+
+@lru_cache(maxsize=32)
+def _validate_config_url_cached(url: str, allowed_root_domain: str) -> None:
+    parsed = urlparse(url)
+
+    if parsed.scheme not in {"http", "https"}:
+        msg = f"Security Alert (CWE-918): Invalid scheme '{parsed.scheme}'. Only http/https allowed."
+        raise ValueError(msg)
+
+    hostname = parsed.hostname or ""
+    allowed_exact_hosts = frozenset(
+        {
+            allowed_root_domain,
+            f"api.{allowed_root_domain}",
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        }
+    )
+
+    is_safe = hostname in allowed_exact_hosts or hostname.endswith(f".{allowed_root_domain}")
+    if not is_safe:
+        msg = (
+            f"Security Alert (CWE-918): Hostname '{hostname}' is not permitted. "
+            f"Must be a '{allowed_root_domain}' domain or a local loopback for testing."
+        )
+        raise ValueError(msg)
+
+
+class SecurityGuard(metaclass=_LazyGuardMeta):
+    """Centralized OWASP API security and payload guardrails."""
+
+    __slots__ = ()
+
+    MAX_HTML_SIZE: int = 5 * 1024 * 1024  # 5MB safe limit (CWE-400)
+    MAX_TAG_COUNT: int = 10000  # DoS protection against tag bombs (CWE-400)
+
+    VOLATILE_IDEMPOTENCY_KEYS: ClassVar[frozenset[str]] = frozenset({"CustomID", "EventPayload", "SandboxMode"})
+    ALLOWED_KWARGS: ClassVar[frozenset[str]] = frozenset(
+        {"proxies", "cert", "stream", "verify", "allow_redirects", "files"}
+    )
+
+    if TYPE_CHECKING:
+
+        class _SpamGuardParser(HTMLParser):
+            has_script: bool
+            is_safe: bool
+            issues: list[str]
+            tag_count: int
+            max_tags: int
+
+            def __init__(self, max_tags: int = 10000) -> None: ...
+
     @staticmethod
     def resolve_tls_verify(verify: Any) -> bool | str:
         """Validate TLS verification flag or custom CA bundle path (CWE-295).
@@ -452,30 +406,7 @@ class SecurityGuard:
         Returns:
             bool | str: True for system/certifi CA verification, or validated CA bundle path string.
         """
-        if verify is False or verify is None:
-            sys.audit("mailjet.security.tls_disabled", str(verify))
-            msg = "Security Violation: Mailjet API TLS verification cannot be disabled (verify=False is forbidden)."
-            raise ValueError(msg)
-
-        if verify is True:
-            return True
-
-        if isinstance(verify, (str, os.PathLike)):
-            raw_verify = os.fspath(verify)
-            if not isinstance(raw_verify, str):
-                msg = f"Invalid CA bundle path type: expected str or os.PathLike[str], got {type(raw_verify).__name__}."
-                raise TypeError(msg)
-            if not raw_verify.strip() or _CONTROL_CHAR_RE.search(raw_verify):
-                msg = "Invalid CA bundle path: must be a non-empty path without control characters."
-                raise ValueError(msg)
-            ca_path = Path(raw_verify).expanduser()
-            if not ca_path.exists() or not ca_path.is_file():
-                msg = f"Custom CA bundle path does not exist or is not a file: {ca_path}"
-                raise ValueError(msg)
-            return str(ca_path)
-
-        msg = f"Invalid 'verify' type: expected bool, str, or PathLike, got {type(verify).__name__}."
-        raise TypeError(msg)
+        return resolve_tls_verify(verify)
 
     @staticmethod
     def enable_audit_logging() -> None:
@@ -501,39 +432,8 @@ class SecurityGuard:
         Args:
             url (str): The configured API URL to validate.
             allowed_root_domain (str): The trusted root domain for production traffic.
-
-        Raises:
-            ValueError: If the scheme or hostname violates zero-trust policies.
         """
-        parsed = urlparse(url)
-
-        # 1. Enforce Safe Schemes (Block file://, dict://, gopher://, etc.)
-        if parsed.scheme not in {"http", "https"}:
-            msg = f"Security Alert (CWE-918): Invalid scheme '{parsed.scheme}'. Only http/https allowed."
-            raise ValueError(msg)
-
-        hostname = parsed.hostname or ""
-
-        # 2. Allowlist (Production + Local CI/CD loopbacks)
-        allowed_exact_hosts = frozenset(
-            {
-                allowed_root_domain,
-                f"api.{allowed_root_domain}",
-                "localhost",
-                "127.0.0.1",
-                "::1",  # Include IPv6 loopback for modern CI environments
-            }
-        )
-
-        # Safe if it's an exact match OR a valid subdomain of the trusted root
-        is_safe = hostname in allowed_exact_hosts or hostname.endswith(f".{allowed_root_domain}")
-
-        if not is_safe:
-            msg = (
-                f"Security Alert (CWE-918): Hostname '{hostname}' is not permitted. "
-                f"Must be a '{allowed_root_domain}' domain or a local loopback for testing."
-            )
-            raise ValueError(msg)
+        _validate_config_url_cached(url, allowed_root_domain)
 
     @staticmethod
     def check_request_security(kwargs: dict[str, Any]) -> None:
@@ -551,7 +451,13 @@ class SecurityGuard:
         """
         clean_headers: dict[str, str | None] = {}
         for k, v in headers.items():
-            if _CRLF_RE.search(k) or (v is not None and _CRLF_RE.search(str(v))):
+            key_ok = k.isascii() and k.isprintable()
+            val_ok = v is None or (isinstance(v, str) and v.isascii() and v.isprintable())
+            if not key_ok and _CRLF_RE.search(k):
+                sys.audit("mailjet.security.header_injection", k)
+                msg = f"Security Violation: CRLF injection detected in header '{k}'"
+                raise ValueError(msg)
+            if not val_ok and _CRLF_RE.search(str(v)):
                 sys.audit("mailjet.security.header_injection", k)
                 msg = f"Security Violation: CRLF injection detected in header '{k}'"
                 raise ValueError(msg)
@@ -684,6 +590,8 @@ class SecurityGuard:
 
         is_in_temp = False
         with contextlib.suppress(Exception):
+            import tempfile  # ruff: ignore[import-outside-top-level]
+
             temp_dir = Path(tempfile.gettempdir()).resolve()
             is_in_temp = target.is_relative_to(temp_dir)
 

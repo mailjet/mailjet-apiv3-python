@@ -26,6 +26,9 @@ class Config:
         enable_security_audit (bool): Enable runtime PEP 578 security audit event emission.
         verify (bool | str | Path): TLS verification setting or path to a custom CA bundle.
         auto_idempotency_mode (AutoIdempotencyMode): Strategy for auto-populating Idempotency-Key.
+        pool_connections (int): Number of urllib3 connection pools to cache per Client.
+        pool_maxsize (int): Maximum number of persistent connections saved per pool.
+        warn_unclosed (bool): Emit ResourceWarning on garbage collection if session was not closed.
     """
 
     ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
@@ -38,6 +41,15 @@ class Config:
     enable_security_audit: bool = False
     verify: bool | str | Path = True
     auto_idempotency_mode: AutoIdempotencyMode = "fingerprint"
+    pool_connections: int = 100
+    pool_maxsize: int = 100
+    warn_unclosed: bool = False
+
+    @staticmethod
+    def _validate_pool_size(name: str, value: int) -> None:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            msg = f"{name} must be an integer >= 1, got {value!r}."
+            raise ValueError(msg)
 
     def __post_init__(self) -> None:
         """Validate configuration for secure transport and resource limits (OWASP Input Validation)."""
@@ -58,3 +70,11 @@ class Config:
         if self.auto_idempotency_mode not in _VALID_IDEMPOTENCY_MODES:
             msg = f"Invalid auto_idempotency_mode {self.auto_idempotency_mode!r}; expected one of {sorted(_VALID_IDEMPOTENCY_MODES)}."
             raise ValueError(msg)
+
+        # 5. Validate connection pool bounds and warning flags
+        self._validate_pool_size("pool_connections", self.pool_connections)
+        self._validate_pool_size("pool_maxsize", self.pool_maxsize)
+        raw_warn: object = self.warn_unclosed
+        if not isinstance(raw_warn, bool):
+            msg = f"warn_unclosed must be a bool, got {type(raw_warn).__name__}."
+            raise TypeError(msg)
