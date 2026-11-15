@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import warnings
 from typing import TYPE_CHECKING, Any
 
@@ -48,6 +49,23 @@ class Endpoint:
                 dashed = "".join("-" + c.lower() if c.isupper() else c for c in part)
                 self._action_parts.append(dashed.lstrip("-"))
 
+    @staticmethod
+    def _external_stacklevel() -> int:
+        package_root = __name__.partition(".")[0]
+        depth = 1
+        try:
+            frame = sys._getframe(depth)  # ruff: ignore[private-member-access]
+        except (AttributeError, ValueError):
+            return 2
+        while frame is not None:
+            mod_name = frame.f_globals.get("__name__", "")
+            if mod_name == package_root or mod_name.startswith(f"{package_root}."):
+                depth += 1
+                frame = frame.f_back
+            else:
+                return depth
+        return depth
+
     def _check_deprecation(self) -> None:
         """Emit a non-breaking warning when a deprecated route is invoked."""
         target = self._name_lower if self._name_lower in DEPRECATION_ADVISORY else self._resource_lower
@@ -56,7 +74,7 @@ class Endpoint:
             warnings.warn(
                 f"Endpoint '{target}' is deprecated in the Mailjet API. Migrate to '{replacement}'.",
                 DeprecationWarning,
-                stacklevel=3,
+                stacklevel=self._external_stacklevel(),
             )
 
     def _resolve_registry_route(
@@ -521,4 +539,7 @@ class Endpoint:
         Returns:
             requests.Response: The HTTP response representing the deletion confirmation.
         """
+        if id is None or isinstance(id, bool) or (isinstance(id, str) and not id.strip()):
+            msg = "Endpoint.delete() requires a non-empty, non-boolean resource 'id'."
+            raise ValueError(msg)
         return self(method="DELETE", id=id, action_id=action_id, **kwargs)
