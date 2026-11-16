@@ -149,7 +149,7 @@ exclude = [
     "site-packages",
     "venv",
 ]
-extend-exclude = ["tests", "test"]
+extend-exclude = ["mailjet_rest/_version.py", "tests", "test"]
 
 line-length = 120
 
