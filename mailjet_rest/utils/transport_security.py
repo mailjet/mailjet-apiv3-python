@@ -31,7 +31,8 @@ else:
 _CONTROL_CHAR_RE: Final = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
 
 _KEEPALIVE_OPTION: Final[tuple[int, int, int]] = (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-_DEFAULT_SOCKET_OPTIONS: Final[tuple[Any, ...]] = tuple(HTTPConnection.default_socket_options or ())
+_HTTP_CONNECTION_CLS: Any = HTTPConnection
+_DEFAULT_SOCKET_OPTIONS: Final[tuple[Any, ...]] = tuple(_HTTP_CONNECTION_CLS.default_socket_options or ())
 _KEEPALIVE_SOCKET_OPTIONS: Final[tuple[Any, ...]] = (
     _DEFAULT_SOCKET_OPTIONS
     if _KEEPALIVE_OPTION in _DEFAULT_SOCKET_OPTIONS
