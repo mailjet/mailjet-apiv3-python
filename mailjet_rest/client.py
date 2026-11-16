@@ -11,6 +11,8 @@ import difflib
 import logging
 import secrets
 import sys
+import threading
+import uuid
 import warnings
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn
@@ -28,6 +30,7 @@ from mailjet_rest.errors import (
     AuthorizationError,
     CriticalApiError,
     DoesNotExistError,
+    MailjetApiError,
     MailjetAuthError,
     TimeoutError,  # ruff: ignore[builtin-import-shadowing]
     ValidationError,
@@ -95,6 +98,8 @@ class Client:
     endpoint attributes based on the static routing registry.
     """
 
+    _MUTATING_METHODS: ClassVar[frozenset[str]] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
     _RETRY_STRATEGY: ClassVar[JitterRetry] = JitterRetry(
         total=3,
         backoff_factor=1,
@@ -131,8 +136,12 @@ class Client:
                 stacklevel=2,
             )
 
+        self._lock = threading.RLock()
+        self._closed = False
         self.config = Config(**kwargs) if config is None else config
         self.session = requests.Session()
+        resolved_verify = SecurityGuard.resolve_tls_verify(self.config.verify)
+        self.session.verify = resolved_verify
 
         # Delegate auth validation and coercion to SecurityGuard
         self.auth = SecurityGuard.validate_and_coerce_auth(auth)
@@ -147,7 +156,13 @@ class Client:
 
         self.session.headers.update({"User-Agent": self.config.user_agent})
 
-        adapter = SecureHTTPAdapter(pool_connections=100, pool_maxsize=100, max_retries=self._RETRY_STRATEGY)
+        ca_bundle = resolved_verify if isinstance(resolved_verify, str) else None
+        adapter = SecureHTTPAdapter(
+            ca_bundle=ca_bundle,
+            pool_connections=100,
+            pool_maxsize=100,
+            max_retries=self._RETRY_STRATEGY,
+        )
         self.session.mount("https://", adapter)
 
         self._endpoint_cache: dict[str, Endpoint] = {}
@@ -196,10 +211,13 @@ class Client:
 
     def close(self) -> None:
         """Secure resource teardown closing internal sockets."""
-        if hasattr(self, "session") and self.session:
-            self.session.auth = None
-            self.session.headers.clear()
-            self.session.close()
+        with self._lock:
+            self._closed = True
+            session = getattr(self, "session", None)
+            if session is not None:
+                session.auth = None
+                session.headers.clear()
+                session.close()
 
     def __getattr__(self, name: str) -> Endpoint:
         """O(1) Route mapping.
@@ -213,8 +231,9 @@ class Client:
             msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
             raise AttributeError(msg)
 
-        if name in self._endpoint_cache:
-            return self._endpoint_cache[name]
+        with self._lock:
+            if name in self._endpoint_cache:
+                return self._endpoint_cache[name]
 
         # Fail fast for typos: Only check simple un-composited names.
         # A cutoff of 0.8 catches obvious mistakes like 'snd'->'send' or 'session'->'session',
@@ -225,9 +244,8 @@ class Client:
 
         # If it doesn't exist, we fall back to assuming it's a dynamic path
         # which will be safely encoded by sanitize_segment during _build_url
-        endpoint = Endpoint(client=self, name=name)
-        self._endpoint_cache[name] = endpoint
-        return endpoint
+        with self._lock:
+            return self._endpoint_cache.setdefault(name, Endpoint(client=self, name=name))
 
     def __dir__(self) -> list[str]:
         """Expose dynamic routing attributes for IDE autocompletion.
@@ -252,7 +270,11 @@ class Client:
         Returns:
             requests.Response: The raw HTTP response directly from the network.
         """
-        kwargs.pop("verify", None)
+        req_verify = SecurityGuard.resolve_tls_verify(kwargs.pop("verify", self.config.verify))
+        allow_redirects = kwargs.pop("allow_redirects", False)
+        if allow_redirects is not False:
+            msg = "Redirects are strictly disabled (allow_redirects=True is forbidden)."
+            raise ValueError(msg)
 
         # Strip out headers with None values to let requests auto-generate multipart boundaries
         clean_headers = {k: v for k, v in headers.items() if v is not None}
@@ -260,7 +282,7 @@ class Client:
         content_type = clean_headers.get("Content-Type", "")
         is_json = isinstance(data, (dict, list)) and "application/json" in content_type
 
-        return self.session.request(
+        response = self.session.request(
             method=method,
             url=url,
             headers=clean_headers,
@@ -268,9 +290,35 @@ class Client:
             data=data if not is_json else None,
             params=params,
             timeout=timeout,
-            verify=True,  # Always True, enforced natively against MITM attacks
+            verify=req_verify,
+            allow_redirects=False,
             **kwargs,
         )
+        status_code = getattr(response, "status_code", None)
+        if isinstance(status_code, int) and 300 <= status_code < 400:
+            sys.audit("mailjet.security.unexpected_redirect", url, status_code)
+            logger.warning("Unexpected HTTP redirect (%s) from %s; redirects are disabled.", status_code, url)
+        return response
+
+    @staticmethod
+    def _extract_error_detail(response: requests.Response, body: str) -> str:
+        """Extract an actionable error summary from a Mailjet error response body.
+
+        Returns:
+            str: Formatted error suffix (leading ': ...') or empty string.
+        """
+        error_detail = ""
+        with suppress(Exception):
+            resp_json = response.json()
+            if "ErrorMessage" in resp_json:
+                error_detail = f": {resp_json['ErrorMessage']}"
+            elif resp_json.get("Messages"):
+                errors = resp_json["Messages"][0].get("Errors", [])
+                if errors:
+                    error_detail = f": {errors[0].get('ErrorMessage', '')}"
+        if not error_detail and body:
+            error_detail = f": {body}"
+        return error_detail
 
     @staticmethod
     def _handle_api_error(e: RequestException) -> NoReturn:
@@ -278,20 +326,7 @@ class Client:
         if e.response is not None:
             status = e.response.status_code
             body = e.response.text
-
-            # DX Improvement: Extract actionable error message from API response
-            error_detail = ""
-            with suppress(Exception):
-                resp_json = e.response.json()
-                if "ErrorMessage" in resp_json:
-                    error_detail = f": {resp_json['ErrorMessage']}"
-                elif resp_json.get("Messages"):
-                    errors = resp_json["Messages"][0].get("Errors", [])
-                    if errors:
-                        error_detail = f": {errors[0].get('ErrorMessage', '')}"
-
-            if not error_detail and body:
-                error_detail = f": {body}"
+            error_detail = Client._extract_error_detail(e.response, body)
 
             if status in {401, 403}:
                 msg = f"Authentication or Authorization failed{error_detail}"
@@ -305,9 +340,23 @@ class Client:
             if status == 400:
                 msg = f"Payload validation failed{error_detail}"
                 raise ValidationError(msg, status, body) from e
+            if status >= 400:
+                msg = f"Mailjet API HTTP {status}{error_detail}"
+                raise MailjetApiError(msg, status, body) from e
 
         msg = f"An unexpected Mailjet API network error occurred: {e}"
         raise ApiError(msg) from e
+
+    def _apply_idempotency(self, data: PayloadType, req_headers: dict[str, str | None]) -> None:
+        if any(k.lower() == "idempotency-key" for k in req_headers):
+            return
+        mode = getattr(self.config, "auto_idempotency_mode", "fingerprint")
+        if mode == "off":
+            return
+        if mode == "uuid4":
+            req_headers["Idempotency-Key"] = str(uuid.uuid4())
+        elif isinstance(data, (dict, list)):
+            req_headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(data)
 
     def api_call(  # ruff: ignore[complex-structure]
         self,
@@ -333,12 +382,15 @@ class Client:
         Returns:
             requests.Response: The authenticated HTTP response from Mailjet.
         """
+        # Re-validate runtime config URL to prevent post-init SSRF mutations (HIGH-02)
+        SecurityGuard.validate_config_url(self.config.api_url, allowed_root_domain=self.config.ALLOWED_ROOT_DOMAIN)
+
         # Ensure headers is a dictionary and screened for CRLF injections (CWE-113)
         req_headers: dict[str, str | None] = {} if headers is None else SecurityGuard.sanitize_headers(headers)
 
-        if not kwargs.get("verify", True):
-            sys.audit("mailjet.security.tls_disabled", url)
-            msg = "Security Violation: Mailjet API TLS verification cannot be disabled."
+        SecurityGuard.resolve_tls_verify(kwargs.get("verify", self.config.verify))
+        if kwargs.get("allow_redirects", False) is not False:
+            msg = "Redirects are strictly disabled (allow_redirects=True is forbidden)."
             raise ValueError(msg)
 
         # Safely determine and validate active timeout bounds (CWE-400)
@@ -352,16 +404,14 @@ class Client:
         safe_kwargs = SecurityGuard.filter_safe_kwargs(kwargs)
 
         # Idempotency Lock for mutations
-        if method in {"POST", "PUT", "DELETE"}:
+        if method.upper() in self._MUTATING_METHODS:
             if self.config.dry_run:
                 logger.info("DRY RUN: Intercepted %s request to %s", method, url)
                 mock = requests.Response()
                 mock.status_code = 200
                 return mock
 
-            # Allow idempotency hashing for valid batch lists
-            if isinstance(data, (dict, list)) and "Idempotency-Key" not in req_headers:
-                req_headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(data)
+            self._apply_idempotency(data, req_headers)
 
         # Strip None filters
         clean_filters = {k: v for k, v in filters.items() if v is not None} if filters else None

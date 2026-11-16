@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import mimetypes
+import os
+import stat
 import sys
 import warnings
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -28,19 +31,64 @@ class ChunkedStreamer:
     """Generator for encoding large file attachments."""
 
     @staticmethod
-    def encode_file(path: Path, chunk_size: int = 512 * 1024) -> str:
+    def encode_file(
+        path: str | Path,
+        chunk_size: int = 512 * 1024,
+        *,
+        safe_base_dir: str | Path | None = None,
+        max_bytes: int = 15 * 1024 * 1024,
+    ) -> str:
         """Read and encode a file in chunks without loading it entirely into RAM.
+
+        Validates the path, rejects symlinks cleanly via O_NOFOLLOW when available,
+        pins the open file descriptor with fstat, and enforces size limits.
 
         Returns:
             str: The fully base64-encoded file representation.
         """
-        # ENFORCE multiple of 3 to prevent Base64 padding corruption mid-stream
-        chunk_size = max(3, (chunk_size // 3) * 3)
-        encoded_chunks = []
-        with path.open("rb") as f:
-            while chunk := f.read(chunk_size):
-                encoded_chunks.append(base64.b64encode(chunk).decode("utf-8"))
-        return "".join(encoded_chunks)
+        if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+            msg = "chunk_size must be a strictly positive integer."
+            raise ValueError(msg)
+        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+            msg = "max_bytes must be a strictly positive integer."
+            raise ValueError(msg)
+
+        validated = SecurityGuard.validate_attachment_path(path, safe_base_dir=safe_base_dir)
+        step = max(3, (chunk_size // 3) * 3)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+
+        try:
+            fd = os.open(os.fspath(validated), flags)
+        except OSError as e:
+            if e.errno == errno.ELOOP:
+                msg = "Security Violation (CWE-22): Symlinks are strictly forbidden for attachments."
+                raise ValueError(msg) from e
+            raise
+
+        fd_owned = True
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                msg = f"Security Alert (CWE-400): Path is not a regular file: {validated}"
+                raise ValueError(msg)
+            if st.st_size > max_bytes:
+                msg = f"Security Violation: File '{validated.name}' exceeds safe threshold."
+                raise ValueError(msg)
+
+            encoded_chunks: list[str] = []
+            total_read = 0
+            with os.fdopen(fd, "rb") as f:
+                fd_owned = False
+                while chunk := f.read(step):
+                    total_read += len(chunk)
+                    if total_read > max_bytes:
+                        msg = f"Security Violation: File '{validated.name}' exceeds safe threshold."
+                        raise ValueError(msg)
+                    encoded_chunks.append(base64.b64encode(chunk).decode("ascii"))
+            return "".join(encoded_chunks)
+        finally:
+            if fd_owned:
+                os.close(fd)
 
 
 class _BaseContentBuilder:
@@ -215,7 +263,7 @@ class MessageBuilder(_BaseContentBuilder):
             {
                 "ContentType": ctype,
                 "Filename": target.name,
-                "Base64Content": ChunkedStreamer.encode_file(target),
+                "Base64Content": ChunkedStreamer.encode_file(target, safe_base_dir=base_dir),
             }
         )
         return self
@@ -240,7 +288,7 @@ class MessageBuilder(_BaseContentBuilder):
             {
                 "ContentType": ctype,
                 "Filename": target.name,
-                "Base64Content": ChunkedStreamer.encode_file(target),
+                "Base64Content": ChunkedStreamer.encode_file(target, safe_base_dir=base_dir),
             }
         )
         return self

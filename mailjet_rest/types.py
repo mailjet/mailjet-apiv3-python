@@ -19,6 +19,7 @@ __all__ = [
     "_JSON_HEADERS",
     "_TEXT_HEADERS",
     "Attachment",
+    "AutoIdempotencyMode",
     "EmailAddress",
     "HttpMethod",
     "PayloadType",
@@ -34,6 +35,7 @@ __all__ = [
 TimeoutType: TypeAlias = int | float | tuple[int | float, int | float] | None
 PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | bytes | None
 HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
+AutoIdempotencyMode: TypeAlias = Literal["fingerprint", "uuid4", "off"]
 
 _DEFAULT_TIMEOUT: Final[int] = 60
 _JSON_HEADERS: Final = MappingProxyType({"Content-Type": "application/json"})

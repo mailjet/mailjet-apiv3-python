@@ -10,13 +10,16 @@ from __future__ import annotations
 import base64
 import contextlib
 import hashlib
+import hmac
 import json
 import logging
 import math
+import os
 import re
 import ssl
 import sys
 import tempfile
+import traceback
 import unicodedata
 import warnings
 from functools import lru_cache
@@ -35,6 +38,7 @@ if TYPE_CHECKING:
 
 from requests.adapters import HTTPAdapter
 from requests.auth import AuthBase
+from requests.utils import DEFAULT_CA_BUNDLE_PATH
 
 from mailjet_rest.errors import ValidationError
 
@@ -69,23 +73,46 @@ def _get_secret_pattern() -> re.Pattern[str]:
     )
 
 
+def _build_tls_context(ca_bundle: str | None = None) -> ssl.SSLContext:
+    """Create a hardened SSL context enforcing TLS 1.2+, cert checks, and isolated CA trust stores.
+
+    Returns:
+        ssl.SSLContext: Configured SSL context.
+    """
+    if ca_bundle is not None:
+        context = ssl.create_default_context(cafile=ca_bundle)
+    else:
+        context = ssl.create_default_context()
+        if DEFAULT_CA_BUNDLE_PATH and Path(DEFAULT_CA_BUNDLE_PATH).is_file():
+            context.load_verify_locations(cafile=DEFAULT_CA_BUNDLE_PATH)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    context.check_hostname = True
+    context.verify_mode = ssl.CERT_REQUIRED
+    context.options |= getattr(ssl, "OP_NO_COMPRESSION", 0)
+    return context
+
+
 class SecureHTTPAdapter(HTTPAdapter):
-    """Custom HTTP Adapter enforcing modern TLS versions (CWE-319)."""
+    """Custom HTTP Adapter enforcing modern TLS versions and isolated CA trust stores (CWE-319, CWE-295)."""
+
+    def __init__(self, ca_bundle: str | None = None, **kwargs: Any) -> None:
+        """Initialize the TLS adapter with an optional custom CA bundle path."""
+        self._ca_bundle = ca_bundle
+        self._ssl_context = _build_tls_context(ca_bundle)
+        super().__init__(**kwargs)
 
     @staticmethod
-    def _get_secure_ssl_context() -> ssl.SSLContext:
+    def _get_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
         """Create and return a hardened SSL context enforcing TLS 1.2+.
 
         Returns:
             ssl.SSLContext: The configured SSL context.
         """
-        context = ssl.create_default_context()
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        return context
+        return _build_tls_context(ca_bundle)
 
     @override
     def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
-        kwargs["ssl_context"] = self._get_secure_ssl_context()
+        kwargs["ssl_context"] = self._ssl_context
         super().init_poolmanager(*args, **kwargs)
 
     @override
@@ -95,8 +122,29 @@ class SecureHTTPAdapter(HTTPAdapter):
         Returns:
             Any: The proxy manager instance.
         """
-        proxy_kwargs["ssl_context"] = self._get_secure_ssl_context()
+        proxy_kwargs["ssl_context"] = self._ssl_context
         return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+    @override
+    def cert_verify(self, conn: Any, url: str, verify: Any, cert: Any) -> None:
+        """Enforce strict TLS verification and isolate per-call CA/client-cert SSL contexts."""
+        resolved = SecurityGuard.resolve_tls_verify(verify)
+        super().cert_verify(conn, url, resolved, cert)  # type: ignore[no-untyped-call]
+        if url.lower().startswith("https"):
+            needs_isolated_ctx = (
+                cert is not None
+                or (isinstance(resolved, str) and resolved != self._ca_bundle)
+                or (resolved is True and self._ca_bundle is not None)
+            )
+            if needs_isolated_ctx:
+                target_ca = resolved if isinstance(resolved, str) else None
+                conn.ssl_context = _build_tls_context(target_ca)
+            else:
+                conn.ssl_context = self._ssl_context
+            # Clear ca_certs/ca_cert_dir because conn.ssl_context already holds the exact trust store;
+            # otherwise urllib3 mutates the shared SSLContext on handshake.
+            conn.ca_certs = None
+            conn.ca_cert_dir = None
 
 
 class SecretAuth(AuthBase):
@@ -107,6 +155,7 @@ class SecretAuth(AuthBase):
 
     def __init__(self, auth_tuple: tuple[str, str]) -> None:
         """Initialize with API credentials."""
+        __tracebackhide__ = True
         self._api_key = auth_tuple[0]
         self._api_secret = auth_tuple[1]
 
@@ -116,6 +165,7 @@ class SecretAuth(AuthBase):
         Returns:
             requests.PreparedRequest: The modified request.
         """
+        __tracebackhide__ = True
         auth_str = f"{self._api_key}:{self._api_secret}".encode("latin1")
         r.headers["Authorization"] = "Basic " + base64.b64encode(auth_str).decode("ascii")
         return r
@@ -129,20 +179,25 @@ class SecretAuth(AuthBase):
         return hash((self._api_key, self._api_secret))
 
     def __eq__(self, other: object) -> bool:
-        """Allow equality checks against standard tuples for testing and logic checks.
+        """Compare credentials in constant time using hmac.compare_digest.
 
         Returns:
             bool: True if equal, False otherwise.
         """
-        if isinstance(other, tuple):
-            # Reconstruct the tuple on the fly for backwards-compatible equality assertions
-            return (self._api_key, self._api_secret) == other
-
         if isinstance(other, SecretAuth):
-            # Allow comparison against another SecretAuth instance
-            return self._api_key == other._api_key and self._api_secret == other._api_secret
+            other_key = other._api_key
+            other_secret = other._api_secret
+        elif isinstance(other, tuple) and len(other) == 2 and all(isinstance(item, str) for item in other):
+            other_key, other_secret = other
+        else:
+            return False
 
-        return False
+        try:
+            key_match = hmac.compare_digest(self._api_key.encode("utf-8"), other_key.encode("utf-8"))
+            secret_match = hmac.compare_digest(self._api_secret.encode("utf-8"), other_secret.encode("utf-8"))
+        except UnicodeEncodeError:
+            return False
+        return bool(key_match & secret_match)
 
     def __getitem__(self, index: int) -> NoReturn:
         """Prevent Credential extraction via tuple unpacking / indexing."""
@@ -158,11 +213,36 @@ class SecretAuth(AuthBase):
         """Return a safe representation of the credential."""
         return "SecretAuth(***REDACTED***)"
 
+    def __str__(self) -> str:
+        """Return a safe string representation of the credential."""
+        return "SecretAuth(***REDACTED***)"
+
 
 class RedactingFilter(logging.Filter):
     """Deep recursive logging filter to automatically scrub API keys and secrets (CWE-117, CWE-316)."""
 
     MAX_REDACTION_DEPTH: Final[int] = 4
+
+    _SENSITIVE_KEY_NAMES: Final[frozenset[str]] = frozenset(
+        {
+            "password",
+            "passwd",
+            "pwd",
+            "secret",
+            "api_secret",
+            "api-secret",
+            "api_key",
+            "api-key",
+            "apikey",
+            "token",
+            "access_token",
+            "refresh_token",
+            "authorization",
+            "cookie",
+            "set-cookie",
+            "private_key",
+        }
+    )
 
     # Standard LogRecord attributes to ignore for maximum performance
     _STANDARD_ATTRS: Final[frozenset[str]] = frozenset(
@@ -192,6 +272,15 @@ class RedactingFilter(logging.Filter):
             "taskName",
         }
     )
+
+    @classmethod
+    def _is_sensitive_key(cls, key: object, value: object) -> bool:
+        return (
+            isinstance(key, str)
+            and key.strip().lower() in cls._SENSITIVE_KEY_NAMES
+            and value is not None
+            and not isinstance(value, bool)
+        )
 
     @staticmethod
     def _redact_str(data: str) -> str:
@@ -246,15 +335,37 @@ class RedactingFilter(logging.Filter):
         if isinstance(data, str):
             return self._redact_str(data)
         if isinstance(data, dict):
-            return {k: self._deep_redact(v, depth + 1) for k, v in data.items()}
+            return {
+                k: ("********" if self._is_sensitive_key(k, v) else self._deep_redact(v, depth + 1))
+                for k, v in data.items()
+            }
         if isinstance(data, list):
             return [self._deep_redact(item, depth + 1) for item in data]
         if isinstance(data, tuple):
             return self._redact_tuple(data, depth)
         if isinstance(data, set):
             return {self._deep_redact(item, depth + 1) for item in data}
+        if isinstance(data, frozenset):
+            return frozenset(self._deep_redact(item, depth + 1) for item in data)
 
         return self._redact_object(data, depth)
+
+    def _redact_exc_info(self, record: logging.LogRecord) -> None:
+        if isinstance(record.exc_text, str):
+            record.exc_text = self._redact_str(record.exc_text)
+
+        if isinstance(record.exc_info, tuple) and len(record.exc_info) == 3:
+            formatted = "".join(traceback.format_exception(*record.exc_info)).rstrip("\n")
+            record.exc_text = self._redact_str(formatted)
+            record.exc_info = None
+
+    def _redact_extra_attrs(self, record: logging.LogRecord) -> None:
+        for attr_name, attr_value in list(record.__dict__.items()):
+            if attr_name not in self._STANDARD_ATTRS:
+                if self._is_sensitive_key(attr_name, attr_value):
+                    record.__dict__[attr_name] = "********"
+                else:
+                    record.__dict__[attr_name] = self._deep_redact(attr_value)
 
     @override
     def filter(self, record: logging.LogRecord) -> bool:
@@ -264,18 +375,14 @@ class RedactingFilter(logging.Filter):
             bool: Always True (permits the log to write but strictly scrubs the content beforehand).
         """
         try:  # ruff: ignore[too-many-statements-in-try-clause]
-            # 1. Redact primary flat string message
             if isinstance(record.msg, str):
                 record.msg = self._redact_str(record.msg)
 
-            # 2. Redact tuple/dict args WITHOUT changing their base types
             if isinstance(record.args, (dict, tuple)):
                 record.args = self._deep_redact(record.args)
 
-            # 3. Redact dynamically injected 'extra' log attributes
-            for attr_name, attr_value in record.__dict__.items():
-                if attr_name not in self._STANDARD_ATTRS:
-                    record.__dict__[attr_name] = self._deep_redact(attr_value)
+            self._redact_extra_attrs(record)
+            self._redact_exc_info(record)
         except Exception as e:  # ruff: ignore[blind-except]
             # Failsafe: Never let logging filters crash application execution
             logging.getLogger(__name__).debug("Redaction filter failed: %s", e)
@@ -328,17 +435,7 @@ class SecurityGuard:
 
         @override
         def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-            self._count_tag()
-            if tag.lower() in {"script", "iframe", "object", "embed", "applet"}:
-                self.has_script = True
-                self.is_safe = False
-                self.issues.append(f"Blocked executable tag: <{tag}>")
-
-            for attr, _ in attrs:
-                if attr.lower().startswith("on"):
-                    self.has_script = True
-                    self.is_safe = False
-                    self.issues.append(f"Blocked event handler: {attr}")
+            self.handle_starttag(tag, attrs)
 
         @override
         def handle_endtag(self, tag: str) -> None:
@@ -347,6 +444,38 @@ class SecurityGuard:
         @override
         def handle_comment(self, data: str) -> None:
             self._count_tag()
+
+    @staticmethod
+    def resolve_tls_verify(verify: Any) -> bool | str:
+        """Validate TLS verification flag or custom CA bundle path (CWE-295).
+
+        Returns:
+            bool | str: True for system/certifi CA verification, or validated CA bundle path string.
+        """
+        if verify is False or verify is None:
+            sys.audit("mailjet.security.tls_disabled", str(verify))
+            msg = "Security Violation: Mailjet API TLS verification cannot be disabled (verify=False is forbidden)."
+            raise ValueError(msg)
+
+        if verify is True:
+            return True
+
+        if isinstance(verify, (str, os.PathLike)):
+            raw_verify = os.fspath(verify)
+            if not isinstance(raw_verify, str):
+                msg = f"Invalid CA bundle path type: expected str or os.PathLike[str], got {type(raw_verify).__name__}."
+                raise TypeError(msg)
+            if not raw_verify.strip() or _CONTROL_CHAR_RE.search(raw_verify):
+                msg = "Invalid CA bundle path: must be a non-empty path without control characters."
+                raise ValueError(msg)
+            ca_path = Path(raw_verify).expanduser()
+            if not ca_path.exists() or not ca_path.is_file():
+                msg = f"Custom CA bundle path does not exist or is not a file: {ca_path}"
+                raise ValueError(msg)
+            return str(ca_path)
+
+        msg = f"Invalid 'verify' type: expected bool, str, or PathLike, got {type(verify).__name__}."
+        raise TypeError(msg)
 
     @staticmethod
     def enable_audit_logging() -> None:
@@ -497,8 +626,9 @@ class SecurityGuard:
             if seen is None:
                 seen = set()
 
+            obj_id = id(data)
             # Active Cycle Detection (CWE-674) to prevent RecursionError crashes
-            if id(data) in seen:
+            if obj_id in seen:
                 return "[Circular]"
 
             if depth > 50:
@@ -506,15 +636,21 @@ class SecurityGuard:
                 raise ValueError(msg)
 
             if isinstance(data, dict):
-                seen.add(id(data))
-                return {
-                    k: _deep_strip(v, depth + 1, seen.copy())
-                    for k, v in data.items()
-                    if k not in SecurityGuard.VOLATILE_IDEMPOTENCY_KEYS
-                }
+                seen.add(obj_id)
+                try:
+                    return {
+                        k: _deep_strip(v, depth + 1, seen)
+                        for k, v in data.items()
+                        if k not in SecurityGuard.VOLATILE_IDEMPOTENCY_KEYS
+                    }
+                finally:
+                    seen.discard(obj_id)
             if isinstance(data, (list, tuple, set)):
-                seen.add(id(data))
-                return [_deep_strip(item, depth + 1, seen.copy()) for item in data]
+                seen.add(obj_id)
+                try:
+                    return [_deep_strip(item, depth + 1, seen) for item in data]
+                finally:
+                    seen.discard(obj_id)
             return data
 
         try:
@@ -526,19 +662,64 @@ class SecurityGuard:
             raise ValueError(msg) from e
 
     @staticmethod
+    def _coerce_attachment_raw_path(file_path: Any) -> tuple[str, Path]:
+        raw_os_path: Any = os.fspath(file_path)
+        if isinstance(raw_os_path, bytes):
+            if b"\x00" in raw_os_path:
+                msg = "Security Violation (CWE-22): Null byte detected in attachment path."
+                raise ValueError(msg)
+            original_str = os.fsdecode(raw_os_path)
+        else:
+            original_str = str(raw_os_path)
+            if "\x00" in original_str:
+                msg = "Security Violation (CWE-22): Null byte detected in attachment path."
+                raise ValueError(msg)
+        return original_str, Path(original_str)
+
+    @staticmethod
+    def _validate_zero_trust_path(original_path: str, target: Path) -> None:
+        if ".." in original_path:
+            msg = "Security Alert (CWE-22): Path traversal tokens ('..') are explicitly forbidden."
+            raise ValueError(msg)
+
+        is_in_temp = False
+        with contextlib.suppress(Exception):
+            temp_dir = Path(tempfile.gettempdir()).resolve()
+            is_in_temp = target.is_relative_to(temp_dir)
+
+        if is_in_temp:
+            return
+
+        forbidden_roots = ("/etc", "/var", "/root", "/boot", "C:\\Windows", "C:\\System32")
+        path_str = str(target).lower()
+        if any(path_str.startswith(root.lower()) for root in forbidden_roots):
+            msg = "Security Alert: Access to sensitive OS system directories is explicitly forbidden."
+            raise ValueError(msg)
+
+        forbidden_components = {"etc", "sys", "proc", "dev", "windows", "system32", "root", "boot"}
+        if any(part.lower() in forbidden_components for part in target.parts):
+            msg = "Security Alert: Access to sensitive OS system directories is explicitly forbidden."
+            raise ValueError(msg)
+
+    @staticmethod
     def validate_attachment_path(file_path: Path | str, safe_base_dir: Path | str | None = None) -> Path:
-        """Prevent Path Traversal (CWE-22) via strict resolution boundary checks.
+        """Prevent Path Traversal (CWE-22) via strict resolution, symlink, and boundary checks.
 
         Falls back to Zero-Trust OS directory restrictions if no safe_base_dir is supplied.
 
         Returns:
             Path: The resolved and strictly validated pathlib.Path object.
         """
-        original_path = str(file_path)
+        original_path, raw_path = SecurityGuard._coerce_attachment_raw_path(file_path)
+
         try:
-            target = Path(file_path).resolve()
+            if raw_path.is_symlink():
+                sys.audit("mailjet.security.path_traversal", original_path)
+                msg = "Security Violation (CWE-22): Symlinks are strictly forbidden for attachments."
+                raise ValueError(msg)
+            target = raw_path.resolve()
         except (OSError, RuntimeError) as e:
-            msg = f"Invalid attachment path: {e}"
+            msg = f"Security Violation (CWE-22): Invalid attachment path '{original_path}'."
             raise ValueError(msg) from e
 
         if safe_base_dir is not None:
@@ -548,36 +729,15 @@ class SecurityGuard:
                 msg = f"Security Violation: Traversal detected. '{target}' is outside '{base}'."
                 raise ValueError(msg)
         else:
-            # Fallback zero-trust checks if no specific sandbox is provided
-            if ".." in original_path:
-                msg = "Security Alert (CWE-22): Path traversal tokens ('..') are explicitly forbidden."
-                raise ValueError(msg)
-
-            # Allow files residing in the OS temporary directory
-            with contextlib.suppress(Exception):
-                temp_dir = Path(tempfile.gettempdir()).resolve()
-                if target.is_relative_to(temp_dir):
-                    return target
-
-            # Cross-platform component and prefix check for sensitive system directories
-            forbidden_roots = ("/etc", "/var", "/root", "/boot", "C:\\Windows", "C:\\System32")
-            path_str = str(target).lower()
-            if any(path_str.startswith(root.lower()) for root in forbidden_roots):
-                msg = "Security Alert: Access to sensitive OS system directories is explicitly forbidden."
-                raise ValueError(msg)
-
-            forbidden_components = {"etc", "sys", "proc", "dev", "windows", "system32", "root", "boot"}
-            if any(part.lower() in forbidden_components for part in target.parts):
-                msg = "Security Alert: Access to sensitive OS system directories is explicitly forbidden."
-                raise ValueError(msg)
+            SecurityGuard._validate_zero_trust_path(original_path, target)
 
         try:
-            is_valid_file = target.exists() and target.is_file()
+            exists_and_file = target.exists() and target.is_file()
         except OSError as e:
-            msg = f"Invalid attachment path: {e}"
+            msg = f"Security Violation (CWE-22): Cannot inspect attachment path '{target}'."
             raise ValueError(msg) from e
 
-        if not is_valid_file:
+        if not exists_and_file:
             msg = f"Attachment not found or is not a file: {target}"
             raise FileNotFoundError(msg)
 
@@ -734,7 +894,12 @@ class SecurityGuard:
             msg = "Security Alert (CWE-20): Forbidden control characters."
             raise ValueError(msg)
 
-        # CWE-22: Path Traversal
+        # CWE-22: Query / fragment delimiters & Path Traversal
+        if "?" in raw_str or "#" in raw_str or "?" in test_decoded or "#" in test_decoded:
+            sys.audit("mailjet.security.path_traversal", test_decoded)
+            msg = "Security Alert (CWE-22): Query or fragment delimiters ('?', '#') are forbidden in path segments."
+            raise ValueError(msg)
+
         if ".." in test_decoded or "/" in test_decoded or "\\" in test_decoded:
             sys.audit("mailjet.security.path_traversal", test_decoded)
             msg = "Security Alert (CWE-22): Path traversal attempt."
@@ -821,6 +986,7 @@ class SecurityGuard:
         Returns:
             str | SecretAuth | None: The validated and coerced authentication credentials.
         """
+        __tracebackhide__ = True
         if auth is None:
             return None
 
