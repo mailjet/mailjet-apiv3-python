@@ -3,10 +3,16 @@ on:
   pull_request:
     paths:
       - '**'
-permissions: read-all
+
+permissions:
+  contents: read
+
 jobs:
   PR:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     concurrency:
       group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
       cancel-in-progress: true

@@ -535,7 +535,11 @@ class SecurityGuard:
             Path: The resolved and strictly validated pathlib.Path object.
         """
         original_path = str(file_path)
-        target = Path(file_path).resolve()
+        try:
+            target = Path(file_path).resolve()
+        except (OSError, RuntimeError) as e:
+            msg = f"Invalid attachment path: {e}"
+            raise ValueError(msg) from e
 
         if safe_base_dir is not None:
             base = Path(safe_base_dir).resolve()
@@ -567,7 +571,13 @@ class SecurityGuard:
                 msg = "Security Alert: Access to sensitive OS system directories is explicitly forbidden."
                 raise ValueError(msg)
 
-        if not target.exists() or not target.is_file():
+        try:
+            is_valid_file = target.exists() and target.is_file()
+        except OSError as e:
+            msg = f"Invalid attachment path: {e}"
+            raise ValueError(msg) from e
+
+        if not is_valid_file:
             msg = f"Attachment not found or is not a file: {target}"
             raise FileNotFoundError(msg)
 

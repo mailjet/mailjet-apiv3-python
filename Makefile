@@ -9,12 +9,12 @@ SHELL := /bin/bash
 .SHELLFLAGS := -c -o pipefail -o errexit
 CONDA_ACTIVATE = source $$(conda info --base)/etc/profile.d/conda.sh ; conda activate ; conda activate
 # Ensure that we are using the python interpreter provided by the conda environment.
-PYTHON3 := "$(CONDA_PREFIX)/bin/python3"
+PYTHON3 := $(shell if [ -n "$${CONDA_PREFIX:-}" ] && [ -x "$${CONDA_PREFIX}/bin/python3" ]; then echo "$${CONDA_PREFIX}/bin/python3"; else command -v python3 2>/dev/null || command -v python 2>/dev/null; fi)
 
-CONDA_ENV_NAME ?= mailjet
+CONDA_ENV_NAME ?= mailjet-dev
 SRC_DIR = mailjet_rest
 TEST_DIR = tests
-SCRIPTS_DIR = scripts/
+SCRIPTS_DIR = scripts
 
 define BROWSER_PYSCRIPT
 import os, webbrowser, sys
@@ -81,7 +81,6 @@ clean-other:
 	rm -fr profile.html profile.json
 	rm -fr wget-log
 	rm -fr logs/*.log
-	rm -fr *.txt
 
 help:
 	$(PYTHON3) -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
@@ -141,28 +140,25 @@ coverage: ## check code coverage quickly with the default Python
 	coverage html
 	$(BROWSER) htmlcov/index.html
 
-lint-black:
-	black --line-length=80 $(SRC_DIR) $(TEST_DIR)
-lint-isort:
-	isort --profile black --line-length=80 $(SRC_DIR) $(TEST_DIR)
-lint-flake8:
-	@flake8 $(SRC_DIR) $(TEST_DIR)
-lint-pylint:
-	pylint --rcfile=.pylintrc $(SRC_DIR) $(TEST_DIR)
-lint-refurb:
-	@refurb $(SRC_DIR)
+lint:			## runs ruff, mypy --strict, pyright, slotscheck, and bandit
+	$(PYTHON3) -m ruff check .
+	$(PYTHON3) -m ruff format --check .
+	$(PYTHON3) -m mypy --strict $(SRC_DIR)
+	pyright $(SRC_DIR)
+	slotscheck -m $(SRC_DIR)
+	bandit -c pyproject.toml -r $(SRC_DIR)
 
-format-black:
-	@black --line-length=88 $(SRC_DIR) $(TEST_DIR) $(SCRIPTS_DIR)
-format-isort:
-	@isort --profile black --line-length=88 $(SRC_DIR) $(TEST_DIR) $(SCRIPTS_DIR)
-format: format-black format-isort
+format:			## formats code with ruff
+	$(PYTHON3) -m ruff format .
+	$(PYTHON3) -m ruff check --fix .
 
 format-docs:	## runs the docstring auto-formatter. Note this requires manually installing `docconvert` with `pip`
 	docconvert --in-place --config .docconvert.json $(SRC_DIR)
 
-analyze:		## runs static analyzer on the project
-	mypy --config-file=.mypy.ini --cache-dir=/dev/null $(SRC_DIR) $(TEST_DIR) $(SCRIPTS_DIR)
+analyze:		## runs static analyzers on the project
+	$(PYTHON3) -m mypy --strict $(SRC_DIR)
+	pyright $(SRC_DIR)
+	slotscheck -m $(SRC_DIR)
 
 lint-mypy-report:
 	@mypy $(SRC_DIR) --html-report ./mypy_html

@@ -3,6 +3,7 @@ import os
 import time
 
 from mailjet_rest import Client
+from mailjet_rest.errors import ApiError
 
 mailjet30 = Client(
     auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
@@ -20,8 +21,8 @@ def get_valid_campaign_id():
         res = mailjet30.campaign.get(filters={"Limit": 1})
         if res.status_code == 200 and res.json().get("Data"):
             return res.json()["Data"][0]["ID"]
-    except Exception:
-        pass
+    except (ApiError, ValueError, KeyError) as exc:
+        print(f"Campaign lookup fallback: {exc}")
     return 0
 
 

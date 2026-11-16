@@ -2,6 +2,7 @@
 Powered by Hypothesis.
 """
 
+import warnings
 from typing import Any
 from urllib.parse import urlparse
 
@@ -40,7 +41,9 @@ def test_property_endpoint_build_url_resilience(endpoint_name: str, id_val: Any,
     endpoint = Endpoint(client=client, name=endpoint_name)
 
     try:
-        url = endpoint._build_url(id_val=id_val, action_id=action_id)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            url = endpoint._build_url(id_val=id_val, action_id=action_id)
         parsed_url = urlparse(url)
         assert parsed_url.scheme == "https"
         assert parsed_url.netloc == "api.mailjet.com"

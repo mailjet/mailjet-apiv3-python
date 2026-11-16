@@ -91,6 +91,7 @@ tests = [
     "coverage>=4.5.4",
     "hypothesis",
     "pyfakefs",
+    "pytest-benchmark>=5.3.0",
     "pytest-cov",
     "pytest-xdist",
     "pytest>=9.0.3",
@@ -148,7 +149,7 @@ exclude = [
     "site-packages",
     "venv",
 ]
-extend-exclude = ["tests", "test"]
+extend-exclude = ["mailjet_rest/_version.py", "tests", "test"]
 
 line-length = 120
 
@@ -290,6 +291,7 @@ strict = true
 # https://stackoverflow.com/questions/55944201/python-type-hinting-how-do-i-enforce-that-project-wide
 python_version = "3.10"
 mypy_path = "type_stubs"
+untyped_calls_exclude = ["requests", "urllib3"]
 namespace_packages = true
 # This flag enhances the user feedback for error messages
 pretty = true
@@ -350,9 +352,7 @@ disable_error_code = ["untyped-decorator", "unreachable", "no-untyped-def", "no-
 [tool.bandit]
 # usage: bandit -c pyproject.toml -r .
 targets = ["mailjet_rest"]
-exclude_dirs = ["tests", "tests.py"]
-tests = ["B201", "B301"]
-skips = ["B101", "B601"]
+exclude_dirs = ["tests", "samples", "docs"]
 severity = "low"
 
 [tool.bandit.any_other_function_with_shell_equals_true]
