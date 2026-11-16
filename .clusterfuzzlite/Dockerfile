@@ -18,4 +18,7 @@ COPY .clusterfuzzlite/build.sh "$SRC/"
 RUN useradd --create-home --uid 10001 fuzzer \
     && mkdir -p "$SRC" "$OUT" "$WORK" \
     && chown -R fuzzer:fuzzer /usr/local "$SRC" "$OUT" "$WORK"
-USER fuzzer
+# hadolint ignore=DL3002
+# checkov:skip=CKV_DOCKER_3:ClusterFuzzLite compile requires root to write /usr/lib/libFuzzingEngine.a
+# nosemgrep: dockerfile.security.last-user-is-root.last-user-is-root
+USER root

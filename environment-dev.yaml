@@ -17,7 +17,7 @@ dependencies:
   - hypothesis
   - pyfakefs
   - pytest >=9.0.3
-  - pytest-benchmark
+  - pytest-benchmark >=5.3.0
   - pytest-cov
   - pytest-xdist
   - responses
