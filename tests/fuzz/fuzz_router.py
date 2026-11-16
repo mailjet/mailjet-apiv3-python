@@ -4,7 +4,7 @@ import atheris
 
 
 # Instrument all internal modules
-with atheris.instrument_imports(enable_loader_override=False):
+with atheris.instrument_imports(include=["mailjet_rest"]):
     from mailjet_rest.client import Client
     from mailjet_rest.config import Config
     from mailjet_rest.endpoint import Endpoint
@@ -94,7 +94,6 @@ def TestOneInput(data: bytes) -> None:
 
 
 def main() -> None:
-    atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()
 

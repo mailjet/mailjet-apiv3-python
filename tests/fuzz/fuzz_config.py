@@ -9,13 +9,11 @@ from typing import Any
 
 import atheris
 
-from mailjet_rest.config import Config
-
 
 logging.disable(logging.CRITICAL)
 
-with atheris.instrument_imports(enable_loader_override=False):
-    pass
+with atheris.instrument_imports(include=["mailjet_rest"]):
+    from mailjet_rest.config import Config
 
 
 def TestOneInput(data: bytes) -> None:
@@ -49,6 +47,5 @@ def TestOneInput(data: bytes) -> None:
 
 
 if __name__ == "__main__":
-    atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()

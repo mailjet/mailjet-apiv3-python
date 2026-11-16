@@ -115,17 +115,23 @@ def test_rfc8058_unsubscribe_tracking_and_deepcopy() -> None:
         .set_list_unsubscribe("https://example.com/unsub?t=abc", mailto_address="unsub@example.com")
     )
     built = mb.build()
-    assert built["Headers"]["List-Unsubscribe"] == "<https://example.com/unsub?t=abc>, <mailto:unsub@example.com>"
-    assert built["Headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
-    assert built["CustomID"] == "order-123"
-    assert built["TrackOpens"] == "enabled"
-    assert built["TrackClicks"] == "disabled"
+    headers = built.get("Headers")
+    assert headers is not None
+    assert headers["List-Unsubscribe"] == "<https://example.com/unsub?t=abc>, <mailto:unsub@example.com>"
+    assert headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+    assert built.get("CustomID") == "order-123"
+    assert built.get("TrackOpens") == "enabled"
+    assert built.get("TrackClicks") == "disabled"
 
     # Mutating built result does not mutate internal builder state
-    built["Variables"]["nested"]["k"] = "mutated"
+    variables = built.get("Variables")
+    assert variables is not None
+    variables["nested"]["k"] = "mutated"
     built["To"].append({"Email": "extra@example.com"})
     rebuilt = mb.build()
-    assert rebuilt["Variables"]["nested"]["k"] == "v"
+    rebuilt_vars = rebuilt.get("Variables")
+    assert rebuilt_vars is not None
+    assert rebuilt_vars["nested"]["k"] == "v"
     assert len(rebuilt["To"]) == 1
 
     # Non-HTTPS and CRLF rejected
@@ -151,7 +157,9 @@ def test_inline_cid_and_gmail_102kb_warning(tmp_path: Path) -> None:
         .set_content(html='<img src="cid:logo-cid">')
     )
     clean_msg = clean_builder.build()
-    assert clean_msg["InlinedAttachments"][0]["ContentID"] == "logo-cid"
+    inlined = clean_msg.get("InlinedAttachments")
+    assert inlined is not None
+    assert inlined[0].get("ContentID") == "logo-cid"
 
     # Missing CID reference warns
     missing_cid = (

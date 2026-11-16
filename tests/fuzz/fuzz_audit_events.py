@@ -9,8 +9,7 @@ import sys
 
 import atheris
 
-# Disable the custom loader override to silence Atheris warnings and fix coverage tracking
-with atheris.instrument_imports(enable_loader_override=False):
+with atheris.instrument_imports(include=["mailjet_rest"]):
     from mailjet_rest.utils.guardrails import SecurityGuard
     from mailjet_rest.errors import ValidationError
 
@@ -65,6 +64,5 @@ if __name__ == "__main__":
     # Ensure audit logging is active for the fuzzer
     SecurityGuard.enable_audit_logging()
 
-    atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()
