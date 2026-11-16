@@ -135,7 +135,8 @@ class SecureHTTPAdapter(HTTPAdapter):
     def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
         kwargs["ssl_context"] = self._ssl_context
         kwargs.setdefault("socket_options", _KEEPALIVE_SOCKET_OPTIONS)
-        super().init_poolmanager(*args, **kwargs)  # type: ignore[no-untyped-call]
+        base_init: Any = super().init_poolmanager
+        base_init(*args, **kwargs)
 
     @override
     def proxy_manager_for(self, proxy: str, **proxy_kwargs: Any) -> Any:
@@ -146,13 +147,15 @@ class SecureHTTPAdapter(HTTPAdapter):
         """
         proxy_kwargs["ssl_context"] = self._ssl_context
         proxy_kwargs.setdefault("socket_options", _KEEPALIVE_SOCKET_OPTIONS)
-        return super().proxy_manager_for(proxy, **proxy_kwargs)  # type: ignore[no-untyped-call]
+        base_proxy: Any = super().proxy_manager_for
+        return base_proxy(proxy, **proxy_kwargs)
 
     @override
     def cert_verify(self, conn: Any, url: str, verify: Any, cert: Any) -> None:
         """Enforce strict TLS verification and isolate per-call CA/client-cert SSL contexts."""
         resolved = resolve_tls_verify(verify)
-        super().cert_verify(conn, url, resolved, cert)  # type: ignore[no-untyped-call]
+        base_verify: Any = super().cert_verify
+        base_verify(conn, url, resolved, cert)
         if url.lower().startswith("https"):
             needs_isolated_ctx = (
                 cert is not None

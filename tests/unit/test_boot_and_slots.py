@@ -49,6 +49,8 @@ def test_package_lazy_exports_and_missing_attr() -> None:
 
     assert mailjet_rest.Client is Client
     assert mailjet_rest.Config is Config
+    assert issubclass(mailjet_rest.ApiError, Exception)
+    assert callable(mailjet_rest.get_version)
     assert isinstance(mailjet_rest.__version__, str)
     assert "Client" in dir(mailjet_rest)
     assert "__version__" in dir(mailjet_rest)
@@ -56,19 +58,19 @@ def test_package_lazy_exports_and_missing_attr() -> None:
     with pytest.raises(AttributeError, match="no attribute"):
         _ = mailjet_rest.non_existent_symbol_xyz  # type: ignore[attr-defined]
 
+    with pytest.raises(ImportError, match="Disallowed lazy submodule"):
+        mailjet_rest._import_known_submodule("os")
+
 
 def test_slots_enforced_and_secret_auth_unslotted() -> None:
     """Client, ChunkedStreamer, and SecurityGuard use __slots__; SecretAuth stays unslotted."""
-    client = Client(auth=("api_key_value", "api_secret_value"))
-    try:
+    with Client(auth=("api_key_value", "api_secret_value")) as client:
         assert not hasattr(client, "__dict__")
         assert not hasattr(ChunkedStreamer(), "__dict__")
         assert not hasattr(SecurityGuard(), "__dict__")
         # SecretAuth inherits from requests.auth.AuthBase (unslotted in 1.x)
         assert isinstance(client.auth, SecretAuth)
         assert hasattr(client.auth, "__dict__")
-    finally:
-        client.close()
 
 
 def test_lazy_session_and_pool_configuration() -> None:
@@ -80,7 +82,8 @@ def test_lazy_session_and_pool_configuration() -> None:
         assert client._session is None
 
         session = client.session
-        assert client._session is session
+        cached_session: object = client._session
+        assert cached_session is session
         adapter = session.adapters["https://"]
         assert isinstance(adapter, SecureHTTPAdapter)
         pool_kw = adapter.poolmanager.connection_pool_kw
@@ -176,3 +179,12 @@ def test_warn_unclosed_opt_in_lifecycle() -> None:
         _ = c_warn.session
         del c_warn
         gc.collect()
+
+    with warnings.catch_warnings(record=True) as partial_warnings:
+        warnings.simplefilter("always", ResourceWarning)
+        raw_client = Client.__new__(Client)
+        del raw_client
+        with pytest.raises(ValueError, match="pool_connections"):
+            Client(auth=("api_key_value", "api_secret_value"), pool_connections=0)
+        gc.collect()
+    assert not [w for w in partial_warnings if issubclass(w.category, ResourceWarning)]

@@ -61,6 +61,22 @@ __all__ = [
 ]
 
 
+def _import_known_submodule(module_name: str) -> Any:
+    """Import an allowlisted internal submodule using string literals only.
+
+    Returns:
+        Any: The imported internal submodule object.
+    """
+    if module_name == "mailjet_rest.client":
+        return importlib.import_module("mailjet_rest.client")
+    if module_name == "mailjet_rest.errors":
+        return importlib.import_module("mailjet_rest.errors")
+    if module_name == "mailjet_rest.utils.version":
+        return importlib.import_module("mailjet_rest.utils.version")
+    msg = f"Disallowed lazy submodule: {module_name!r}"
+    raise ImportError(msg)
+
+
 def __getattr__(name: str) -> Any:
     """Resolve top-level SDK exports lazily via PEP 562.
 
@@ -68,7 +84,7 @@ def __getattr__(name: str) -> Any:
         Any: The resolved class, function, or version string.
     """
     if name == "__version__":
-        version_mod = importlib.import_module("mailjet_rest.utils.version")
+        version_mod = _import_known_submodule("mailjet_rest.utils.version")
         value = version_mod.get_version()
         globals()[name] = value
         return value
@@ -79,7 +95,7 @@ def __getattr__(name: str) -> Any:
         raise AttributeError(msg)
 
     module_name, attr_name = target
-    value = getattr(importlib.import_module(module_name), attr_name)
+    value = getattr(_import_known_submodule(module_name), attr_name)
     globals()[name] = value
     return value
 

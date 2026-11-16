@@ -397,7 +397,10 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
             tag_count: int
             max_tags: int
 
-            def __init__(self, max_tags: int = 10000) -> None: ...
+            def __init__(self, max_tags: int = 10000) -> None:
+                """Initialize the HTML safety parser stub."""
+                super().__init__()
+                self.max_tags = max_tags
 
     @staticmethod
     def resolve_tls_verify(verify: Any) -> bool | str:

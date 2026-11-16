@@ -244,21 +244,27 @@ class Client:
                 session.headers.clear()
                 session.close()
 
-    def __del__(self) -> None:
-        """Optionally emit ResourceWarning on GC teardown when Config.warn_unclosed is enabled."""
+    def _warn_if_unclosed(self) -> None:
+        """Emit ResourceWarning if an opened session was not explicitly closed."""
         try:
-            cfg = object.__getattribute__(self, "config")
-            session = object.__getattribute__(self, "_session")
-            closed = object.__getattribute__(self, "_closed")
-        except (OSError, RuntimeError, AttributeError):
+            closed = self._closed
+            session = self._session
+        except AttributeError:
             return
 
-        if getattr(cfg, "warn_unclosed", False) and session is not None and not closed:
+        if closed or session is None:
+            return
+
+        if self.config.warn_unclosed:
             warnings.warn(
                 "Unclosed Mailjet Client session; call client.close() or use a context manager.",
                 ResourceWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
+
+    def __del__(self) -> None:
+        """Delegate optional unclosed-session check on garbage collection."""
+        self._warn_if_unclosed()
 
     def __getattr__(self, name: str) -> Endpoint:
         """O(1) Route mapping.
