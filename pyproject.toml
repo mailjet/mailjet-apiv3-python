@@ -290,6 +290,7 @@ strict = true
 # https://stackoverflow.com/questions/55944201/python-type-hinting-how-do-i-enforce-that-project-wide
 python_version = "3.10"
 mypy_path = "type_stubs"
+untyped_calls_exclude = ["requests", "urllib3"]
 namespace_packages = true
 # This flag enhances the user feedback for error messages
 pretty = true

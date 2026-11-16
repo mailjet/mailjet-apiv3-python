@@ -86,7 +86,7 @@ class SecureHTTPAdapter(HTTPAdapter):
     @override
     def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
         kwargs["ssl_context"] = self._get_secure_ssl_context()
-        super().init_poolmanager(*args, **kwargs)  # type: ignore[no-untyped-call]
+        super().init_poolmanager(*args, **kwargs)
 
     @override
     def proxy_manager_for(self, proxy: str, **proxy_kwargs: Any) -> Any:
@@ -96,7 +96,7 @@ class SecureHTTPAdapter(HTTPAdapter):
             Any: The proxy manager instance.
         """
         proxy_kwargs["ssl_context"] = self._get_secure_ssl_context()
-        return super().proxy_manager_for(proxy, **proxy_kwargs)  # type: ignore[no-untyped-call]
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
 
 
 class SecretAuth(AuthBase):
