@@ -27,7 +27,6 @@ jobs:
       - run: ruff check .
       - run: bandit -c pyproject.toml -r mailjet_rest
       - run: mypy --strict mailjet_rest
-      - run: pip install --no-build-isolation .
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: "0.0.0"
       - run: slotscheck -m mailjet_rest
