@@ -129,7 +129,7 @@ class SecureHTTPAdapter(HTTPAdapter):
     def cert_verify(self, conn: Any, url: str, verify: Any, cert: Any) -> None:
         """Enforce strict TLS verification and isolate per-call CA/client-cert SSL contexts."""
         resolved = SecurityGuard.resolve_tls_verify(verify)
-        super().cert_verify(conn, url, resolved, cert)
+        super().cert_verify(conn, url, resolved, cert)  # type: ignore[no-untyped-call]
         if url.lower().startswith("https"):
             needs_isolated_ctx = (
                 cert is not None
