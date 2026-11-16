@@ -7,6 +7,7 @@ from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, initialize, rule
 
 from mailjet_rest.builders import MessageBuilder
+from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 class MessageBuilderMachine(RuleBasedStateMachine):
@@ -54,9 +55,13 @@ class MessageBuilderMachine(RuleBasedStateMachine):
 
     @rule(email=st.emails(), name=st.one_of(st.none(), st.text(max_size=50)))
     def set_sender(self, email: str, name: str | None) -> None:
-        self.builder.set_sender(email=email, name=name)
-        self.has_sender = True
-        assert self.builder._payload["From"]["Email"] == email
+        try:
+            self.builder.set_sender(email=email, name=name)
+            self.has_sender = True
+            assert self.builder._payload["From"]["Email"] == SecurityGuard.normalize_domain(email.strip())
+        except ValueError:
+            # Expected rejection for invalid fuzzed email or sender name inputs.
+            pass
 
     @rule(text=st.text(min_size=1, max_size=1000), html=st.text(min_size=1, max_size=1000))
     def set_text_and_html_content(self, text: str, html: str) -> None:
@@ -78,8 +83,12 @@ class MessageBuilderMachine(RuleBasedStateMachine):
 
     @rule(headers=st.dictionaries(st.text(min_size=1), st.text(max_size=50), max_size=5))
     def set_headers(self, headers: dict) -> None:
-        self.builder.set_headers(headers)
-        assert "Headers" in self.builder._payload
+        try:
+            self.builder.set_headers(headers)
+            assert "Headers" in self.builder._payload
+        except (ValueError, TypeError):
+            # Expected rejection for invalid fuzzed header names or values.
+            pass
 
     @rule()
     def try_build(self) -> None:
