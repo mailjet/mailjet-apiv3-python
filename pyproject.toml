@@ -205,7 +205,10 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 # Ignore E402 (import violations) in all '__init__.py' files, and in `path/to/file.py`.
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["module-import-not-at-top-of-file"]     # E402
+"__init__.py" = [
+    "module-import-not-at-top-of-file",     # E402
+    "non-empty-init-module",                # RUF067 (PEP 562 lazy exports)
+]
 #"path/to/file.py" = ["E402"]
 
 [tool.ruff.lint.extend-per-file-ignores]
