@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import base64
+import copy
 import errno
 import json
 import os
+import re
 import stat
 import sys
 import warnings
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final
+from urllib.parse import urlsplit
 
 
 if sys.version_info >= (3, 11):
@@ -22,8 +25,43 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Literal
 
     from mailjet_rest.types import SendV31Message, SendV31Payload
+
+
+_CRLF_CONTROL_RE: Final = re.compile(r"[\r\n\x00]")
+_SAFE_CID_RE: Final = re.compile(r"^[A-Za-z0-9._@-]{1,255}$")
+_CID_REF_RE: Final = re.compile(r"""cid:([^\s"'<>]+)""", re.IGNORECASE)
+_TRACKING_MODES: Final[frozenset[str]] = frozenset({"enabled", "disabled"})
+
+
+def _assert_no_crlf(value: object, field_name: str) -> str:
+    if not isinstance(value, str):
+        msg = f"Invalid type for {field_name}: expected str, got {type(value).__name__}"
+        raise TypeError(msg)
+    if _CRLF_CONTROL_RE.search(value):
+        msg = f"Security Violation (CWE-93): {field_name} contains forbidden control characters."
+        raise ValueError(msg)
+    return value
+
+
+def _validate_email_input(email: str, field_name: str) -> str:
+    clean = _assert_no_crlf(email, field_name).strip()
+    if "@" not in clean or " " in clean or clean.startswith("@") or clean.endswith("@"):
+        msg = f"Invalid email address for {field_name}: {email!r}"
+        raise ValueError(msg)
+    return SecurityGuard.normalize_domain(clean)
+
+
+def _sanitize_cid(raw_cid: str) -> str:
+    stripped = _assert_no_crlf(raw_cid, "content_id").strip()
+    if stripped.startswith("<") and stripped.endswith(">"):
+        stripped = stripped[1:-1].strip()
+    if not _SAFE_CID_RE.fullmatch(stripped):
+        msg = f"Invalid Content-ID value: {raw_cid!r}"
+        raise ValueError(msg)
+    return stripped
 
 
 class ChunkedStreamer:
@@ -98,6 +136,7 @@ class _BaseContentBuilder:
     __slots__ = ("_payload",)
 
     MAX_PART_SIZE: ClassVar[int] = 5 * 1024 * 1024  # 5MB cap
+    GMAIL_CLIP_BYTES: ClassVar[int] = 102 * 1024  # Gmail clips HTML bodies > 102 KB
 
     # Default to False for high-throughput batching.
     ENABLE_SPAM_GUARD: ClassVar[bool] = False
@@ -115,7 +154,15 @@ class _BaseContentBuilder:
         Returns:
             Self: The builder instance for method chaining.
         """
-        self._payload["Headers"] = headers
+        sanitized = SecurityGuard.sanitize_headers(headers)
+        clean_headers: dict[str, str] = {}
+        for key, value in sanitized.items():
+            clean_key = _assert_no_crlf(key, "header name")
+            if value is None:
+                msg = f"Header '{clean_key}' value must be str, got None"
+                raise TypeError(msg)
+            clean_headers[clean_key] = _assert_no_crlf(value, f"header '{clean_key}'")
+        self._payload["Headers"] = clean_headers
         return self
 
 
@@ -128,15 +175,20 @@ class MessageBuilder(_BaseContentBuilder):
         """Initialize an empty message payload."""
         super().__init__()
 
+    @staticmethod
+    def _build_recipient(email: str, name: str | None, field_name: str) -> dict[str, str]:
+        entry = {"Email": _validate_email_input(email, field_name)}
+        if name:
+            entry["Name"] = _assert_no_crlf(name, f"{field_name} name")
+        return entry
+
     def set_sender(self, email: str, name: str | None = None) -> Self:
         """Set a sender.
 
         Returns:
             Self: The builder instance for method chaining.
         """
-        self._payload["From"] = {"Email": email}
-        if name:
-            self._payload["From"]["Name"] = name
+        self._payload["From"] = self._build_recipient(email, name, "sender")
         return self
 
     def add_recipient(self, email: str, name: str | None = None) -> Self:
@@ -147,10 +199,7 @@ class MessageBuilder(_BaseContentBuilder):
         """
         if "To" not in self._payload:
             self._payload["To"] = []
-        recipient = {"Email": SecurityGuard.normalize_domain(email)}
-        if name:
-            recipient["Name"] = name
-        self._payload["To"].append(recipient)
+        self._payload["To"].append(self._build_recipient(email, name, "recipient"))
         return self
 
     def add_cc(self, email: str, name: str | None = None) -> Self:
@@ -161,10 +210,7 @@ class MessageBuilder(_BaseContentBuilder):
         """
         if "Cc" not in self._payload:
             self._payload["Cc"] = []
-        recipient = {"Email": SecurityGuard.normalize_domain(email)}
-        if name:
-            recipient["Name"] = name
-        self._payload["Cc"].append(recipient)
+        self._payload["Cc"].append(self._build_recipient(email, name, "cc"))
         return self
 
     def add_bcc(self, email: str, name: str | None = None) -> Self:
@@ -175,10 +221,7 @@ class MessageBuilder(_BaseContentBuilder):
         """
         if "Bcc" not in self._payload:
             self._payload["Bcc"] = []
-        recipient = {"Email": SecurityGuard.normalize_domain(email)}
-        if name:
-            recipient["Name"] = name
-        self._payload["Bcc"].append(recipient)
+        self._payload["Bcc"].append(self._build_recipient(email, name, "bcc"))
         return self
 
     def set_reply_to(self, email: str, name: str | None = None) -> Self:
@@ -187,9 +230,7 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        self._payload["ReplyTo"] = {"Email": SecurityGuard.normalize_domain(email)}
-        if name:
-            self._payload["ReplyTo"]["Name"] = name
+        self._payload["ReplyTo"] = self._build_recipient(email, name, "reply_to")
         return self
 
     def set_subject(self, subject: str) -> Self:
@@ -198,7 +239,81 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        self._payload["Subject"] = subject
+        self._payload["Subject"] = _assert_no_crlf(subject, "subject")
+        return self
+
+    def set_custom_id(self, custom_id: str) -> Self:
+        """Set the Mailjet CustomID tracking identifier safely without CRLF injection.
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        self._payload["CustomID"] = _assert_no_crlf(custom_id, "CustomID")
+        return self
+
+    def set_event_payload(self, event_payload: str) -> Self:
+        """Set the Mailjet EventPayload webhook correlation string.
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        self._payload["EventPayload"] = _assert_no_crlf(event_payload, "EventPayload")
+        return self
+
+    def set_tracking(
+        self,
+        *,
+        opens: Literal["enabled", "disabled"] | None = None,
+        clicks: Literal["enabled", "disabled"] | None = None,
+    ) -> Self:
+        """Configure per-message open and click tracking overrides.
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        if opens is not None:
+            if opens not in _TRACKING_MODES:
+                msg = f"Invalid TrackOpens mode {opens!r}; expected 'enabled' or 'disabled'."
+                raise ValueError(msg)
+            self._payload["TrackOpens"] = opens
+        if clicks is not None:
+            if clicks not in _TRACKING_MODES:
+                msg = f"Invalid TrackClicks mode {clicks!r}; expected 'enabled' or 'disabled'."
+                raise ValueError(msg)
+            self._payload["TrackClicks"] = clicks
+        return self
+
+    def set_list_unsubscribe(
+        self,
+        unsubscribe_url: str,
+        mailto_address: str | None = None,
+        *,
+        one_click: bool = True,
+    ) -> Self:
+        """Attach RFC 8058 List-Unsubscribe and optional List-Unsubscribe-Post headers.
+
+        Returns:
+            Self: The builder instance for method chaining.
+        """
+        clean_url = _assert_no_crlf(unsubscribe_url, "unsubscribe_url").strip()
+        if "<" in clean_url or ">" in clean_url:
+            msg = "Invalid RFC 8058 unsubscribe URL: angle brackets are forbidden."
+            raise ValueError(msg)
+        parsed = urlsplit(clean_url)
+        if parsed.scheme.lower() != "https" or not parsed.netloc:
+            msg = "RFC 8058 unsubscribe URL must use https:// with a valid host."
+            raise ValueError(msg)
+
+        parts = [f"<{clean_url}>"]
+        if mailto_address is not None:
+            clean_mailto = _validate_email_input(mailto_address, "mailto_address")
+            parts.append(f"<mailto:{clean_mailto}>")
+
+        existing = dict(self._payload.get("Headers", {}))
+        existing["List-Unsubscribe"] = ", ".join(parts)
+        if one_click:
+            existing["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+        self._payload["Headers"] = existing
         return self
 
     def set_content(self, text: str | None = None, html: str | None = None) -> Self:
@@ -241,7 +356,7 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        self._payload["Variables"] = variables
+        self._payload["Variables"] = copy.deepcopy(variables)
         return self
 
     def attach_file(
@@ -275,7 +390,11 @@ class MessageBuilder(_BaseContentBuilder):
         return self
 
     def attach_inline(
-        self, file_path: str | Path, content_type: str | None = None, base_dir: Path | str | None = None
+        self,
+        file_path: str | Path,
+        content_type: str | None = None,
+        base_dir: Path | str | None = None,
+        content_id: str | None = None,
     ) -> Self:
         """Safely attach an inline file from disk using memory-efficient chunking.
 
@@ -284,6 +403,7 @@ class MessageBuilder(_BaseContentBuilder):
         """
         target = SecurityGuard.validate_attachment_path(file_path, base_dir)
         SecurityGuard.check_file_size(target)
+        clean_cid = _sanitize_cid(content_id if content_id is not None else target.name)
 
         if content_type is not None:
             ctype = content_type
@@ -299,10 +419,34 @@ class MessageBuilder(_BaseContentBuilder):
             {
                 "ContentType": ctype,
                 "Filename": target.name,
+                "ContentID": clean_cid,
                 "Base64Content": ChunkedStreamer.encode_file(target, safe_base_dir=base_dir),
             }
         )
         return self
+
+    def _warn_html_deliverability(self, html_part: str, html_bytes_len: int) -> None:
+        if html_bytes_len > self.GMAIL_CLIP_BYTES:
+            warnings.warn(
+                "Deliverability Warning: HTMLPart exceeds Gmail 102 KB clip threshold.",
+                UserWarning,
+                stacklevel=3,
+            )
+
+        cid_refs = set(_CID_REF_RE.findall(html_part))
+        if cid_refs:
+            attached_cids = {
+                str(item["ContentID"])
+                for item in self._payload.get("InlinedAttachments", ())
+                if isinstance(item, dict) and item.get("ContentID") is not None
+            }
+            missing = sorted(cid_refs - attached_cids)
+            if missing:
+                warnings.warn(
+                    f"Inline CID references missing matching InlinedAttachments ContentID: {missing}",
+                    UserWarning,
+                    stacklevel=3,
+                )
 
     def build(self) -> SendV31Message:
         """Validate and return the message payload.
@@ -332,21 +476,21 @@ class MessageBuilder(_BaseContentBuilder):
             raise ValueError(msg)
 
         # Apply strict payload size limits to major content vectors
-        if (
-            "HTMLPart" in self._payload
-            and len(self._payload["HTMLPart"].encode("utf-8", errors="ignore")) > self.MAX_PART_SIZE
-        ):
+        html_part = self._payload.get("HTMLPart")
+        html_bytes_len = len(html_part.encode("utf-8", errors="ignore")) if isinstance(html_part, str) else 0
+        if html_bytes_len > self.MAX_PART_SIZE:
             msg = "Security Violation: HTMLPart exceeds 5MB safe limit."
             raise ValueError(msg)
 
-        if (
-            "TextPart" in self._payload
-            and len(self._payload["TextPart"].encode("utf-8", errors="ignore")) > self.MAX_PART_SIZE
-        ):
+        text_part = self._payload.get("TextPart")
+        if isinstance(text_part, str) and len(text_part.encode("utf-8", errors="ignore")) > self.MAX_PART_SIZE:
             msg = "Security Violation: TextPart exceeds 5MB safe limit."
             raise ValueError(msg)
 
-        return self._payload.copy()  # type: ignore[return-value]
+        if isinstance(html_part, str):
+            self._warn_html_deliverability(html_part, html_bytes_len)
+
+        return copy.deepcopy(self._payload)  # type: ignore[return-value]
 
 
 class SendPayloadBuilder:
@@ -357,6 +501,9 @@ class SendPayloadBuilder:
     """
 
     __slots__ = ("_globals", "_messages", "_sandbox")
+
+    MAX_MESSAGES: ClassVar[int] = 50
+    MAX_TOTAL_BYTES: ClassVar[int] = 15 * 1024 * 1024
 
     def __init__(self) -> None:
         """Initialize an empty Send API payload structure."""
@@ -373,10 +520,14 @@ class SendPayloadBuilder:
         Returns:
             Self: The builder instance for method chaining.
         """
+        if len(self._messages) >= self.MAX_MESSAGES:
+            msg = f"Payload validation failed: Send v3.1 allows at most {self.MAX_MESSAGES} messages per request."
+            raise ValueError(msg)
+
         if isinstance(message, MessageBuilder):
             self._messages.append(message.build())
         else:
-            self._messages.append(message)
+            self._messages.append(copy.deepcopy(message))
         return self
 
     def set_sandbox_mode(self, active: bool) -> Self:
@@ -394,7 +545,7 @@ class SendPayloadBuilder:
         Returns:
             Self: The builder instance for method chaining.
         """
-        self._globals = globals_dict
+        self._globals = copy.deepcopy(globals_dict)
         return self
 
     def build(self) -> SendV31Payload:
@@ -404,19 +555,27 @@ class SendPayloadBuilder:
             SendV31Payload: The validated root payload.
 
         Raises:
-            ValueError: If no messages are included.
+            ValueError: If no messages are included or batch limits are exceeded.
         """
         if not self._messages:
             msg = "Payload validation failed: At least one message is required."
             raise ValueError(msg)
 
-        payload: dict[str, Any] = {"Messages": self._messages}
+        if len(self._messages) > self.MAX_MESSAGES:
+            msg = f"Payload validation failed: Send v3.1 allows at most {self.MAX_MESSAGES} messages per request."
+            raise ValueError(msg)
+
+        payload: dict[str, Any] = {"Messages": copy.deepcopy(self._messages)}
 
         if self._sandbox:
             payload["SandboxMode"] = True
 
         if self._globals is not None:
-            payload["Globals"] = self._globals
+            payload["Globals"] = copy.deepcopy(self._globals)
+
+        if len(json.dumps(payload, default=str).encode("utf-8")) > self.MAX_TOTAL_BYTES:
+            msg = "Payload validation failed: Batch payload exceeds 15MB limit."
+            raise ValueError(msg)
 
         return payload  # type: ignore[return-value]
 
@@ -441,11 +600,11 @@ class TemplateContentBuilder(_BaseContentBuilder):
             Self: The builder instance for method chaining.
         """
         if author:
-            self._payload["Author"] = author
+            self._payload["Author"] = _assert_no_crlf(author, "author")
         if name:
-            self._payload["Name"] = name
+            self._payload["Name"] = _assert_no_crlf(name, "name")
         if locale:
-            self._payload["Locale"] = locale
+            self._payload["Locale"] = _assert_no_crlf(locale, "locale")
         return self
 
     def set_content(self, text: str | None = None, html: str | None = None, mjml: str | None = None) -> Self:
@@ -488,5 +647,5 @@ class TemplateContentBuilder(_BaseContentBuilder):
                 stacklevel=2,
             )
 
-        # Return a copy to preserve builder state immutability
-        return self._payload.copy()
+        # Return a deep copy to preserve builder state immutability across nested fields
+        return copy.deepcopy(self._payload)

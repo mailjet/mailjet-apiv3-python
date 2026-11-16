@@ -39,6 +39,12 @@ if TYPE_CHECKING:
 
     from mailjet_rest.types import TimeoutType
 
+try:
+    import orjson as _orjson_mod
+except ImportError:  # pragma: no cover - optional speedup extra
+    _orjson_mod = None
+_orjson: Any = _orjson_mod
+
 
 if sys.version_info >= (3, 12):
     from typing import override
@@ -60,6 +66,9 @@ _CRLF_RE: Final = re.compile(r"[\r\n]")
 # RFC 9110 strict control characters (blocks all non-printable ASCII except \x09 tab)
 _CONTROL_CHAR_RE: Final = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
 _PATH_CONTROL_CHAR_RE: Final = re.compile(r"[\x00-\x1f\x7f]")
+_ASCII_DOMAIN_RE: Final = re.compile(r"^[A-Za-z0-9_-]{1,63}(?:\.[A-Za-z0-9_-]{1,63})*$")
+_MAX_DNS_DOMAIN_LEN: Final = 253
+_MAX_DNS_LABEL_LEN: Final = 63
 
 # Expanded to include iframe, object, embed, and applet
 _XSS_PATTERN: Final = re.compile(r"<(script|svg|iframe|object|embed|applet)|javascript:|onload=", re.IGNORECASE)
@@ -524,6 +533,18 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
         }
 
     @staticmethod
+    def _canonical_json_bytes(safe_payload: Any) -> bytes:
+        if _orjson is not None:
+            try:
+                raw: bytes = _orjson.dumps(safe_payload, option=_orjson.OPT_SORT_KEYS, default=str)
+            except TypeError:
+                # Fall back to stdlib json.dumps when orjson rejects non-str keys.
+                pass
+            else:
+                return raw
+        return json.dumps(safe_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+
+    @staticmethod
     def generate_payload_fingerprint(payload: dict[str, Any] | list[Any]) -> str:
         """Generates a safe SHA-256 Idempotency hash for the exact JSON payload.
 
@@ -564,8 +585,8 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
 
         try:
             safe_payload = _deep_strip(payload)
-            serialized = json.dumps(safe_payload, sort_keys=True, default=str)
-            return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+            serialized_bytes = SecurityGuard._canonical_json_bytes(safe_payload)
+            return hashlib.sha256(serialized_bytes).hexdigest()
         except Exception as e:
             msg = "Payload hashing failed due to malformed or deeply nested structure."
             raise ValueError(msg) from e
@@ -743,8 +764,26 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
             return res
 
     @staticmethod
+    def _normalize_domain_part(domain_part: str, raw_input: str, *, is_email: bool) -> str:
+        err_prefix = "Invalid IDN in email" if is_email else "Invalid IDN"
+        if len(domain_part) <= _MAX_DNS_DOMAIN_LEN and _ASCII_DOMAIN_RE.fullmatch(domain_part):
+            return domain_part.lower()
+        if len(domain_part) > _MAX_DNS_DOMAIN_LEN or any(
+            len(lbl) > _MAX_DNS_LABEL_LEN for lbl in domain_part.split(".")
+        ):
+            msg = f"{err_prefix}: {raw_input}"
+            raise ValueError(msg)
+        try:
+            return domain_part.encode("idna").decode("ascii")
+        except UnicodeError as e:
+            msg = f"{err_prefix}: {raw_input}"
+            raise ValueError(msg) from e
+
+    @staticmethod
     def normalize_domain(email_or_domain: str) -> str:
         """Prevent Unicode Homograph attacks by encoding IDNs to Punycode (RFC 3490).
+
+        Uses an ASCII fast path with RFC 1035 label bounds before falling back to IDNA.
 
         Returns:
             str: The fully normalized punycode domain representation.
@@ -754,18 +793,10 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
 
         local_part, sep, domain_part = email_or_domain.rpartition("@")
         if sep:
-            try:
-                puny_domain = domain_part.encode("idna").decode("ascii")
-            except UnicodeError as e:
-                msg = f"Invalid IDN in email: {email_or_domain}"
-                raise ValueError(msg) from e
+            puny_domain = SecurityGuard._normalize_domain_part(domain_part, email_or_domain, is_email=True)
             return f"{local_part}@{puny_domain}"
 
-        try:
-            return email_or_domain.encode("idna").decode("ascii")
-        except UnicodeError as e:
-            msg = f"Invalid IDN: {email_or_domain}"
-            raise ValueError(msg) from e
+        return SecurityGuard._normalize_domain_part(email_or_domain, email_or_domain, is_email=False)
 
     @staticmethod
     def sanitize_segment(segment: Any) -> str:

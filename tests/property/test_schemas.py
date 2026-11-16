@@ -143,13 +143,13 @@ def test_property_message_builder_schema(email: str, name: str, template_id: int
     SendV31Message schema without raising key errors or internal panics.
     """
     builder = MessageBuilder()
-    builder.set_sender(email=email, name=name)
-    builder.add_recipient(email=email, name=name)
-    builder.set_template(template_id)
-
-    builder._payload["CustomID"] = custom_id
-
     try:
+        builder.set_sender(email=email, name=name)
+        builder.add_recipient(email=email, name=name)
+        builder.set_template(template_id)
+
+        builder._payload["CustomID"] = custom_id
+
         result = builder.build()
         assert result["From"]["Email"] == SecurityGuard.normalize_domain(email)
         if name:

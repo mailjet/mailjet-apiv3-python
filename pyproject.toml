@@ -119,6 +119,10 @@ other = [
     "types-jsonschema",
 ]
 
+speedups = [
+    "orjson>=3.10.0",
+]
+
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
 exclude = [

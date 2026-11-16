@@ -13,6 +13,7 @@ import atheris
 with atheris.instrument_imports(enable_loader_override=False):
     from mailjet_rest.client import Client
     from mailjet_rest.endpoint import Endpoint
+    from mailjet_rest.errors import ApiError
 
 logging.disable(logging.CRITICAL)
 
@@ -58,7 +59,7 @@ def TestOneInput(data: bytes) -> None:
         for _ in range(fdp.ConsumeIntInRange(1, 5)):
             next(gen)
 
-    except (ValueError, TypeError, StopIteration):
+    except (ValueError, TypeError, StopIteration, ApiError):
         # Safe rejections - The SDK or Python correctly caught the hostile payload iteration
         # StopIteration is expected when generator ends.
         pass
