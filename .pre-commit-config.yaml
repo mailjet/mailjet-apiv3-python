@@ -207,11 +207,19 @@ repos:
     hooks:
       - id: mypy
         name: "🐍 types · Check with mypy"
+        types_or: [python]
         args: [--config-file=./pyproject.toml]
         additional_dependencies:
           - pytest-order
           - types-requests
         exclude: ^samples/
+      - id: mypy
+        name: "🐍 types · Check .pyi stubs with mypy"
+        types_or: [pyi]
+        args: [--config-file=./pyproject.toml]
+        additional_dependencies:
+          - pytest-order
+          - types-requests
 
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.414

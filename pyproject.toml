@@ -19,7 +19,7 @@ include = ["mailjet_rest", "mailjet_rest.*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-mailjet_rest = ["py.typed"]
+mailjet_rest = ["py.typed", "*.pyi"]
 
 [project]
 name = "mailjet-rest"
@@ -245,6 +245,20 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "T20",    # Print statements in tests
     "TC",     # Type checking block constraints
 ]
+"*.pyi" = [
+    "D",      # Docstrings not required in stub files
+    "DOC",
+    "builtin-import-shadowing",   # Re-exported TimeoutError intentionally shadows builtin
+    "invalid-function-name",      # Generated ROUTE_MAP properties preserve camelCase route names
+    "invalid-argument-name",
+    "too-many-public-methods",
+    "unnecessary-default-type-args",  # Preserve 3-arg Generator for Python 3.10 compatibility
+    "SLF",
+]
+"scripts/*" = [
+    "implicit-namespace-package", # Utility scripts do not need __init__.py
+    "print",                      # CLI status prints in scripts/
+]
 
 [tool.ruff.lint.pylint]
 max-args = 9           # SDK endpoints need more (auth, data, headers, filters, etc.)
@@ -300,6 +314,7 @@ python_version = "3.10"
 mypy_path = "type_stubs"
 untyped_calls_exclude = ["requests", "urllib3"]
 namespace_packages = true
+explicit_package_bases = true
 # This flag enhances the user feedback for error messages
 pretty = true
 # 3rd party import
@@ -416,3 +431,21 @@ markers = [
     "network: marks tests as integration tests that require live network access",
     "property_heavy: Heavy Hypothesis property-based tests skipped on CI",
 ]
+
+[tool.mutmut]
+source_paths = ["mailjet_rest"]
+only_mutate = [
+    "mailjet_rest/builders.py",
+    "mailjet_rest/endpoint.py",
+    "mailjet_rest/utils/version.py",
+    "mailjet_rest/utils/transport_security.py",
+]
+do_not_mutate = [
+    "mailjet_rest/_version.py",
+    "mailjet_rest/__init__.py",
+    "mailjet_rest/routes.py",
+    "mailjet_rest/types.py",
+]
+also_copy = ["scripts/"]
+pytest_add_cli_args = ["-o", "addopts=", "-p", "no:benchmark", "-p", "no:xdist", "--ignore=tests/unit/test_stubs.py"]
+pytest_add_cli_args_test_selection = ["tests/unit", "tests/regression"]

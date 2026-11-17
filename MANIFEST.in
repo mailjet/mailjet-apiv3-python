@@ -18,6 +18,7 @@ recursive-include mailjet_rest *.py *.pyi py.typed
 # ---------------------------------------------------------
 prune tests
 prune samples
+prune scripts
 prune .github
 prune .clusterfuzzlite
 prune conda.recipe

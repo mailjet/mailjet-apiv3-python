@@ -72,6 +72,8 @@ jobs:
         run: |
           unzip -l dist/*.whl
           unzip -l dist/*.whl | grep -q "mailjet_rest/py.typed"
+          unzip -l dist/*.whl | grep -q "mailjet_rest/client.pyi"
+          unzip -l dist/*.whl | grep -q "mailjet_rest/endpoint.pyi"
 
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

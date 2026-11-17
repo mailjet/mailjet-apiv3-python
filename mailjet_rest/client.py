@@ -295,7 +295,10 @@ class Client:
         # If it doesn't exist, we fall back to assuming it's a dynamic path
         # which will be safely encoded by sanitize_segment during _build_url
         with self._lock:
-            return self._endpoint_cache.setdefault(name, Endpoint(client=self, name=name))
+            return self._endpoint_cache.setdefault(
+                name,
+                Endpoint(client=self, name=name),  # pyright: ignore[reportArgumentType]
+            )
 
     def __dir__(self) -> list[str]:
         """Expose dynamic routing attributes for IDE autocompletion.
