@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import sys
 import warnings
 from typing import TYPE_CHECKING, Any
 
+from mailjet_rest.errors import MailjetApiError
 from mailjet_rest.routes import DEPRECATION_ADVISORY, ROUTE_MAP
 from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS, HttpMethod, PayloadType, TimeoutType
 from mailjet_rest.utils.guardrails import SecurityGuard
@@ -48,6 +50,23 @@ class Endpoint:
                 dashed = "".join("-" + c.lower() if c.isupper() else c for c in part)
                 self._action_parts.append(dashed.lstrip("-"))
 
+    @staticmethod
+    def _external_stacklevel() -> int:
+        package_root = __name__.partition(".")[0]
+        depth = 1
+        try:
+            frame = sys._getframe(depth)  # ruff: ignore[private-member-access]
+        except (AttributeError, ValueError):
+            return 2
+        while frame is not None:
+            mod_name = frame.f_globals.get("__name__", "")
+            if mod_name == package_root or mod_name.startswith(f"{package_root}."):
+                depth += 1
+                frame = frame.f_back
+            else:
+                return depth
+        return depth
+
     def _check_deprecation(self) -> None:
         """Emit a non-breaking warning when a deprecated route is invoked."""
         target = self._name_lower if self._name_lower in DEPRECATION_ADVISORY else self._resource_lower
@@ -56,7 +75,7 @@ class Endpoint:
             warnings.warn(
                 f"Endpoint '{target}' is deprecated in the Mailjet API. Migrate to '{replacement}'.",
                 DeprecationWarning,
-                stacklevel=3,
+                stacklevel=self._external_stacklevel(),
             )
 
     def _resolve_registry_route(
@@ -213,9 +232,7 @@ class Endpoint:
 
         if custom_headers:
             clean_custom = SecurityGuard.sanitize_headers(dict(custom_headers))
-            merged: dict[str, str | None] = dict(base_headers)
-            merged.update(clean_custom)
-            return merged
+            return {**base_headers, **clean_custom}
         return dict(base_headers)
 
     @staticmethod
@@ -248,6 +265,10 @@ class Endpoint:
         first_val = vals[0]
         if isinstance(orig_ref, bool):
             return str(first_val).strip().lower() in {"true", "1", "yes", "t"}
+
+        if isinstance(orig_ref, (int, float)) and isinstance(first_val, bool):
+            msg = "Boolean value is not a valid numeric query parameter."
+            raise TypeError(msg)
 
         converters: dict[type, Any] = {
             int: lambda: int(first_val),
@@ -282,6 +303,10 @@ class Endpoint:
         except (ValueError, TypeError) as e:
             msg = f"stream() Offset filter must be an integer, got: {raw_offset!r}"
             raise ValueError(msg) from e
+
+        if current_offset < 0:
+            msg = f"stream() Offset filter must be a non-negative integer, got: {current_offset}"
+            raise ValueError(msg)
 
         # Clean both 'limit' and 'Limit' from input filters so chunk_size governs the page window
         current_filters.pop("limit", None)
@@ -370,6 +395,49 @@ class Endpoint:
         """
         return self(method="GET", id=id, filters=filters, action_id=action_id, headers=headers, **kwargs)
 
+    @classmethod
+    def _validate_stream_args(cls, method: HttpMethod, chunk_size: int, max_items: int | None) -> None:
+        if method.upper() != "GET":
+            msg = f"stream() is designed for GET requests only, got {method}"
+            raise ValueError(msg)
+
+        if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+            msg = "stream() chunk_size must be a strictly positive integer."
+            raise ValueError(msg)
+
+        if chunk_size > cls.MAX_LIMIT:
+            msg = (
+                f"stream() chunk_size ({chunk_size}) exceeds Mailjet's maximum Limit of {cls.MAX_LIMIT}. "
+                f"Set chunk_size <= {cls.MAX_LIMIT}."
+            )
+            raise ValueError(msg)
+
+        if max_items is not None and (isinstance(max_items, bool) or not isinstance(max_items, int) or max_items < 0):
+            msg = "stream() max_items must be a non-negative integer or None."
+            raise ValueError(msg)
+
+    @staticmethod
+    def _parse_stream_page(response: Any) -> list[dict[str, Any]]:
+        status_code = int(getattr(response, "status_code", 0) or 0)
+        response_body = str(getattr(response, "text", "") or "")[:500]
+        try:
+            body = response.json()
+        except (ValueError, AttributeError) as e:
+            msg = "Malformed JSON body returned during stream() pagination."
+            raise MailjetApiError(msg, status_code=status_code, response_body=response_body) from e
+
+        if not isinstance(body, dict):
+            msg = "Expected JSON object in stream() response."
+            raise MailjetApiError(msg, status_code=status_code, response_body=response_body)
+
+        raw_data = body.get("Data")
+        if raw_data is None:
+            return []
+        if not isinstance(raw_data, list):
+            msg = "Expected 'Data' list in stream() response."
+            raise MailjetApiError(msg, status_code=status_code, response_body=response_body)
+        return raw_data
+
     def stream(
         self,
         id: int | str | None = None,
@@ -377,6 +445,8 @@ class Endpoint:
         action_id: int | str | None = None,
         chunk_size: int = 1000,
         method: HttpMethod = "GET",
+        *,
+        max_items: int | None = None,
         **kwargs: Any,
     ) -> Generator[dict[str, Any], None, None]:
         """Automatically paginates over GET requests yielding resource dictionaries.
@@ -387,58 +457,41 @@ class Endpoint:
             action_id: Sub-action ID.
             chunk_size: Objects returned per loop (Limit). Defaults to 1000 (Mailjet max limit).
             method: The HTTP method to use (must be GET).
+            max_items: Optional upper bound on total yielded records across all pages.
             **kwargs: Additional arguments passed to requests.
 
         Yields:
             dict[str, Any]: Individual resource objects from the paginated API response.
-
-        Raises:
-            ValueError: If method is not GET, chunk_size <= 0, or Offset is invalid.
         """
-        if method.upper() != "GET":
-            msg = f"stream() is designed for GET requests only, got {method}"
-            raise ValueError(msg)
-
-        if chunk_size <= 0:
-            msg = "stream() chunk_size must be a strictly positive integer."
-            raise ValueError(msg)
-
-        if chunk_size > self.MAX_LIMIT:
-            msg = (
-                f"stream() chunk_size ({chunk_size}) exceeds Mailjet's maximum Limit of {self.MAX_LIMIT}. "
-                f"Set chunk_size <= {self.MAX_LIMIT}."
-            )
-            raise ValueError(msg)
-
+        self._validate_stream_args(method, chunk_size, max_items)
         current_filters, current_offset = self._normalize_stream_filters(filters, chunk_size)
 
+        if max_items == 0:
+            return
+
+        yielded = 0
         while True:
+            page_limit = min(chunk_size, max_items - yielded) if max_items is not None else chunk_size
+            current_filters["Limit"] = page_limit
             current_filters["Offset"] = current_offset
             response = self.get(id=id, filters=current_filters.copy(), action_id=action_id, **kwargs)
 
             if hasattr(response, "raise_for_status"):
                 response.raise_for_status()
 
-            try:
-                body = response.json()
-            except (ValueError, AttributeError):
-                break
-
-            if not isinstance(body, dict):
-                break
-
-            data = body.get("Data") or []
-            if not isinstance(data, list):
-                break
-
-            yield from data
+            data = self._parse_stream_page(response)
+            for item in data:
+                yield item
+                yielded += 1
+                if max_items is not None and yielded >= max_items:
+                    return
 
             # REST endpoints report a page-local Total unless countOnly is used.
             # Continue through full pages rather than treating it as a collection size.
-            if not data or len(data) < chunk_size:
+            if not data or len(data) < page_limit:
                 break
 
-            current_offset += chunk_size
+            current_offset += len(data)
 
     def create(
         self,
@@ -521,4 +574,7 @@ class Endpoint:
         Returns:
             requests.Response: The HTTP response representing the deletion confirmation.
         """
+        if id is None or isinstance(id, bool) or (isinstance(id, str) and not id.strip()):
+            msg = "Endpoint.delete() requires a non-empty, non-boolean resource 'id'."
+            raise ValueError(msg)
         return self(method="DELETE", id=id, action_id=action_id, **kwargs)

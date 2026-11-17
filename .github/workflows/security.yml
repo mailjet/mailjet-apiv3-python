@@ -23,10 +23,13 @@ jobs:
           python-version: "3.13"
           cache: 'pip'
       - run: python -m pip install --upgrade pip
-      - run: pip install ruff bandit mypy
+      - run: pip install . ruff bandit mypy types-requests slotscheck
       - run: ruff check .
       - run: bandit -c pyproject.toml -r mailjet_rest
       - run: mypy --strict mailjet_rest
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: "0.0.0"
+      - run: slotscheck -m mailjet_rest
 
   dependency-audit:
     runs-on: ubuntu-latest
@@ -40,7 +43,8 @@ jobs:
       - run: pip install pip-audit
       - run: pip-audit --strict
 
-  osv-scanner:
+  osv-scan:
+    name: osv-scanner
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -55,9 +59,22 @@ jobs:
         # zizmor: ignore[unpinned-uses]
         uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36
         with:
-          scan-args: |
+          scan-args: |-
+            --format=sarif
+            --output=osv-results.sarif
+            --allow-no-lockfiles
             --recursive
             ./
+
+      - name: Upload OSV-Scanner SARIF to GitHub Security
+        if: >-
+          !cancelled() &&
+          hashFiles('osv-results.sarif') != '' &&
+          (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # 4.39.1
+        with:
+          sarif_file: osv-results.sarif
+          category: ".github/workflows/security.yml:osv-scan"
 
   semgrep:
     runs-on: ubuntu-latest

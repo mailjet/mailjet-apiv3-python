@@ -3,15 +3,14 @@ import warnings
 import atheris
 import gc
 
-from mailjet_rest.errors import MailjetAuthError, ValidationError, MailjetApiError
-
 # Silence deprecation warnings during fuzzing to reduce overhead and log noise
 warnings.simplefilter("ignore")
 
 # Instrument all internal modules
-with atheris.instrument_imports(enable_loader_override=False):
+with atheris.instrument_imports(include=["mailjet_rest"]):
     from mailjet_rest.client import Client
     from mailjet_rest.config import Config
+    from mailjet_rest.errors import MailjetApiError, MailjetAuthError, ValidationError
     from mailjet_rest.utils.guardrails import SecurityGuard
 
 execution_counter = 0
@@ -140,7 +139,6 @@ def TestOneInput(data: bytes) -> int:
 
 
 def main() -> None:
-    atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)  # pyright: ignore[reportArgumentType]
     atheris.Fuzz()
 

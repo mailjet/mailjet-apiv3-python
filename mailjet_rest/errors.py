@@ -3,16 +3,16 @@
 
 # --- Root Base Class ---
 class ApiError(Exception):
-    """Base class for all API-related network errors."""
+    """Base class for all Mailjet transport and HTTP API errors."""
 
 
 # --- New Granular Domain Exceptions ---
 class MailjetNetworkError(ApiError):
-    """Raised for transport-level issues (timeouts, TLS violations)."""
+    """Raised for transport-level issues (timeouts, connection failures, TLS violations)."""
 
 
 class MailjetApiError(ApiError):
-    """Raised for 4xx/5xx API responses."""
+    """Raised for unhandled HTTP 4xx/5xx API error responses."""
 
     def __init__(self, message: str, status_code: int = 0, response_body: str = "") -> None:
         """Initialize the API error.
@@ -28,36 +28,36 @@ class MailjetApiError(ApiError):
 
 
 class MailjetAuthError(MailjetApiError):
-    """Raised for 401/403 Authentication/Authorization failures."""
+    """Raised for 401/403 Authentication or Authorization failures."""
 
 
 # --- Legacy Exceptions (The Bridge) ---
-# We keep these as subclasses of the new hierarchy to preserve backward compatibility.
+# Kept as subclasses of the modern hierarchy to preserve backward compatibility.
 
 
 class TimeoutError(MailjetNetworkError):  # ruff: ignore[builtin-variable-shadowing]
-    """Legacy exception: maintained for backward compatibility."""
+    """Legacy exception raised on request timeouts; prefer MailjetNetworkError."""
 
 
 class CriticalApiError(MailjetNetworkError):
-    """Legacy exception: now a NetworkError."""
+    """Legacy exception raised on connection failures; prefer MailjetNetworkError."""
 
 
 class AuthorizationError(MailjetAuthError):
-    """Deprecated: The SDK natively returns the requests.Response object for 401."""
+    """Deprecated alias for HTTP 401 failures; client raises MailjetAuthError."""
 
 
 class ActionDeniedError(MailjetAuthError):
-    """Deprecated: The SDK natively returns the requests.Response object for 403."""
+    """Deprecated alias for HTTP 403 failures; client raises MailjetAuthError."""
 
 
 class DoesNotExistError(MailjetApiError):
-    """Deprecated: The SDK natively returns the requests.Response object for 404."""
+    """Raised on HTTP 404 responses (legacy alias extending MailjetApiError)."""
 
 
 class ValidationError(MailjetApiError):
-    """Deprecated: The SDK natively returns the requests.Response object for 400."""
+    """Raised on HTTP 400 and payload validation errors (legacy alias extending MailjetApiError)."""
 
 
 class ApiRateLimitError(MailjetApiError):
-    """Deprecated: The SDK natively returns the requests.Response object for 429."""
+    """Raised on HTTP 429 rate-limit responses (legacy alias extending MailjetApiError)."""

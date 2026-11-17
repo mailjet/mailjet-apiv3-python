@@ -19,7 +19,7 @@ include = ["mailjet_rest", "mailjet_rest.*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-mailjet_rest = ["py.typed"]
+mailjet_rest = ["py.typed", "*.pyi"]
 
 [project]
 name = "mailjet-rest"
@@ -91,6 +91,7 @@ tests = [
     "coverage>=4.5.4",
     "hypothesis",
     "pyfakefs",
+    "pytest-benchmark>=5.3.0",
     "pytest-cov",
     "pytest-xdist",
     "pytest>=9.0.3",
@@ -116,6 +117,10 @@ spelling = ["typos"]
 other = [
     "jsonschema",
     "types-jsonschema",
+]
+
+speedups = [
+    "orjson>=3.10.0",
 ]
 
 [tool.ruff]
@@ -148,7 +153,7 @@ exclude = [
     "site-packages",
     "venv",
 ]
-extend-exclude = ["tests", "test"]
+extend-exclude = ["mailjet_rest/_version.py", "tests", "test"]
 
 line-length = 120
 
@@ -204,7 +209,10 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 
 # Ignore E402 (import violations) in all '__init__.py' files, and in `path/to/file.py`.
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["module-import-not-at-top-of-file"]     # E402
+"__init__.py" = [
+    "module-import-not-at-top-of-file",     # E402
+    "non-empty-init-module",                # RUF067 (PEP 562 lazy exports)
+]
 #"path/to/file.py" = ["E402"]
 
 [tool.ruff.lint.extend-per-file-ignores]
@@ -236,6 +244,20 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "C90",    # McCabe complexity
     "T20",    # Print statements in tests
     "TC",     # Type checking block constraints
+]
+"*.pyi" = [
+    "D",      # Docstrings not required in stub files
+    "DOC",
+    "builtin-import-shadowing",   # Re-exported TimeoutError intentionally shadows builtin
+    "invalid-function-name",      # Generated ROUTE_MAP properties preserve camelCase route names
+    "invalid-argument-name",
+    "too-many-public-methods",
+    "unnecessary-default-type-args",  # Preserve 3-arg Generator for Python 3.10 compatibility
+    "SLF",
+]
+"scripts/*" = [
+    "implicit-namespace-package", # Utility scripts do not need __init__.py
+    "print",                      # CLI status prints in scripts/
 ]
 
 [tool.ruff.lint.pylint]
@@ -290,7 +312,9 @@ strict = true
 # https://stackoverflow.com/questions/55944201/python-type-hinting-how-do-i-enforce-that-project-wide
 python_version = "3.10"
 mypy_path = "type_stubs"
+untyped_calls_exclude = ["requests", "urllib3"]
 namespace_packages = true
+explicit_package_bases = true
 # This flag enhances the user feedback for error messages
 pretty = true
 # 3rd party import
@@ -350,9 +374,7 @@ disable_error_code = ["untyped-decorator", "unreachable", "no-untyped-def", "no-
 [tool.bandit]
 # usage: bandit -c pyproject.toml -r .
 targets = ["mailjet_rest"]
-exclude_dirs = ["tests", "tests.py"]
-tests = ["B201", "B301"]
-skips = ["B101", "B601"]
+exclude_dirs = ["tests", "samples", "docs"]
 severity = "low"
 
 [tool.bandit.any_other_function_with_shell_equals_true]
@@ -409,3 +431,21 @@ markers = [
     "network: marks tests as integration tests that require live network access",
     "property_heavy: Heavy Hypothesis property-based tests skipped on CI",
 ]
+
+[tool.mutmut]
+source_paths = ["mailjet_rest"]
+only_mutate = [
+    "mailjet_rest/builders.py",
+    "mailjet_rest/endpoint.py",
+    "mailjet_rest/utils/version.py",
+    "mailjet_rest/utils/transport_security.py",
+]
+do_not_mutate = [
+    "mailjet_rest/_version.py",
+    "mailjet_rest/__init__.py",
+    "mailjet_rest/routes.py",
+    "mailjet_rest/types.py",
+]
+also_copy = ["scripts/"]
+pytest_add_cli_args = ["-o", "addopts=", "-p", "no:benchmark", "-p", "no:xdist", "--ignore=tests/unit/test_stubs.py"]
+pytest_add_cli_args_test_selection = ["tests/unit", "tests/regression"]

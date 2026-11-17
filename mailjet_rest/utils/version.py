@@ -13,7 +13,35 @@ Functions:
 
 from __future__ import annotations
 
+import re
+from typing import Final
+
 from mailjet_rest._version import __version__ as package_version
+
+
+_LEADING_DIGITS_RE: Final[re.Pattern[str]] = re.compile(r"^(\d+)")
+
+
+def parse_semver_triplet(raw_version: str) -> tuple[int, int, int]:
+    """Extract numeric (major, minor, patch) without merging pre-release digits.
+
+    Returns:
+        tuple[int, int, int]: The parsed numeric semantic version triplet.
+
+    Raises:
+        ValueError: If the version string does not start with an X.Y.Z triplet.
+    """
+    parts = raw_version.strip().split(".")
+    if len(parts) < 3 or not parts[0].isdigit() or not parts[1].isdigit():
+        msg = f"Expected X.Y.Z version string, got {raw_version!r}"
+        raise ValueError(msg)
+
+    match = _LEADING_DIGITS_RE.match(parts[2])
+    if match is None:
+        msg = f"Invalid patch component in {raw_version!r}"
+        raise ValueError(msg)
+
+    return int(parts[0]), int(parts[1]), int(match.group(1))
 
 
 def clean_version(version_str: str) -> tuple[int, ...]:
@@ -26,15 +54,9 @@ def clean_version(version_str: str) -> tuple[int, ...]:
     tuple: A tuple representing the version of the package.
     """
     try:
-        parts = version_str.split(".")
-        major = int(parts[0])
-        minor = int(parts[1])
-        # Strip any trailing prerelease tags (e.g., "1rc1" -> "1")
-        patch = int("".join(c for c in parts[2] if c.isdigit()))
-    except (IndexError, ValueError):
+        return parse_semver_triplet(version_str)
+    except (ValueError, TypeError, AttributeError):
         return 0, 0, 0
-    else:
-        return major, minor, patch
 
 
 # VERSION is a tuple of integers (1, 3, 2).
@@ -62,4 +84,4 @@ def get_version(version: tuple[int, ...] | None = None) -> str:
     if len(version) != 3:
         msg = "The tuple 'version' must contain 3 items"
         raise ValueError(msg)
-    return "{}.{}.{}".format(*(x for x in version))
+    return f"{version[0]}.{version[1]}.{version[2]}"

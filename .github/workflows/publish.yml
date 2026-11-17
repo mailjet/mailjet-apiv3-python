@@ -11,13 +11,14 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Build and Publish to PyPI
+  build:
+    name: Build & Verify Distributions
     runs-on: ubuntu-latest
-
     permissions:
-      id-token: write  # Required for trusted publishing
       contents: read
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      is_stable: ${{ steps.get_version.outputs.is_stable }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -35,65 +36,75 @@ jobs:
 
       - name: Extract version
         id: get_version
-        # Use an intermediate environment variable to avoid shell injection
         env:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          # Get clean version from the tag or release
           if [[ "$EVENT_NAME" == "release" ]]; then
-            # For releases, get the version from the release tag
             TAG_NAME="$RELEASE_TAG"
           else
-            # For tags, get version from the tag
             TAG_NAME="$REF_NAME"
           fi
 
-          # Remove 'v' prefix
-          VERSION=$(echo $TAG_NAME | sed 's/^v//')
+          VERSION="${TAG_NAME#v}"
 
-          # Check if this is a stable version
-          if [[ $TAG_NAME =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "IS_STABLE=true" >> $GITHUB_ENV
+          if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            IS_STABLE="true"
           else
-            echo "IS_STABLE=false" >> $GITHUB_ENV
+            IS_STABLE="false"
           fi
 
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_stable=$IS_STABLE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build package
-        run: |
-          # Force clean version
-          export SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION
-          python -m build
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
+        run: python -m build
 
       - name: Verify package (check dist)
         run: |
-          ls -alh
+          ls -alh dist
           twine check dist/*
 
       - name: Verify wheel contents
         run: |
           unzip -l dist/*.whl
+          unzip -l dist/*.whl | grep -q "mailjet_rest/py.typed"
+          unzip -l dist/*.whl | grep -q "mailjet_rest/client.pyi"
+          unzip -l dist/*.whl | grep -q "mailjet_rest/endpoint.pyi"
 
-      # Always publish to TestPyPI for all tags and releases
-      # TODO: Enable it later.
-#      - name: Publish to TestPyPI
-#        uses: pypa/gh-action-pypi-publish@release/v1
-#        with:
-#          repository-url: https://test.pypi.org/legacy/
-#          password: ${{ secrets.TEST_PYPI_API_TOKEN }}
-#          skip-existing: true
-#          verbose: true
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-artifacts
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 5
 
-      # Only publish to PyPI for stable GitHub releases (no RC/alpha/beta)
-      - name: Publish to PyPI
-        # TODO: Enable '&& env.IS_STABLE == 'true' only publish to PyPI for stable GitHub releases (no RC/alpha/beta)
-        if: github.event_name == 'release' #&& env.IS_STABLE == 'true'
+  publish:
+    name: Publish to PyPI
+    needs: build
+    if: github.event_name == 'release' && !github.event.release.prerelease && needs.build.outputs.is_stable == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mailjet-rest
+    permissions:
+      id-token: write  # Required for OIDC trusted publishing
+      attestations: write  # Required for PEP 740 attestations
+      contents: read
+
+    steps:
+      - name: Download verified distribution artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist-artifacts
+          path: dist
+
+      - name: Publish to PyPI via OIDC Trusted Publishing
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # release/v1
         with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}  # zizmor: ignore[use-trusted-publishing]
+          attestations: true
           verbose: true

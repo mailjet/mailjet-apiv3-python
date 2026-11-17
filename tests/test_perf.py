@@ -1,7 +1,8 @@
 """Performance and throughput benchmark tests for the Mailjet SDK."""
 
+import importlib.util
 import tracemalloc
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -10,6 +11,29 @@ import requests
 import responses
 
 from mailjet_rest.client import Client
+
+
+if importlib.util.find_spec("pytest_benchmark") is None:
+
+    class _FallbackBenchmark:
+        """Minimal no-op benchmark runner when pytest-benchmark is not installed."""
+
+        def __call__(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+            return func(*args, **kwargs)
+
+        def pedantic(
+            self,
+            target: Callable[..., Any],
+            args: tuple[Any, ...] = (),
+            kwargs: dict[str, Any] | None = None,
+            **_options: Any,
+        ) -> Any:
+            return target(*(args or ()), **(kwargs or {}))
+
+    @pytest.fixture
+    def benchmark() -> _FallbackBenchmark:
+        """Provide a fallback benchmark fixture if pytest-benchmark is unavailable."""
+        return _FallbackBenchmark()
 
 # Graceful import fallback for Differential Benchmarking against older tags (v1.7.0)
 try:

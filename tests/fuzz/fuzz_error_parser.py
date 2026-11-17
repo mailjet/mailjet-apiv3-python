@@ -11,7 +11,7 @@ import atheris
 from requests.exceptions import RequestException
 
 
-with atheris.instrument_imports(enable_loader_override=False):
+with atheris.instrument_imports(include=["mailjet_rest"]):
     from mailjet_rest.client import Client
     from mailjet_rest.errors import ApiError
 
@@ -55,6 +55,5 @@ def TestOneInput(data: bytes) -> None:
 
 
 if __name__ == "__main__":
-    atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()

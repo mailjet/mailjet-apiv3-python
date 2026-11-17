@@ -271,7 +271,8 @@ def test_dynamic_versions_standard_rest(
 def test_dynamic_versions_content_api_v1_routing(client_offline: Client) -> None:
     """Verify Content API (v1) specific routes construct correctly."""
     client_offline.config.version = "v1"
-    url = client_offline.templates_contents._build_url(id_val=123)
+    with pytest.warns(DeprecationWarning, match="templates_contents"):
+        url = client_offline.templates_contents._build_url(id_val=123)
     assert url == "https://api.mailjet.com/v1/REST/templates/123/contents"
 
 
@@ -654,7 +655,10 @@ def test_registry_uri_interpolation_path_traversal_cwe22(client_offline: Client)
     malicious_id = "../delete"
     endpoint = client_offline.template_update
     # Expect the ValueError we now actively throw against CWE-22 tokens
-    with pytest.raises(ValueError, match="Path traversal attempt"):
+    with (
+        pytest.warns(DeprecationWarning, match="template_update"),
+        pytest.raises(ValueError, match="Path traversal attempt"),
+    ):
         endpoint._build_url(id_val=malicious_id)
 
 

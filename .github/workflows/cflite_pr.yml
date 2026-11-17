@@ -3,10 +3,16 @@ on:
   pull_request:
     paths:
       - '**'
-permissions: read-all
+
+permissions:
+  contents: read
+
 jobs:
   PR:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     concurrency:
       group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
       cancel-in-progress: true
@@ -32,6 +38,7 @@ jobs:
       id: run
       uses: google/clusterfuzzlite/actions/run_fuzzers@52ecc61cb587ee99c26825a112a21abf19c7448c # v1
       with:
+        language: python
         github-token: ${{ secrets.GITHUB_TOKEN }}
         fuzz-seconds: 1200
         mode: 'code-change'

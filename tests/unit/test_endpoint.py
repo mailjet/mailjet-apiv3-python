@@ -227,12 +227,12 @@ def test_endpoint_call_deprecated_encoding_scalar_payload(monkeypatch: pytest.Mo
     client = Client(auth=("key", "secret"))
     endpoint = client.contact
 
-    def mock_api_call(*args: object, **kwargs: object) -> requests.Response:
+    def mock_api_call(self: object, *args: object, **kwargs: object) -> requests.Response:
         resp = requests.Response()
         resp.status_code = 200
         return resp
 
-    monkeypatch.setattr(client, "api_call", mock_api_call)
+    monkeypatch.setattr(Client, "api_call", mock_api_call)
 
     with pytest.warns(DeprecationWarning, match="'ensure_ascii' and 'data_encoding' are deprecated"):
         # Passing string data instead of dict/list tests the branch fallback

@@ -5,6 +5,7 @@ Powered by Hypothesis.
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+import warnings
 
 from hypothesis import given, settings, strategies as st
 
@@ -115,7 +116,9 @@ def test_property_html_size_limits(payload: str) -> None:
     builder.set_content(html=payload)
 
     try:
-        builder.build()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            builder.build()
         assert len(payload.encode("utf-8", errors="ignore")) <= 5 * 1024 * 1024
     except ValueError as e:
         if "exceeds 5MB" in str(e) or "exceeds maximum safe length" in str(e):
