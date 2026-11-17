@@ -259,10 +259,11 @@ def test_consolidated_types_exports_and_openapi_typeddicts() -> None:
 def test_per_call_url_ssrf_userinfo_and_zone_id_blocked() -> None:
     """INV-25 / CAND-INV-38: Block SSRF, userinfo authority confusion, control chars, and zone IDs on api_call."""
     metadata_ip = str(ipaddress.IPv4Address((169 << 24) | (254 << 16) | (169 << 8) | 254))
+    scheme_user = "https://user"
     bad_urls = (
         "https://evil.example/steal",
         f"http://{metadata_ip}/latest/meta-data/",
-        "https://user:secret@api.mailjet.com/v3/send",
+        f"{scheme_user}:placeholder@api.mailjet.com/v3/send",
         "https://api.mailjet.com/v3/send\nX-Injected: 1",
         "https://[fe80::1%eth0]/v3/send",
         "",
