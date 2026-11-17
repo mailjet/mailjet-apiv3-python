@@ -27,12 +27,13 @@ if TYPE_CHECKING:
             self,
             method: HttpMethod,
             url: str,
-            filters: dict[str, Any] | None = ...,
-            data: PayloadType = ...,
-            headers: Mapping[str, str | None] | None = ...,
-            timeout: TimeoutType = ...,
+            filters: dict[str, Any] | None = None,
+            data: PayloadType = None,
+            headers: Mapping[str, str | None] | None = None,
+            timeout: TimeoutType = None,
             **kwargs: Any,
-        ) -> requests.Response: ...
+        ) -> requests.Response:
+            raise NotImplementedError
 
     class _AsyncClientProtocol(Protocol):
         config: Any
@@ -41,12 +42,13 @@ if TYPE_CHECKING:
             self,
             method: HttpMethod,
             url: str,
-            filters: dict[str, Any] | None = ...,
-            data: PayloadType = ...,
-            headers: Mapping[str, str | None] | None = ...,
-            timeout: TimeoutType = ...,
+            filters: dict[str, Any] | None = None,
+            data: PayloadType = None,
+            headers: Mapping[str, str | None] | None = None,
+            timeout: TimeoutType = None,
             **kwargs: Any,
-        ) -> httpx2.Response: ...
+        ) -> httpx2.Response:
+            raise NotImplementedError
 
 
 __all__ = ["AsyncEndpoint", "BaseEndpoint", "Endpoint"]
