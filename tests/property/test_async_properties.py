@@ -6,6 +6,7 @@ Powered by Hypothesis.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import warnings
 from typing import Any
 from unittest.mock import AsyncMock
@@ -38,7 +39,7 @@ def test_property_async_client_auth_and_lifecycle(auth_input: Any) -> None:
     async def _run() -> None:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            try:
+            with suppress(ValueError, TypeError):
                 async with AsyncClient(auth=auth_input, version="v3") as aclient:
                     assert "AsyncClient" in repr(aclient)
                     assert "Mailjet AsyncClient" in str(aclient)
@@ -48,8 +49,6 @@ def test_property_async_client_auth_and_lifecycle(auth_input: Any) -> None:
                     elif isinstance(auth_input, str):
                         assert aclient.session.headers.get("Authorization") == f"Bearer {auth_input.strip()}"
                 await aclient.close()
-            except (ValueError, TypeError):
-                pass
 
     asyncio.run(_run())
 

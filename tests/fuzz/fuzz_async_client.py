@@ -8,7 +8,6 @@ tuple timeout conversion, and httpx2 exception mapping using a persistent event 
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import copy
 import gc
 import logging
@@ -18,15 +17,17 @@ from typing import Any
 
 import atheris
 
-with suppress(ImportError):
+try:
     import httpx2
+except ImportError:
+    httpx2 = None  # type: ignore[assignment]
 
 
 warnings.simplefilter("ignore")
 logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.client import AsyncClient, _httpx2
+    from mailjet_rest.client import AsyncClient
     from mailjet_rest.config import Config
     from mailjet_rest.errors import (
         ApiError,
@@ -45,12 +46,12 @@ _loop = asyncio.new_event_loop()
 _exec_count = 0
 
 _base_async_client: AsyncClient | None = (
-    AsyncClient(auth=("fuzz_pub_key", "fuzz_priv_key"), max_retries=0) if _httpx2 is not None else None
+    AsyncClient(auth=("fuzz_pub_key", "fuzz_priv_key"), max_retries=0) if httpx2 is not None else None
 )
 
 
 async def _fuzz_async_client_iteration(fdp: atheris.FuzzedDataProvider) -> None:
-    httpx2_mod = _httpx2
+    httpx2_mod = httpx2
     base_client = _base_async_client
     if httpx2_mod is None or base_client is None:
         return

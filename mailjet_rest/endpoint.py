@@ -15,11 +15,38 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator, Mapping
+    from typing import Protocol
 
     import httpx2
     import requests
 
-    from mailjet_rest.client import AsyncClient, Client
+    class _SyncClientProtocol(Protocol):
+        config: Any
+
+        def api_call(
+            self,
+            method: HttpMethod,
+            url: str,
+            filters: dict[str, Any] | None = ...,
+            data: PayloadType = ...,
+            headers: Mapping[str, str | None] | None = ...,
+            timeout: TimeoutType = ...,
+            **kwargs: Any,
+        ) -> requests.Response: ...
+
+    class _AsyncClientProtocol(Protocol):
+        config: Any
+
+        async def api_call(
+            self,
+            method: HttpMethod,
+            url: str,
+            filters: dict[str, Any] | None = ...,
+            data: PayloadType = ...,
+            headers: Mapping[str, str | None] | None = ...,
+            timeout: TimeoutType = ...,
+            **kwargs: Any,
+        ) -> httpx2.Response: ...
 
 
 __all__ = ["AsyncEndpoint", "BaseEndpoint", "Endpoint"]
@@ -422,7 +449,7 @@ class Endpoint(BaseEndpoint):
     """Represents a specific Mailjet REST resource path for synchronous requests."""
 
     __slots__ = ()
-    client: Client
+    client: _SyncClientProtocol
 
     def __call__(
         self,
@@ -662,7 +689,7 @@ class AsyncEndpoint(BaseEndpoint):
     """Represents a specific Mailjet REST resource path for asynchronous requests."""
 
     __slots__ = ()
-    client: AsyncClient
+    client: _AsyncClientProtocol
 
     async def __call__(
         self,

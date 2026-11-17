@@ -8,7 +8,6 @@ and malformed JSON bodies during async mutations and stream() pagination.
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import gc
 import json
 import logging
@@ -18,25 +17,27 @@ from typing import Any
 
 import atheris
 
-with suppress(ImportError):
+try:
     import httpx2
+except ImportError:
+    httpx2 = None  # type: ignore[assignment]
 
 
 warnings.simplefilter("ignore")
 logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.client import AsyncClient, _httpx2
+    from mailjet_rest.client import AsyncClient
     from mailjet_rest.errors import ApiError, MailjetApiError
 
 
 _loop = asyncio.new_event_loop()
-_aclient = AsyncClient(auth=("test", "test"), version="v3", max_retries=0) if _httpx2 is not None else None
+_aclient = AsyncClient(auth=("test", "test"), version="v3", max_retries=0) if httpx2 is not None else None
 _exec_count = 0
 
 
 async def _run_evil_async_iteration(fdp: atheris.FuzzedDataProvider) -> None:
-    httpx2_mod = _httpx2
+    httpx2_mod = httpx2
     aclient = _aclient
     if httpx2_mod is None or aclient is None:
         return
@@ -81,14 +82,14 @@ def TestOneInput(data: bytes) -> None:
     if _exec_count % 2000 == 0:
         gc.collect()
 
-    if len(data) < 20 or _httpx2 is None:
+    if len(data) < 20 or httpx2 is None:
         return
 
     fdp = atheris.FuzzedDataProvider(data)
     try:
         _loop.run_until_complete(_run_evil_async_iteration(fdp))
-    except (ApiError, MailjetApiError, _httpx2.HTTPError, json.JSONDecodeError, ValueError, TypeError):
-        pass
+    except (ApiError, MailjetApiError, httpx2.HTTPError, json.JSONDecodeError, ValueError, TypeError):
+        return  # Expected transport, JSON, and validation rejections from fuzzed upstream responses.
     except Exception as e:
         msg = f"CRITICAL: AsyncClient crashed handling Evil Server response: {type(e).__name__} - {e}"
         raise RuntimeError(msg) from e

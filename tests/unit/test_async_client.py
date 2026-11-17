@@ -20,7 +20,6 @@ from unittest.mock import AsyncMock
 import pytest
 import requests
 
-import mailjet_rest.client as client_mod
 from mailjet_rest.client import AsyncClient, Client, Config, _httpx2, parse_response
 from mailjet_rest.endpoint import AsyncEndpoint
 from mailjet_rest.errors import (
@@ -43,7 +42,7 @@ from mailjet_rest.utils.guardrails import SecretAuth
 
 def test_async_client_import_error_when_httpx2_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify AsyncClient raises ImportError when httpx2 is unavailable."""
-    monkeypatch.setattr(client_mod, "_httpx2", None)
+    monkeypatch.setattr("mailjet_rest.client._httpx2", None)
     with pytest.raises(ImportError, match="AsyncClient requires 'httpx2>=2.0.0'"):
         AsyncClient(auth=("pub", "priv"))
 
@@ -137,10 +136,12 @@ def test_async_client_lifecycle_and_payload_execution(monkeypatch: pytest.Monkey
 
     async def _run() -> None:
         async with AsyncClient(auth=("pub_key", "priv_key"), dry_run=True) as aclient:
-            assert isinstance(aclient.contact, AsyncEndpoint)
-            assert aclient.contact is aclient.contact
+            first_contact = aclient.contact
+            second_contact = aclient.contact
+            assert isinstance(first_contact, AsyncEndpoint)
+            assert first_contact is second_contact
             assert not hasattr(aclient, "__dict__")
-            assert not hasattr(aclient.contact, "__dict__")
+            assert not hasattr(first_contact, "__dict__")
 
             resp = await aclient.contact.create(data={"Name": "AsyncUser"})
             assert resp.status_code == 200
@@ -461,12 +462,16 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
         # 2. Exception purge on exit and clean context manager re-entry
         reusable = AsyncClient(auth=("k", "s"))
         inner_sess = reusable.session
-        with pytest.raises(RuntimeError, match="boom"):
+        caught_async = False
+        try:
             async with reusable as entered:
                 assert entered is reusable
                 assert entered.session is inner_sess
                 raise RuntimeError("boom")
+        except RuntimeError as exc:
+            caught_async = str(exc) == "boom"
 
+        assert caught_async
         assert inner_sess.is_closed
         assert inner_sess.auth is None
         assert "Authorization" not in inner_sess.headers
@@ -481,9 +486,14 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
 
     # Sync Client re-entry check
     sync_client = Client(auth=("k", "s"))
-    with pytest.raises(RuntimeError, match="sync boom"), sync_client as s1:
-        _ = s1.session
-        raise RuntimeError("sync boom")
+    caught_sync = False
+    try:
+        with sync_client as s1:
+            _ = s1.session
+            raise RuntimeError("sync boom")
+    except RuntimeError as exc:
+        caught_sync = str(exc) == "sync boom"
+    assert caught_sync
     assert sync_client._session is None  # ruff: ignore[private-member-access]
     with sync_client as s2:
         assert s2.session is not None

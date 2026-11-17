@@ -173,6 +173,18 @@ def test_all_fuzz_targets_scope_instrumentation_to_mailjet_rest() -> None:
             assert not unscoped, f"{fuzz_file} imports mailjet_rest outside scoped instrument_imports block"
 
 
+def _import_async_fuzz_target(mod_name: str) -> Any:
+    """Import an allowlisted async fuzz target using literal module strings."""
+    if mod_name == "tests.fuzz.fuzz_async_client":
+        return importlib.import_module("tests.fuzz.fuzz_async_client")
+    if mod_name == "tests.fuzz.fuzz_async_endpoint":
+        return importlib.import_module("tests.fuzz.fuzz_async_endpoint")
+    if mod_name == "tests.fuzz.fuzz_async_evil_server":
+        return importlib.import_module("tests.fuzz.fuzz_async_evil_server")
+    msg = f"Unexpected async fuzz module: {mod_name!r}"
+    raise ImportError(msg)
+
+
 def test_async_fuzz_targets_smoke() -> None:
     """Verify the three async Atheris fuzz targets import and process sample inputs cleanly."""
     _, injected = _ensure_atheris_stub()
@@ -185,7 +197,7 @@ def test_async_fuzz_targets_smoke() -> None:
     try:
         for mod_name in async_modules:
             sys.modules.pop(mod_name, None)
-            fuzz_mod = importlib.import_module(mod_name)
+            fuzz_mod = _import_async_fuzz_target(mod_name)
             loaded_mods.append(fuzz_mod)
 
             fuzz_mod.TestOneInput(b"short")

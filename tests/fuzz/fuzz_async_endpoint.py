@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import logging
 import sys
 import warnings
@@ -13,15 +12,17 @@ from unittest.mock import MagicMock
 
 import atheris
 
-with suppress(ImportError):
+try:
     import httpx2
+except ImportError:
+    httpx2 = None  # type: ignore[assignment]
 
 
 warnings.simplefilter("ignore")
 logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.client import AsyncClient, _httpx2
+    from mailjet_rest.client import AsyncClient
     from mailjet_rest.endpoint import AsyncEndpoint
     from mailjet_rest.errors import ApiError, MailjetApiError, ValidationError
     from mailjet_rest.routes import ROUTE_MAP
@@ -41,12 +42,12 @@ async def _fuzz_async_endpoint(fdp: atheris.FuzzedDataProvider) -> None:
 
     async def mock_api_call(*_args: Any, **_kwargs: Any) -> Any:
         nonlocal pages_remaining
-        if _httpx2 is not None:
-            req = _httpx2.Request("GET", "https://api.mailjet.com/v3/REST/contact")
+        if httpx2 is not None:
+            req = httpx2.Request("GET", "https://api.mailjet.com/v3/REST/contact")
             if pages_remaining > 0:
                 pages_remaining -= 1
-                return _httpx2.Response(200, json={"Data": [{"ID": pages_remaining}]}, request=req)
-            return _httpx2.Response(200, json={"Data": []}, request=req)
+                return httpx2.Response(200, json={"Data": [{"ID": pages_remaining}]}, request=req)
+            return httpx2.Response(200, json={"Data": []}, request=req)
 
         m = MagicMock(status_code=200)
         if pages_remaining > 0:
@@ -142,7 +143,7 @@ def TestOneInput(data: bytes) -> None:
     try:
         _loop.run_until_complete(_fuzz_async_endpoint(fdp))
     except (ValueError, TypeError, AttributeError, KeyError, ValidationError, MailjetApiError, ApiError):
-        pass
+        return  # Expected SDK validation and routing rejections on malformed fuzz input.
     except Exception as e:
         msg = f"UNHANDLED CRASH in AsyncEndpoint fuzzer: {type(e).__name__} - {e}"
         raise RuntimeError(msg) from e

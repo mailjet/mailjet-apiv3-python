@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+from contextlib import suppress
 import tracemalloc
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
@@ -247,14 +248,12 @@ class TestFuzzerOOMAndMemoryStability:
 
         raw_segment = oom_bytes.decode("utf-8", errors="replace")
         endpoint = Endpoint(name="contact", client=stub_client)
-        try:
+        with suppress(ValueError, TypeError, ValidationError, ApiError):
             endpoint.get(
                 id=raw_segment[:15],
                 action_id=raw_segment[15:25],
                 filters={"sort": raw_segment[25:40]},
             )
-        except (ValueError, TypeError, ValidationError, ApiError):
-            pass
 
         # Warm up one iteration outside tracemalloc to isolate steady-state allocation
         warm_ep = Endpoint(name="contactslist_csvdata", client=stub_client)
@@ -269,13 +268,11 @@ class TestFuzzerOOMAndMemoryStability:
 
             for i in range(1000):
                 ep = Endpoint(name="contactslist_csvdata", client=stub_client)
-                try:
+                with suppress(ValueError, TypeError, ValidationError, ApiError):
                     ep.get(id=i, filters={"limit": 10, "offset": "0"})
                     for idx, _ in enumerate(ep.stream(id=i, chunk_size=1)):
                         if idx > 1:
                             break
-                except (ValueError, TypeError, ValidationError, ApiError):
-                    pass
 
             snapshot_after = tracemalloc.take_snapshot()
             stats = snapshot_after.compare_to(snapshot_before, "lineno")
