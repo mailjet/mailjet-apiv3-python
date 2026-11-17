@@ -23,4 +23,8 @@ ASAN_OPTIONS=\${ASAN_OPTIONS:-}:symbolize=1:external_symbolizer_path=\$this_dir/
 EOF
 
   chmod +x "${OUT}/${fuzzer_basename}"
+
+  if [ -f "${SRC}/tests/fuzz/fuzzer.dict" ]; then
+    cp "${SRC}/tests/fuzz/fuzzer.dict" "${OUT}/${fuzzer_basename}.dict"
+  fi
 done < <(find "${SRC}" \( -name 'fuzz_*.py' -o -name '*_fuzzer.py' \) -print0)

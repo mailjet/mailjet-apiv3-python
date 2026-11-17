@@ -216,3 +216,58 @@ def test_async_fuzz_targets_smoke() -> None:
             sys.modules.pop(mod_name, None)
         if injected:
             sys.modules.pop("atheris", None)
+
+
+def test_fuzzer_dict_format_and_build_sh_wiring() -> None:
+    """Every entry in tests/fuzz/fuzzer.dict is sorted, pure-ASCII, valid 1..128 bytes, and wired into build.sh."""
+    import scripts.harvest_fuzzer_dict as harvester  # ruff: ignore[import-outside-top-level]
+
+    dict_path = Path("tests/fuzz/fuzzer.dict")
+    lines = dict_path.read_text(encoding="utf-8").splitlines()
+    assert lines == sorted(lines), "tests/fuzz/fuzzer.dict must remain lexicographically sorted"
+    assert len(lines) == len(set(lines)), "tests/fuzz/fuzzer.dict must not contain duplicate lines"
+
+    for idx, line in enumerate(lines, start=1):
+        assert line.isascii(), f"Line {idx} contains non-ASCII characters: {line!r}"
+        decoded = harvester.parse_dict_line(line)
+        assert decoded is not None, f"Line {idx} is not a valid quoted dict entry: {line!r}"
+        assert 1 <= len(decoded) <= 128, f"Line {idx} exceeds 1..128 byte bound: len={len(decoded)}"
+
+    build_sh = Path(".clusterfuzzlite/build.sh").read_text(encoding="utf-8")
+    assert "tests/fuzz/fuzzer.dict" in build_sh
+    assert "${OUT}/${fuzzer_basename}.dict" in build_sh
+
+
+def test_harvest_fuzzer_dict_octal_to_hex_and_non_destructive_merge(tmp_path: Path) -> None:
+    """Harvester decodes libFuzzer octal escapes, respects max length, shields secrets, and preserves existing entries."""
+    from collections import Counter  # ruff: ignore[import-outside-top-level]
+
+    import scripts.harvest_fuzzer_dict as harvester  # ruff: ignore[import-outside-top-level]
+
+    sample_log = "\n".join(
+        [
+            "2026-11-17T11:00:12.5918422Z ###### Recommended dictionary. ######",
+            '2026-11-17T11:00:12.5918636Z "__parameters__" # Uses: 1276',
+            '2026-11-17T11:00:12.5918841Z "\\011\\000\\000\\000\\000\\000\\000\\000" # Uses: 1064',
+            '2026-11-17T11:00:12.5919061Z "\\377\\377\\377\\377\\377\\377\\377\\374" # Uses: 933',
+            '2026-11-17T11:00:12.5919245Z "https://u:p@api.mailjet.com/v3" # Uses: 50',
+            f'2026-11-17T11:00:12.5919400Z "{"A" * 130}" # Uses: 10',
+            "2026-11-17T11:00:12.5919895Z ###### End of recommended dictionary. ######",
+        ]
+    )
+    extracted = harvester.extract_recommended_from_text(sample_log)
+    assert extracted[b"__parameters__"] == 1276
+    assert extracted[b"\x09\x00\x00\x00\x00\x00\x00\x00"] == 1064
+    assert extracted[b"\xff\xff\xff\xff\xff\xff\xff\xfc"] == 933
+    assert b"A" * 130 not in extracted
+
+    temp_dict = tmp_path / "fuzzer.dict"
+    temp_dict.write_text('"existing"\n', encoding="utf-8")
+    _, added, merged = harvester.merge_dictionary(temp_dict, Counter(extracted), write=True)
+    assert added == 4
+    assert '"existing"' in merged
+    assert '"__parameters__"' in merged
+    assert '"\\x09\\x00\\x00\\x00\\x00\\x00\\x00\\x00"' in merged
+    assert '"\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfc"' in merged
+    assert any(line.startswith('"\\x68\\x74\\x74\\x70\\x73\\x3a') for line in merged)
+    assert harvester.main(["--dict-path", str(temp_dict), "--sync-routes", "--dry-run"]) == 0
