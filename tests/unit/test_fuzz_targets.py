@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import importlib
+from pathlib import Path
 import sys
 import types
 import warnings
@@ -86,3 +88,75 @@ def test_fuzz_guardrails_dispatches_all_eight_targets() -> None:
         sys.modules.pop("tests.fuzz.fuzz_guardrails", None)
         if injected:
             sys.modules.pop("atheris", None)
+
+
+def _is_atheris_call(node: ast.AST, attr: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "atheris"
+        and node.func.attr == attr
+    )
+
+
+def _is_scoped_instrument_with(node: ast.stmt) -> bool:
+    if not isinstance(node, ast.With):
+        return False
+    for item in node.items:
+        call = item.context_expr
+        if not _is_atheris_call(call, "instrument_imports"):
+            continue
+        assert isinstance(call, ast.Call)
+        for kw in call.keywords:
+            if (
+                kw.arg == "include"
+                and isinstance(kw.value, ast.List)
+                and any(isinstance(elt, ast.Constant) and elt.value == "mailjet_rest" for elt in kw.value.elts)
+            ):
+                return True
+    return False
+
+
+def _imports_mailjet_rest(node: ast.AST) -> bool:
+    if isinstance(node, ast.Import):
+        return any(alias.name == "mailjet_rest" or alias.name.startswith("mailjet_rest.") for alias in node.names)
+    if isinstance(node, ast.ImportFrom):
+        return node.module is not None and (node.module == "mailjet_rest" or node.module.startswith("mailjet_rest."))
+    return False
+
+
+def test_all_fuzz_targets_scope_instrumentation_to_mailjet_rest() -> None:
+    """Ensure every Atheris target scopes import instrumentation to mailjet_rest and avoids instrument_all()."""
+    fuzz_files = sorted(Path("tests/fuzz").glob("fuzz_*.py"))
+    assert len(fuzz_files) == 26
+
+    for fuzz_file in fuzz_files:
+        tree = ast.parse(fuzz_file.read_text(encoding="utf-8"), filename=str(fuzz_file))
+
+        instrument_all_calls = [node for node in ast.walk(tree) if _is_atheris_call(node, "instrument_all")]
+        assert not instrument_all_calls, f"{fuzz_file} must not call atheris.instrument_all()"
+
+        for node in ast.walk(tree):
+            if _is_atheris_call(node, "instrument_imports"):
+                assert isinstance(node, ast.Call)
+                bad_override = any(
+                    kw.arg == "enable_loader_override"
+                    and isinstance(kw.value, ast.Constant)
+                    and kw.value.value is False
+                    for kw in node.keywords
+                )
+                assert not bad_override, (
+                    f"{fuzz_file} must not pass enable_loader_override=False to instrument_imports()"
+                )
+
+        scoped_with_blocks = [stmt for stmt in tree.body if _is_scoped_instrument_with(stmt)]
+        assert scoped_with_blocks, (
+            f"{fuzz_file} must import mailjet_rest inside atheris.instrument_imports(include=['mailjet_rest'])"
+        )
+
+        for stmt in tree.body:
+            if _is_scoped_instrument_with(stmt):
+                continue
+            unscoped = [sub for sub in ast.walk(stmt) if _imports_mailjet_rest(sub)]
+            assert not unscoped, f"{fuzz_file} imports mailjet_rest outside scoped instrument_imports block"

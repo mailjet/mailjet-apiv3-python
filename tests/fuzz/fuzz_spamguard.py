@@ -9,7 +9,7 @@ import logging
 import sys
 import atheris
 
-with atheris.instrument_imports(enable_loader_override=False):
+with atheris.instrument_imports(include=["mailjet_rest"]):
     from mailjet_rest.errors import ValidationError
     from mailjet_rest.utils.guardrails import SecurityGuard
 
@@ -56,6 +56,5 @@ def TestOneInput(data: bytes) -> None:
 
 
 if __name__ == "__main__":
-    atheris.instrument_all()
     atheris.Setup(sys.argv, TestOneInput)
     atheris.Fuzz()

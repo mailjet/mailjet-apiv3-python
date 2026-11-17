@@ -56,6 +56,7 @@ class Attachment(TypedDict):
     ContentType: str
     Filename: str
     Base64Content: str
+    ContentID: NotRequired[str]
 
 
 class SendV31Message(TypedDict):
