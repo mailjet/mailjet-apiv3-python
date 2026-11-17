@@ -102,9 +102,12 @@ pytestdebug.log
 pyrightconfig.json
 .overcommit.yml
 
-# Atheris / ClusterFuzzLite
+# Atheris / ClusterFuzzLite & Mutation Testing
 tests/fuzz/corpus/
 .github/.clusterfuzzlite/
+mutants/
+.mutmut-cache
+*.sarif
 
 # ==============================================================================
 # 6. TESTING METRICS & CODE COVERAGE

@@ -69,6 +69,9 @@ lint() {
     info "Running slotscheck verification..."
     slotscheck -m "${SRC_DIR}"
 
+    info "Checking tracked .pyi stub synchronization..."
+    python "${SCRIPTS_DIR}/check_stubs.py" --check
+
     info "Running Bandit security scan..."
     bandit -c pyproject.toml -r "${SRC_DIR}"
 
@@ -316,6 +319,7 @@ clean() {
     find . -type f -name '*.egg' -exec rm -f {} +
 
     rm -rf logs/
+    rm -rf mutants/ .mutmut-cache
     rm -f ./*.prof profile.html profile.json tmp.txt wget-log
 
     success "Workspace cleaned."
