@@ -443,8 +443,10 @@ source_paths = ["mailjet_rest"]
 only_mutate = [
     "mailjet_rest/builders.py",
     "mailjet_rest/endpoint.py",
-    "mailjet_rest/utils/version.py",
+    "mailjet_rest/utils/retry.py",
+    "mailjet_rest/utils/routing.py",
     "mailjet_rest/utils/transport_security.py",
+    "mailjet_rest/utils/version.py",
 ]
 do_not_mutate = [
     "mailjet_rest/_version.py",

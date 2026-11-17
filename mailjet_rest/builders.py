@@ -25,9 +25,8 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from typing import Literal
 
-    from mailjet_rest.types import SendV31Message, SendV31Payload
+    from mailjet_rest.types import SendV31Message, SendV31Payload, TrackingMode
 
 
 _CRLF_CONTROL_RE: Final = re.compile(r"[\r\n\x00]")
@@ -263,8 +262,8 @@ class MessageBuilder(_BaseContentBuilder):
     def set_tracking(
         self,
         *,
-        opens: Literal["enabled", "disabled"] | None = None,
-        clicks: Literal["enabled", "disabled"] | None = None,
+        opens: TrackingMode | None = None,
+        clicks: TrackingMode | None = None,
     ) -> Self:
         """Configure per-message open and click tracking overrides.
 

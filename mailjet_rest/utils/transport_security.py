@@ -20,7 +20,10 @@ from urllib3.connection import HTTPConnection
 
 
 if TYPE_CHECKING:
+    import httpx2
     import requests
+
+    from mailjet_rest.types import CertConfig
 
 if sys.version_info >= (3, 12):
     from typing import override
@@ -114,7 +117,7 @@ def get_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
     return _cached_ssl_context(None, 0, 0)
 
 
-def build_ssl_context_with_cert(ca_bundle: str | None = None, cert: Any = None) -> ssl.SSLContext:
+def build_ssl_context_with_cert(ca_bundle: str | None = None, cert: CertConfig = None) -> ssl.SSLContext:
     """Return a hardened TLS 1.2+ SSLContext with an optional uncached client certificate chain.
 
     Returns:
@@ -125,13 +128,13 @@ def build_ssl_context_with_cert(ca_bundle: str | None = None, cert: Any = None) 
     context = _new_secure_ssl_context(ca_bundle)
     if isinstance(cert, (tuple, list)):
         if len(cert) != 2:
-            msg = "Client 'cert' tuple must contain (certfile, keyfile)."
+            msg = "Client 'cert' tuple must contain (certfile, keyfile)."  # type: ignore[unreachable]
             raise ValueError(msg)
         context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
     elif isinstance(cert, (str, os.PathLike)):
         context.load_cert_chain(certfile=cert)
     else:
-        msg = f"Invalid 'cert' type: expected str, PathLike, or (certfile, keyfile) tuple, got {type(cert).__name__}."
+        msg = f"Invalid 'cert' type: expected str, PathLike, or (certfile, keyfile) tuple, got {type(cert).__name__}."  # type: ignore[unreachable]
         raise TypeError(msg)
     return context
 
@@ -143,6 +146,50 @@ def _build_tls_context(ca_bundle: str | None = None) -> ssl.SSLContext:
         ssl.SSLContext: Configured SSL context.
     """
     return get_secure_ssl_context(ca_bundle)
+
+
+def coerce_httpx2_timeout(httpx2_mod: Any, timeout_val: Any) -> Any:
+    """Convert Mailjet timeout values into an ``httpx2.Timeout`` configuration.
+
+    Returns:
+        Any: Configured ``httpx2.Timeout`` instance or original timeout value.
+    """
+    if isinstance(timeout_val, tuple) and len(timeout_val) == 2:
+        connect_t, read_t = float(timeout_val[0]), float(timeout_val[1])
+        return httpx2_mod.Timeout(read_t, connect=connect_t, read=read_t, write=read_t, pool=connect_t)
+    if isinstance(timeout_val, (int, float)) and not isinstance(timeout_val, bool):
+        return httpx2_mod.Timeout(float(timeout_val))
+    return timeout_val
+
+
+def build_httpx2_transport(
+    httpx2_mod: Any,
+    resolved_verify: bool | str,
+    *,
+    pool_connections: int,
+    pool_maxsize: int,
+    proxy: Any = None,
+    cert: CertConfig = None,
+) -> httpx2.AsyncHTTPTransport:
+    """Construct a hardened TLS 1.2+ ``httpx2.AsyncHTTPTransport`` with TCP keep-alive options.
+
+    Returns:
+        httpx2.AsyncHTTPTransport: Configured async HTTP transport instance.
+    """
+    ca_bundle = resolved_verify if isinstance(resolved_verify, str) else None
+    ssl_ctx = build_ssl_context_with_cert(ca_bundle, cert) if cert is not None else get_secure_ssl_context(ca_bundle)
+    limits = httpx2_mod.Limits(
+        max_connections=pool_maxsize,
+        max_keepalive_connections=pool_connections,
+    )
+    transport: httpx2.AsyncHTTPTransport = httpx2_mod.AsyncHTTPTransport(
+        verify=ssl_ctx,
+        limits=limits,
+        proxy=proxy,
+        retries=0,
+        socket_options=_KEEPALIVE_SOCKET_OPTIONS,
+    )
+    return transport
 
 
 class SecureHTTPAdapter(HTTPAdapter):
@@ -183,7 +230,7 @@ class SecureHTTPAdapter(HTTPAdapter):
         return base_proxy(proxy, **proxy_kwargs)
 
     @override
-    def cert_verify(self, conn: Any, url: str, verify: Any, cert: Any) -> None:
+    def cert_verify(self, conn: Any, url: str, verify: Any, cert: CertConfig) -> None:
         """Enforce strict TLS verification and isolate per-call CA/client-cert SSL contexts."""
         resolved = resolve_tls_verify(verify)
         base_verify: Any = super().cert_verify
@@ -281,6 +328,7 @@ class SecretAuth(AuthBase):
 
     def __getitem__(self, index: int) -> NoReturn:
         """Prevent Credential extraction via tuple unpacking / indexing."""
+        _ = index
         msg = "Credential extraction via indexing is blocked for security (CWE-316)."
         raise TypeError(msg)
 

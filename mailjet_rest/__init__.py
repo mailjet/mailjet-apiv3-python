@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from mailjet_rest.client import AsyncClient, Client, Config
-    from mailjet_rest.endpoint import AsyncEndpoint
+    from mailjet_rest.endpoint import AsyncEndpoint, Endpoint
     from mailjet_rest.errors import (
         ActionDeniedError,
         ApiError,
@@ -38,6 +38,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "Config": ("mailjet_rest.client", "Config"),
     "CriticalApiError": ("mailjet_rest.errors", "CriticalApiError"),
     "DoesNotExistError": ("mailjet_rest.errors", "DoesNotExistError"),
+    "Endpoint": ("mailjet_rest.endpoint", "Endpoint"),
     "MailjetApiError": ("mailjet_rest.errors", "MailjetApiError"),
     "MailjetAuthError": ("mailjet_rest.errors", "MailjetAuthError"),
     "MailjetNetworkError": ("mailjet_rest.errors", "MailjetNetworkError"),
@@ -57,6 +58,7 @@ __all__ = [
     "Config",
     "CriticalApiError",
     "DoesNotExistError",
+    "Endpoint",
     "MailjetApiError",
     "MailjetAuthError",
     "MailjetNetworkError",

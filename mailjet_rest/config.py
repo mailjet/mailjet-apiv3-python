@@ -1,11 +1,10 @@
 """Configuration settings for the Mailjet SDK."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import ClassVar
 
 from mailjet_rest._version import __version__
-from mailjet_rest.types import _DEFAULT_TIMEOUT, AutoIdempotencyMode, TimeoutType
+from mailjet_rest.types import _DEFAULT_TIMEOUT, ApiVersion, AutoIdempotencyMode, TimeoutType, VerifyConfig
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
@@ -33,14 +32,15 @@ class Config:
     """
 
     ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
+    MAX_RETRIES_LIMIT: ClassVar[int] = 20
 
-    version: str = "v3"
+    version: ApiVersion = "v3"
     api_url: str = "https://api.mailjet.com/"
     user_agent: str = f"mailjet-apiv3-python/v{__version__}"
     timeout: TimeoutType = _DEFAULT_TIMEOUT
     dry_run: bool = False
     enable_security_audit: bool = False
-    verify: bool | str | Path = True
+    verify: VerifyConfig = True
     auto_idempotency_mode: AutoIdempotencyMode = "fingerprint"
     pool_connections: int = 100
     pool_maxsize: int = 100
@@ -48,9 +48,12 @@ class Config:
     max_retries: int = 3
 
     @staticmethod
-    def _validate_int_min(name: str, value: int, minimum: int) -> None:
+    def _validate_int_min(name: str, value: int, minimum: int, maximum: int | None = None) -> None:
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             msg = f"{name} must be an integer >= {minimum}, got {value!r}."
+            raise ValueError(msg)
+        if maximum is not None and value > maximum:
+            msg = f"{name} must be an integer <= {maximum}, got {value!r}."
             raise ValueError(msg)
 
     def __post_init__(self) -> None:
@@ -76,7 +79,7 @@ class Config:
         # 5. Validate connection pool bounds, retry budget, and warning flags
         self._validate_int_min("pool_connections", self.pool_connections, 1)
         self._validate_int_min("pool_maxsize", self.pool_maxsize, 1)
-        self._validate_int_min("max_retries", self.max_retries, 0)
+        self._validate_int_min("max_retries", self.max_retries, 0, self.MAX_RETRIES_LIMIT)
         raw_warn: object = self.warn_unclosed
         if not isinstance(raw_warn, bool):
             msg = f"warn_unclosed must be a bool, got {type(raw_warn).__name__}."

@@ -1,34 +1,30 @@
-"""Mailjet API v3, v3.1, and v1 Python wrapper.
+"""Mailjet API v3, v3.1, v1, and v4 Python wrapper.
 
-This module provides the synchronous (Client) and asynchronous (AsyncClient)
-classes for interacting with the Mailjet API using requests (sync) and httpx2 (async).
-It handles authentication, secure URL construction, dynamic endpoint resolution,
-and request execution.
+Provides synchronous (:class:`Client` via ``requests``) and asynchronous
+(:class:`AsyncClient` via ``httpx2``) clients with unified security guardrails,
+dynamic endpoint resolution, retries, and clean resource teardown.
 """
 
 from __future__ import annotations
 
-import asyncio
 import copy
 import importlib
 import logging
-import math
-import secrets
 import sys
 import threading
 import uuid
 import warnings
 from collections.abc import Mapping
-from contextlib import suppress
-from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn, TypeVar
 
 import requests
 from requests.exceptions import ConnectionError as RequestsConnectionError, RequestException, Timeout as RequestsTimeout
-from urllib3.util.retry import Retry
 
 from mailjet_rest.config import Config
 from mailjet_rest.endpoint import AsyncEndpoint, BaseEndpoint, Endpoint
 from mailjet_rest.errors import (
+    MAX_ERROR_DETAIL_CHARS,
+    MAX_ERROR_LOG_CHARS,
     ActionDeniedError,
     ApiError,
     ApiRateLimitError,
@@ -39,20 +35,26 @@ from mailjet_rest.errors import (
     MailjetAuthError,
     TimeoutError,  # ruff: ignore[builtin-import-shadowing]
     ValidationError,
+    extract_error_detail,
+    handle_api_error,
+    raise_connection_error,
+    raise_timeout_error,
 )
 from mailjet_rest.routes import ROUTE_MAP
-from mailjet_rest.types import _ALLOWED_TRACE_FIELDS, _DEFAULT_TIMEOUT
-from mailjet_rest.utils.guardrails import (
-    RedactingFilter,
-    SecretAuth,
-    SecureHTTPAdapter,
-    SecurityGuard,
+from mailjet_rest.types import _DEFAULT_TIMEOUT
+from mailjet_rest.utils.guardrails import RedactingFilter, SecretAuth, SecureHTTPAdapter, SecurityGuard
+from mailjet_rest.utils.retry import (
+    DEFAULT_RETRY_STRATEGY,
+    MAX_RETRY_DELAY,
+    RETRY_ALLOWED_METHODS,
+    TRANSIENT_STATUS_CODES,
+    JitterRetry,
+    compute_retry_delay,
+    reset_stream_pointers,
+    run_async_with_retries,
 )
-from mailjet_rest.utils.transport_security import (
-    _KEEPALIVE_SOCKET_OPTIONS,
-    build_ssl_context_with_cert,
-    get_secure_ssl_context,
-)
+from mailjet_rest.utils.telemetry import extract_telemetry, log_api_response, record_debug_telemetry
+from mailjet_rest.utils.transport_security import build_httpx2_transport, coerce_httpx2_timeout
 
 
 if TYPE_CHECKING:
@@ -60,7 +62,16 @@ if TYPE_CHECKING:
 
     import httpx2
 
-    from mailjet_rest.types import HttpMethod, PayloadType, TimeoutType
+    from mailjet_rest.types import (
+        AuthCredentials,
+        CertConfig,
+        HeadersMapping,
+        HttpMethod,
+        PayloadType,
+        QueryFilters,
+        RequestHeaders,
+        TimeoutType,
+    )
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -81,6 +92,7 @@ __all__ = [
     "CriticalApiError",
     "DoesNotExistError",
     "Endpoint",
+    "JitterRetry",
     "MailjetApiError",
     "MailjetAuthError",
     "TimeoutError",
@@ -90,21 +102,16 @@ __all__ = [
 ]
 
 
-# Add deep redaction filter to logger automatically
 logger = logging.getLogger(__name__)
 if not any(isinstance(f, RedactingFilter) for f in logger.filters):
     logger.addFilter(RedactingFilter())
 
 _EndpointT = TypeVar("_EndpointT", bound=BaseEndpoint)
+_AVAILABLE_ENDPOINTS: Final[tuple[str, ...]] = tuple(sorted(ROUTE_MAP))
 _httpx2_cache: list[Any] = []
 
 
 def _get_httpx2() -> Any:
-    """Lazily import httpx2 on first AsyncClient use without slowing sync boot.
-
-    Returns:
-        Any: The imported httpx2 module, or None if unavailable.
-    """
     if not _httpx2_cache:
         try:
             mod = importlib.import_module("httpx2")
@@ -115,11 +122,6 @@ def _get_httpx2() -> Any:
 
 
 def _require_httpx2() -> Any:
-    """Return the httpx2 module or raise an actionable ImportError when missing.
-
-    Returns:
-        Any: The imported httpx2 module.
-    """
     mod = globals()["_httpx2"] if "_httpx2" in globals() else _get_httpx2()
     if mod is None:
         msg = "AsyncClient requires 'httpx2>=2.0.0'. Install with: pip install 'mailjet-rest[async]'"
@@ -128,10 +130,10 @@ def _require_httpx2() -> Any:
 
 
 def __getattr__(name: str) -> Any:
-    """Resolve optional _httpx2 attribute lazily on module access.
+    """Resolve optional ``_httpx2`` lazily to preserve synchronous cold-boot speed.
 
     Returns:
-        Any: The lazily loaded httpx2 module when requesting '_httpx2'.
+        Any: Imported ``httpx2`` module when installed, or None.
     """
     if name == "_httpx2":
         return _get_httpx2()
@@ -139,58 +141,26 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(msg)
 
 
-class JitterRetry(Retry):
-    """Custom retry policy with randomized full jitter to prevent Thundering Herd (429)."""
-
-    def get_backoff_time(self) -> float:
-        """Compute exponential backoff with randomized full jitter.
-
-        Returns:
-            float: Delay duration in seconds before retrying.
-        """
-        base_backoff = super().get_backoff_time()
-        # Apply full jitter: random value between 0 and the exponential backoff
-        return secrets.SystemRandom().uniform(0, base_backoff) if base_backoff > 0 else 0
-
-
 class BaseClient:
-    """Shared configuration, TLS policy, telemetry, and error handling for sync and async clients."""
+    """Shared configuration, TLS policy, request validation, telemetry, and error mapping."""
 
     __slots__ = ("_closed", "_endpoint_cache", "_lock", "_session", "auth", "config")
 
     _MUTATING_METHODS: ClassVar[frozenset[str]] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
-    _TRANSIENT_STATUS_CODES: ClassVar[frozenset[int]] = frozenset({429, 500, 502, 503, 504})
-    _MAX_RETRY_DELAY: ClassVar[float] = 60.0
-    _RETRY_ALLOWED_METHODS: ClassVar[tuple[str, ...]] = (
-        "HEAD",
-        "GET",
-        "OPTIONS",
-        "POST",
-        "PUT",
-        "PATCH",
-        "DELETE",
-    )
-
-    _RETRY_STRATEGY: ClassVar[JitterRetry] = JitterRetry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=list(_RETRY_ALLOWED_METHODS),  # Mutates are Idempotent-hashed safely below
-    )
+    _TRANSIENT_STATUS_CODES: ClassVar[frozenset[int]] = TRANSIENT_STATUS_CODES
+    _MAX_RETRY_DELAY: ClassVar[float] = MAX_RETRY_DELAY
+    _MAX_ERROR_LOG_CHARS: ClassVar[int] = MAX_ERROR_LOG_CHARS
+    _MAX_ERROR_DETAIL_CHARS: ClassVar[int] = MAX_ERROR_DETAIL_CHARS
+    _RETRY_ALLOWED_METHODS: ClassVar[tuple[str, ...]] = RETRY_ALLOWED_METHODS
+    _RETRY_STRATEGY: ClassVar[JitterRetry] = DEFAULT_RETRY_STRATEGY
 
     def __init__(
         self,
-        auth: str | tuple[str, str] | None = None,
+        auth: AuthCredentials = None,
         config: Config | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize base client configuration, TLS policy, and auth credentials.
-
-        Args:
-            auth: A tuple containing the Mailjet API key and secret, or a Bearer token string.
-            config: An optional Config object for advanced behavior tuning.
-            **kwargs: Configuration values (e.g., version, timeout) applied directly to a new Config object.
-        """
+        """Initialize client configuration, TLS verification, and API credentials."""
         if auth is None:
             warnings.warn(
                 "Initializing the Mailjet Client without 'auth' credentials is not recommended. "
@@ -203,70 +173,19 @@ class BaseClient:
         self._init_runtime_state()
         self.config = Config(**kwargs) if config is None else config
         SecurityGuard.resolve_tls_verify(self.config.verify)
-
-        # Delegate auth validation and coercion to SecurityGuard
         self.auth = SecurityGuard.validate_and_coerce_auth(auth)
 
         if getattr(self.config, "enable_security_audit", False):
             SecurityGuard.enable_audit_logging()
 
-    def _validate_endpoint_name(self, name: str) -> None:
-        """Validate dynamic endpoint attribute lookups and reject typos."""
-        if name.startswith("_"):
-            msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
-            raise AttributeError(msg)
-
-        # Fail fast for typos: Only check simple un-composited names.
-        # A cutoff of 0.8 catches obvious mistakes like 'snd'->'send' or 'session'->'session',
-        # but allows legitimate dynamic endpoints to pass through to the fallback.
-        if "_" not in name and name not in ROUTE_MAP:
-            import difflib  # ruff: ignore[import-outside-top-level]
-
-            if difflib.get_close_matches(name, dir(self), n=1, cutoff=0.8):
-                msg = f"'{self.__class__.__name__}' has no endpoint or attribute '{name}'."
-                raise AttributeError(msg)
-
-    def _resolve_endpoint(self, name: str, endpoint_cls: type[_EndpointT]) -> _EndpointT:
-        """Resolve and cache an endpoint instance in a thread-safe manner.
+    @property
+    def available_endpoints(self) -> tuple[str, ...]:
+        """Sorted names of all statically registered Mailjet API endpoints.
 
         Returns:
-            _EndpointT: Cached or newly created endpoint instance.
+            tuple[str, ...]: Registered endpoint attribute names.
         """
-        if name.startswith("_"):
-            msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
-            raise AttributeError(msg)
-
-        with self._lock:
-            if name in self._endpoint_cache:
-                cached: _EndpointT = self._endpoint_cache[name]
-                return cached
-
-        self._validate_endpoint_name(name)
-
-        # If it doesn't exist in ROUTE_MAP, fall back to dynamic routing which
-        # sanitizes every path segment inside BaseEndpoint._build_url.
-        with self._lock:
-            resolved: _EndpointT = self._endpoint_cache.setdefault(
-                name,
-                endpoint_cls(client=self, name=name),
-            )
-            return resolved
-
-    def __repr__(self) -> str:
-        """OWASP Secrets Management: Redact sensitive information from object representation.
-
-        Returns:
-            str: The sanitized and safe string representation of the client instance.
-        """
-        return f"<{self.__class__.__name__} API Version='{self.config.version}' URL='{self.config.api_url}'>"
-
-    def __str__(self) -> str:
-        """OWASP Secrets Management: Redact sensitive information from string representation.
-
-        Returns:
-            str: The sanitized client string.
-        """
-        return f"Mailjet {self.__class__.__name__} ({self.config.version})"
+        return _AVAILABLE_ENDPOINTS
 
     def _init_runtime_state(self) -> None:
         self._lock = threading.RLock()
@@ -292,7 +211,7 @@ class BaseClient:
         return cloned
 
     def __copy__(self) -> Self:
-        """Create a shallow copy of the client with an isolated fresh session state.
+        """Create a shallow copy with an isolated uninitialized HTTP session state.
 
         Returns:
             Self: New client instance sharing configuration without open sockets.
@@ -300,69 +219,125 @@ class BaseClient:
         return self._clone()
 
     def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        """Create a deep copy of the client with an isolated fresh session state.
-
-        Args:
-            memo: Memoization mapping for recursive deep copy tracking.
+        """Create a deep copy with an isolated uninitialized HTTP session state.
 
         Returns:
             Self: Deeply copied client instance with fresh runtime session state.
         """
         return self._clone(memo)
 
-    @classmethod
-    def _compute_retry_delay(cls, attempt: int, retry_after_header: str | None = None) -> float:
-        """Compute full-jitter backoff or capped Retry-After delay in seconds.
-
-        Args:
-            attempt: Zero-based retry attempt index.
-            retry_after_header: Optional raw Retry-After response header value.
+    def __repr__(self) -> str:
+        """Return a redacted representation safe for logs and tracebacks.
 
         Returns:
-            float: Delay duration in seconds bounded by _MAX_RETRY_DELAY.
+            str: Sanitized client description.
         """
-        if isinstance(retry_after_header, str):
-            stripped = retry_after_header.strip()
-            if stripped:
-                with suppress(ValueError):
-                    parsed = float(stripped)
-                    if math.isfinite(parsed) and parsed >= 0:
-                        return min(parsed, cls._MAX_RETRY_DELAY)
+        return f"<{self.__class__.__name__} API Version='{self.config.version}' URL='{self.config.api_url}'>"
 
-        bounded_exponent = max(0, min(attempt, 20))
-        base_backoff = min(float(2**bounded_exponent), cls._MAX_RETRY_DELAY)
-        return secrets.SystemRandom().uniform(0.0, base_backoff)
+    def __str__(self) -> str:
+        """Return a concise redacted string representation.
+
+        Returns:
+            str: Sanitized client label.
+        """
+        return f"Mailjet {self.__class__.__name__} ({self.config.version})"
+
+    def __dir__(self) -> list[str]:
+        """Expose dynamic routing attributes for interactive completion and inspection.
+
+        Returns:
+            list[str]: Standard attributes merged with statically registered route names.
+        """
+        return sorted({*super().__dir__(), *_AVAILABLE_ENDPOINTS})
+
+    def _validate_endpoint_name(self, name: str) -> None:
+        if name.startswith("_"):
+            msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            raise AttributeError(msg)
+
+        if "_" not in name and name not in ROUTE_MAP:
+            import difflib  # ruff: ignore[import-outside-top-level]
+
+            if matches := difflib.get_close_matches(name, dir(self), n=1, cutoff=0.8):
+                msg = f"'{self.__class__.__name__}' has no endpoint or attribute '{name}'. Did you mean '{matches[0]}'?"
+                raise AttributeError(msg)
+
+    def _resolve_endpoint(self, name: str, endpoint_cls: type[_EndpointT]) -> _EndpointT:
+        if name.startswith("_"):
+            msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            raise AttributeError(msg)
+
+        with self._lock:
+            if name in self._endpoint_cache:
+                cached: _EndpointT = self._endpoint_cache[name]
+                return cached
+
+        self._validate_endpoint_name(name)
+        with self._lock:
+            resolved: _EndpointT = self._endpoint_cache.setdefault(
+                name,
+                endpoint_cls(client=self, name=name),
+            )
+            return resolved
+
+    def _base_headers(self) -> dict[str, str]:
+        headers = {"User-Agent": self.config.user_agent}
+        if isinstance(self.auth, str):
+            headers["Authorization"] = f"Bearer {self.auth}"
+        return headers
+
+    def _ping_url(self) -> str:
+        return f"{self.config.api_url.rstrip('/')}/v3/REST/apikey"
+
+    def _warn_if_unclosed(self) -> None:
+        try:
+            closed = self._closed
+            session = self._session
+            config = self.config
+        except AttributeError:
+            return
+
+        if closed or session is None or not config.warn_unclosed:
+            return
+
+        if isinstance(self, AsyncClient):
+            msg = "Unclosed Mailjet AsyncClient session; call await client.aclose() or use 'async with'."
+        else:
+            msg = "Unclosed Mailjet Client session; call client.close() or use a context manager."
+        warnings.warn(msg, ResourceWarning, stacklevel=3)
+
+    def __del__(self) -> None:
+        """Emit an opt-in ResourceWarning when an opened session was not closed."""
+        self._warn_if_unclosed()
+
+    @classmethod
+    def _compute_retry_delay(cls, attempt: int, retry_after_header: str | None = None) -> float:
+        return compute_retry_delay(attempt, retry_after_header, max_delay=cls._MAX_RETRY_DELAY)
 
     @staticmethod
     def _reset_stream_pointers(data: Any, files: Any) -> None:
-        """Rewind seekable payload and multipart file streams before retrying a request."""
-        stack: list[tuple[Any, int]] = [(data, 0), (files, 0)]
-        while stack:
-            item, depth = stack.pop()
-            if item is None or depth > 4:
-                continue
-            seek_fn = getattr(item, "seek", None)
-            if callable(seek_fn) and not getattr(item, "closed", False):
-                seekable_fn = getattr(item, "seekable", None)
-                if not callable(seekable_fn) or seekable_fn():
-                    with suppress(OSError, ValueError):
-                        seek_fn(0)
-                continue
-            if isinstance(item, (Mapping, list, tuple)):
-                children = item.values() if isinstance(item, Mapping) else item
-                stack.extend((elem, depth + 1) for elem in children)
+        reset_stream_pointers(data, files)
+
+    @classmethod
+    def _extract_error_detail(cls, response: Any, body: str) -> str:
+        return extract_error_detail(response, body, max_chars=cls._MAX_ERROR_DETAIL_CHARS)
+
+    @classmethod
+    def _handle_api_error(cls, e: Exception) -> NoReturn:
+        handle_api_error(e, max_chars=cls._MAX_ERROR_DETAIL_CHARS)
+
+    @staticmethod
+    def _log_request(method: str, url: str, response: Any, trace_str: str) -> None:
+        log_api_response(logger, method, url, response, trace_str, max_chars=BaseClient._MAX_ERROR_LOG_CHARS)
+
+    @staticmethod
+    def _extract_telemetry(data: Any, _headers: HeadersMapping | None) -> tuple[str, dict[str, str]]:
+        return extract_telemetry(data, _headers)
 
     @staticmethod
     def _prepare_clean_headers(headers: Mapping[str, Any], files: Any = None) -> dict[str, Any]:
-        """Strip None headers and remove default application/json Content-Type on multipart uploads.
-
-        Args:
-            headers: Raw request headers mapping.
-            files: Optional multipart files argument.
-
-        Returns:
-            dict[str, Any]: Sanitized headers ready for transport execution.
-        """
+        if files is not None:
+            SecurityGuard.validate_multipart_files(files)
         clean_headers = {k: v for k, v in headers.items() if v is not None}
         if files:
             for key in list(clean_headers):
@@ -371,168 +346,6 @@ class BaseClient:
                     del clean_headers[key]
         return clean_headers
 
-    def _ping_url(self) -> str:
-        """Construct the lightweight credential/connectivity probe URL.
-
-        Returns:
-            str: Fully qualified probe endpoint URL.
-        """
-        return f"{self.config.api_url.rstrip('/')}/v3/REST/apikey"
-
-    def __dir__(self) -> list[str]:
-        """Expose dynamic routing attributes for IDE autocompletion.
-
-        Returns:
-            list[str]: The list of standard attributes plus available dynamic endpoints.
-        """
-        return sorted(set(list(super().__dir__()) + list(ROUTE_MAP.keys())))
-
-    def _warn_if_unclosed(self) -> None:
-        """Emit ResourceWarning if an opened session was not explicitly closed."""
-        try:
-            closed = self._closed
-            session = self._session
-            config = self.config
-        except AttributeError:
-            return
-
-        if closed or session is None:
-            return
-
-        if config.warn_unclosed:
-            if isinstance(self, AsyncClient):
-                msg = "Unclosed Mailjet AsyncClient session; call await client.aclose() or use 'async with'."
-            else:
-                msg = "Unclosed Mailjet Client session; call client.close() or use a context manager."
-            warnings.warn(msg, ResourceWarning, stacklevel=3)
-
-    def __del__(self) -> None:
-        """Delegate optional unclosed-session check on garbage collection."""
-        self._warn_if_unclosed()
-
-    @staticmethod
-    def _extract_error_detail(response: Any, body: str) -> str:
-        """Extract an actionable error summary from a Mailjet error response body.
-
-        Returns:
-            str: Formatted error suffix (leading ': ...') or empty string.
-        """
-        error_detail = ""
-        with suppress(Exception):
-            resp_json = response.json()
-            if isinstance(resp_json, dict):
-                if "ErrorMessage" in resp_json:
-                    error_detail = f": {resp_json['ErrorMessage']}"
-                elif isinstance(messages := resp_json.get("Messages"), list) and messages:
-                    first_msg = messages[0]
-                    if (
-                        isinstance(first_msg, dict)
-                        and isinstance(errors := first_msg.get("Errors"), list)
-                        and errors
-                        and isinstance(errors[0], dict)
-                    ):
-                        error_detail = f": {errors[0].get('ErrorMessage', '')}"
-        if not error_detail and body:
-            error_detail = f": {body}"
-        return error_detail
-
-    @classmethod
-    def _raise_mapped_http_error(cls, response: Any, exc: Exception) -> NoReturn:
-        """Map an HTTP response status code to the Mailjet exception hierarchy."""
-        status = int(response.status_code)
-        body = str(getattr(response, "text", "") or "")
-        error_detail = cls._extract_error_detail(response, body)
-
-        if status in {401, 403}:
-            msg = f"Authentication or Authorization failed{error_detail}"
-            raise MailjetAuthError(msg, status, body) from exc
-        if status == 429:
-            msg = f"Rate limit exceeded{error_detail}"
-            raise ApiRateLimitError(msg, status, body) from exc
-        if status == 404:
-            msg = f"Resource not found{error_detail}"
-            raise DoesNotExistError(msg, status, body) from exc
-        if status == 400:
-            msg = f"Payload validation failed{error_detail}"
-            raise ValidationError(msg, status, body) from exc
-        if status >= 400:
-            msg = f"Mailjet API HTTP {status}{error_detail}"
-            raise MailjetApiError(msg, status, body) from exc
-
-        msg = f"An unexpected Mailjet API network error occurred: {exc}"
-        raise ApiError(msg) from exc
-
-    @classmethod
-    def _handle_api_error(cls, e: Exception) -> NoReturn:
-        """Map transport or HTTP status exceptions to Mailjet specific API errors."""
-        response = getattr(e, "response", None)
-        if response is not None:
-            cls._raise_mapped_http_error(response, e)
-
-        msg = f"An unexpected Mailjet API network error occurred: {e}"
-        raise ApiError(msg) from e
-
-    def _apply_idempotency(self, data: PayloadType, req_headers: dict[str, str | None]) -> None:
-        if any(k.lower() == "idempotency-key" for k in req_headers):
-            return
-        mode = getattr(self.config, "auto_idempotency_mode", "fingerprint")
-        if mode == "off":
-            return
-        if mode == "uuid4":
-            req_headers["Idempotency-Key"] = str(uuid.uuid4())
-        elif isinstance(data, (dict, list)):
-            req_headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(data)
-
-    def _prepare_api_call(
-        self,
-        method: HttpMethod,
-        filters: dict[str, Any] | None,
-        data: PayloadType,
-        headers: Mapping[str, str | None] | None,
-        timeout: TimeoutType,
-        kwargs: dict[str, Any],
-    ) -> tuple[dict[str, str | None], Any, dict[str, Any] | None, dict[str, Any]]:
-        """Validate runtime URL, headers, TLS/redirect flags, timeout, kwargs, and idempotency.
-
-        Returns:
-            tuple[dict[str, str | None], Any, dict[str, Any] | None, dict[str, Any]]:
-                Sanitized headers, validated timeout, stripped filters, and safe kwargs.
-        """
-        # Re-validate runtime config URL to prevent post-init SSRF mutations (HIGH-02)
-        SecurityGuard.validate_config_url(self.config.api_url, allowed_root_domain=self.config.ALLOWED_ROOT_DOMAIN)
-
-        # Ensure headers is a dictionary and screened for CRLF injections (CWE-113)
-        req_headers: dict[str, str | None] = {} if headers is None else SecurityGuard.sanitize_headers(headers)
-
-        SecurityGuard.resolve_tls_verify(kwargs.get("verify", self.config.verify))
-        if kwargs.get("allow_redirects", False) is not False or kwargs.pop("follow_redirects", False) is not False:
-            msg = "Redirects are strictly disabled (allow_redirects=True / follow_redirects=True is forbidden)."
-            raise ValueError(msg)
-
-        # Safely determine and validate active timeout bounds (CWE-400)
-        active_timeout = timeout if timeout is not None else self.config.timeout
-        try:
-            req_timeout = SecurityGuard.validate_timeout(active_timeout)
-        except (ValueError, TypeError):
-            if timeout is None:
-                # Self-heal corrupted runtime mutation on config.timeout
-                self.config.timeout = _DEFAULT_TIMEOUT
-            raise
-
-        # Proxy Security Guardrail
-        SecurityGuard.check_request_security(kwargs)
-
-        # CWE-915: Prevent Mass Assignment of internal HTTP client states
-        safe_kwargs = SecurityGuard.filter_safe_kwargs(kwargs)
-
-        # Idempotency Lock for mutations
-        if method.upper() in self._MUTATING_METHODS and not self.config.dry_run:
-            self._apply_idempotency(data, req_headers)
-
-        # Strip None filters
-        clean_filters = {k: v for k, v in filters.items() if v is not None} if filters else None
-        return req_headers, req_timeout, clean_filters, safe_kwargs
-
     @staticmethod
     def _check_unexpected_redirect(url: str, response: Any) -> None:
         status_code = getattr(response, "status_code", None)
@@ -540,58 +353,80 @@ class BaseClient:
             sys.audit("mailjet.security.unexpected_redirect", url, status_code)
             logger.warning("Unexpected HTTP redirect (%s) from %s; redirects are disabled.", status_code, url)
 
-    @staticmethod
-    def _log_request(method: str, url: str, response: Any, trace_str: str) -> None:
-        """Internal static logging mechanism for formatted API lifecycle traces."""
-        if response.status_code >= 400:
-            logger.error(
-                "API Error %s | %s %s%s | Response: %s",
-                getattr(response, "status_code", "Unknown"),
-                method,
-                url,
-                trace_str,
-                getattr(response, "text", ""),
-            )
-        else:
-            logger.debug("API Success %s | %s %s%s", getattr(response, "status_code", 200), method, url, trace_str)
+    def _apply_idempotency(self, data: PayloadType, req_headers: RequestHeaders) -> None:
+        if any(k.lower() == "idempotency-key" for k in req_headers):
+            return
+        mode = getattr(self.config, "auto_idempotency_mode", "fingerprint")
+        if mode == "off":
+            return
+        if mode == "uuid4":
+            req_headers["Idempotency-Key"] = str(uuid.uuid4())
+        elif isinstance(data, (Mapping, list)):
+            req_headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(data)
 
-    @staticmethod
-    def _extract_telemetry(data: Any, _headers: Mapping[str, str | None] | None) -> tuple[str, dict[str, str]]:
-        """Extract tracing identifiers for safe logging and structured telemetry.
+    def _prepare_api_call(
+        self,
+        method: HttpMethod,
+        url: str,
+        filters: QueryFilters | None,
+        data: PayloadType,
+        headers: HeadersMapping | None,
+        timeout: TimeoutType,
+        kwargs: dict[str, Any],
+    ) -> tuple[RequestHeaders, Any, dict[str, Any] | None, dict[str, Any]]:
+        SecurityGuard.validate_target_url(
+            url,
+            base_api_url=self.config.api_url,
+            allowed_root_domain=self.config.ALLOWED_ROOT_DOMAIN,
+        )
+        req_headers: RequestHeaders = {} if headers is None else SecurityGuard.sanitize_headers(headers)
 
-        Args:
-            data (Any): The request payload.
-            _headers (Mapping[str, str | None] | None): Request headers.
+        SecurityGuard.resolve_tls_verify(kwargs.get("verify", self.config.verify))
+        if kwargs.get("allow_redirects", False) is not False or kwargs.pop("follow_redirects", False) is not False:
+            msg = "Redirects are strictly disabled (allow_redirects=True / follow_redirects=True is forbidden)."
+            raise ValueError(msg)
 
-        Returns:
-            tuple[str, dict[str, str]]: A tuple containing the formatted telemetry trace suffix
-                and a dictionary of structured data.
-        """
-        trace_ctx = []
-        structured_data = {}
-        with suppress(Exception):
-            if isinstance(data, (dict, list)):
-                # Correctly unpack top-level list payloads instead of falling back to [{}]
-                messages = data.get("Messages", [{}]) if isinstance(data, dict) else data
-                target_dict = messages[0] if isinstance(messages, list) and messages else data
+        active_timeout = timeout if timeout is not None else self.config.timeout
+        try:
+            req_timeout = SecurityGuard.validate_timeout(active_timeout)
+        except (ValueError, TypeError):
+            if timeout is None:
+                self.config.timeout = _DEFAULT_TIMEOUT
+            raise
 
-                if isinstance(target_dict, dict):
-                    for field in _ALLOWED_TRACE_FIELDS:
-                        if val := target_dict.get(field) or (isinstance(data, dict) and data.get(field)):
-                            clean_val = SecurityGuard.sanitize_log_trace(val)
-                            trace_ctx.append(f"{field}={clean_val}")
-                            structured_data[f"mailjet.{field.lower()}"] = clean_val
+        SecurityGuard.check_request_security(kwargs)
+        safe_kwargs = SecurityGuard.filter_safe_kwargs(kwargs)
 
-        return f" | Trace: [{' '.join(trace_ctx)}]" if trace_ctx else "", structured_data
+        if method.upper() in self._MUTATING_METHODS and not self.config.dry_run:
+            self._apply_idempotency(data, req_headers)
+
+        clean_filters = {k: v for k, v in filters.items() if v is not None} if filters else None
+        return req_headers, req_timeout, clean_filters, safe_kwargs
+
+    def _normalize_request_parts(
+        self,
+        headers: Mapping[str, Any],
+        data: Any,
+        kwargs: dict[str, Any],
+    ) -> tuple[bool | str, dict[str, Any], bool, Any, Any]:
+        req_verify = SecurityGuard.resolve_tls_verify(kwargs.pop("verify", self.config.verify))
+        if kwargs.pop("allow_redirects", False) is not False or kwargs.pop("follow_redirects", False) is not False:
+            msg = "Redirects are strictly disabled (allow_redirects=True / follow_redirects=True is forbidden)."
+            raise ValueError(msg)
+
+        files = kwargs.get("files")
+        clean_headers = self._prepare_clean_headers(headers, files=files)
+        is_json = (
+            not files
+            and isinstance(data, (Mapping, list))
+            and "application/json" in clean_headers.get("Content-Type", "")
+        )
+        normalized_data = dict(data) if isinstance(data, Mapping) and not isinstance(data, dict) else data
+        return req_verify, clean_headers, is_json, normalized_data, files
 
 
 class Client(BaseClient):
-    """The central synchronous Mailjet API client using requests.
-
-    This class serves as the entry point for synchronous interactions with the Mailjet API.
-    It manages the connection pool, handles retries, and dynamically resolves
-    endpoint attributes based on the static routing registry.
-    """
+    """Synchronous Mailjet API client backed by ``requests.Session``."""
 
     __slots__ = ()
     _endpoint_cache: dict[str, Endpoint]
@@ -601,12 +436,8 @@ class Client(BaseClient):
         resolved_verify = SecurityGuard.resolve_tls_verify(self.config.verify)
         session = requests.Session()
         session.verify = resolved_verify
-
         session.auth = self.auth if isinstance(self.auth, SecretAuth) else None
-        if isinstance(self.auth, str):
-            session.headers.update({"Authorization": f"Bearer {self.auth}"})
-
-        session.headers.update({"User-Agent": self.config.user_agent})
+        session.headers.update(self._base_headers())
 
         ca_bundle = resolved_verify if isinstance(resolved_verify, str) else None
         retry_strategy = (
@@ -630,10 +461,10 @@ class Client(BaseClient):
 
     @property
     def session(self) -> requests.Session:
-        """Lazily create and return the underlying thread-safe HTTP session.
+        """Lazily create and return the thread-safe synchronous ``requests.Session``.
 
         Returns:
-            requests.Session: The configured session instance.
+            requests.Session: Configured HTTP session, or a credential-stripped closed session.
         """
         with self._lock:
             if self._session is None:
@@ -653,10 +484,10 @@ class Client(BaseClient):
             self._session = value
 
     def __enter__(self) -> Self:
-        """Enter the context manager and return the client instance.
+        """Enter the context manager and reset closed session state if re-entered.
 
         Returns:
-            Self: The client instance.
+            Self: The active synchronous client instance.
         """
         with self._lock:
             if self._closed:
@@ -670,17 +501,12 @@ class Client(BaseClient):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Exit the context manager and safely close the HTTP session.
-
-        Args:
-            exc_type (type[BaseException] | None): Exception type.
-            exc_val (BaseException | None): Exception value.
-            exc_tb (TracebackType | None): Traceback.
-        """
+        """Exit the context manager and tear down open HTTP sockets."""
+        _ = (exc_type, exc_val, exc_tb)
         self.close()
 
     def close(self) -> None:
-        """Secure resource teardown closing internal sockets."""
+        """Clear credential headers and close the underlying ``requests.Session``."""
         with self._lock:
             self._closed = True
             session = self._session
@@ -693,10 +519,10 @@ class Client(BaseClient):
                 session.close()
 
     def __getattr__(self, name: str) -> Endpoint:
-        """O(1) Route mapping returning a synchronous Endpoint instance.
+        """Resolve and cache a synchronous :class:`Endpoint` wrapper by route name.
 
         Returns:
-            Endpoint: A dynamically created endpoint instance mapping to the route.
+            Endpoint: Cached or newly created synchronous endpoint wrapper.
         """
         return self._resolve_endpoint(name, Endpoint)
 
@@ -710,29 +536,13 @@ class Client(BaseClient):
         timeout: Any,
         **kwargs: Any,
     ) -> requests.Response:
-        """Isolated HTTP execution to reduce complexity and handle core network logic.
-
-        Returns:
-            requests.Response: The raw HTTP response directly from the network.
-        """
-        req_verify = SecurityGuard.resolve_tls_verify(kwargs.pop("verify", self.config.verify))
-        allow_redirects = kwargs.pop("allow_redirects", False)
-        if allow_redirects is not False:
-            msg = "Redirects are strictly disabled (allow_redirects=True is forbidden)."
-            raise ValueError(msg)
-
-        files = kwargs.get("files")
-        clean_headers = self._prepare_clean_headers(headers, files=files)
-
-        content_type = clean_headers.get("Content-Type", "")
-        is_json = not files and isinstance(data, (dict, list)) and "application/json" in content_type
-
+        req_verify, clean_headers, is_json, normalized_data, _ = self._normalize_request_parts(headers, data, kwargs)
         response = self.session.request(
             method=method,
             url=url,
             headers=clean_headers,
-            json=data if is_json else None,
-            data=data if not is_json else None,
+            json=normalized_data if is_json else None,
+            data=None if is_json else normalized_data,
             params=params,
             timeout=timeout,
             verify=req_verify,
@@ -743,47 +553,35 @@ class Client(BaseClient):
         return response
 
     def ping(self, timeout: TimeoutType = None) -> bool:
-        """Verify Mailjet API reachability and credentials with a lightweight GET call.
-
-        Args:
-            timeout: Optional timeout override for the health check.
+        """Verify Mailjet API reachability and credentials with a lightweight GET probe.
 
         Returns:
-            bool: True if the API responds cleanly (< 400); False on API or network failures.
+            bool: True when the API responds cleanly (< 400); False on API or network error.
         """
         try:
             response = self.api_call("GET", self._ping_url(), filters={"Limit": 1}, timeout=timeout)
         except ApiError:
             return False
-        else:
-            return bool(response.status_code < 400)
+        return bool(response.status_code < 400)
 
-    def api_call(  # ruff: ignore[complex-structure]
+    def api_call(
         self,
         method: HttpMethod,
         url: str,
-        filters: dict[str, Any] | None = None,
+        filters: QueryFilters | None = None,
         data: PayloadType = None,
-        headers: Mapping[str, str | None] | None = None,
+        headers: HeadersMapping | None = None,
         timeout: TimeoutType = None,
         **kwargs: Any,
     ) -> requests.Response:
-        """Execute the authenticated API call with idempotency guards.
-
-        Args:
-            method (HttpMethod): The HTTP method.
-            url (str): The fully constructed API URL.
-            filters (dict[str, Any] | None, optional): Query parameters.
-            data (PayloadType, optional): Request payload.
-            headers (Mapping[str, str | None] | None, optional): Custom HTTP headers.
-            timeout (TimeoutType, optional): Request timeout.
-            **kwargs (Any): Additional arguments passed to 'requests.Session.request'.
+        """Execute an authenticated synchronous API call with SSRF and idempotency guards.
 
         Returns:
-            requests.Response: The authenticated HTTP response from Mailjet.
+            requests.Response: Raw synchronous HTTP response from Mailjet.
         """
         req_headers, req_timeout, clean_filters, safe_kwargs = self._prepare_api_call(
             method=method,
+            url=url,
             filters=filters,
             data=data,
             headers=headers,
@@ -808,33 +606,19 @@ class Client(BaseClient):
                 **safe_kwargs,
             )
             response.raise_for_status()
-
         except RequestsTimeout as e:
-            logger.exception("Timeout Error: %s %s", method, url)
-            msg = f"Request to Mailjet API timed out: {e}"
-            raise TimeoutError(msg) from e
-
+            raise_timeout_error(logger, method, url, e)
         except RequestsConnectionError as e:
-            msg = f"Connection to Mailjet API failed: {e}"
-            raise CriticalApiError(msg) from e
-
+            raise_connection_error(e)
         except RequestException as e:
-            self._handle_api_error(e)
-
+            handle_api_error(e, max_chars=self._MAX_ERROR_DETAIL_CHARS)
         else:
-            if response.status_code in {200, 201, 204} and logger.isEnabledFor(logging.DEBUG):
-                trace_suffix, _ = self._extract_telemetry(data, req_headers)
-                self._log_request(method, url, response, trace_suffix)
+            record_debug_telemetry(logger, method, url, response, data, req_headers)
             return response
 
 
 class AsyncClient(BaseClient):
-    """The asynchronous Mailjet API client backed strictly by httpx2.
-
-    Provides async/await access to Mailjet REST resources with lazy session
-    creation, TLS 1.2+ context caching, TCP keep-alive socket options, and
-    strict redirect blocking.
-    """
+    """Asynchronous Mailjet API client backed strictly by ``httpx2``."""
 
     __slots__ = ("_custom_transport",)
     _custom_transport: httpx2.AsyncBaseTransport | None
@@ -843,19 +627,12 @@ class AsyncClient(BaseClient):
 
     def __init__(
         self,
-        auth: str | tuple[str, str] | None = None,
+        auth: AuthCredentials = None,
         config: Config | None = None,
         transport: httpx2.AsyncBaseTransport | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize the asynchronous client (requires optional 'httpx2>=2.0.0').
-
-        Args:
-            auth: A tuple containing the Mailjet API key and secret, or a Bearer token string.
-            config: An optional Config object for advanced behavior tuning.
-            transport: Optional custom httpx2 async transport (e.g., MockTransport) for pooled requests.
-            **kwargs: Configuration values (e.g., version, timeout) applied directly to a new Config object.
-        """
+        """Initialize the asynchronous client (requires optional ``httpx2>=2.0.0``)."""
         _require_httpx2()
         super().__init__(auth=auth, config=config, **kwargs)
         self._custom_transport = transport
@@ -866,19 +643,12 @@ class AsyncClient(BaseClient):
 
     @staticmethod
     def _coerce_timeout(httpx2_mod: Any, timeout_val: Any) -> Any:
-        if isinstance(timeout_val, tuple) and len(timeout_val) == 2:
-            connect_t, read_t = float(timeout_val[0]), float(timeout_val[1])
-            return httpx2_mod.Timeout(read_t, connect=connect_t, read=read_t, write=read_t, pool=connect_t)
-        if isinstance(timeout_val, (int, float)) and not isinstance(timeout_val, bool):
-            return httpx2_mod.Timeout(float(timeout_val))
-        return timeout_val
+        return coerce_httpx2_timeout(httpx2_mod, timeout_val)
 
     def _build_auth_and_headers(self) -> tuple[Any, dict[str, str]]:
-        client_headers: dict[str, str] = {"User-Agent": self.config.user_agent}
+        client_headers = self._base_headers()
         httpx2_auth: Any = None
-        if isinstance(self.auth, str):
-            client_headers["Authorization"] = f"Bearer {self.auth}"
-        elif isinstance(self.auth, SecretAuth):
+        if isinstance(self.auth, SecretAuth):
             auth_header = self.auth.auth_header
 
             def _apply_secret_auth(request: Any) -> Any:
@@ -894,24 +664,16 @@ class AsyncClient(BaseClient):
         resolved_verify: bool | str,
         *,
         proxy: Any = None,
-        cert: Any = None,
+        cert: CertConfig = None,
     ) -> httpx2.AsyncHTTPTransport:
-        ca_bundle = resolved_verify if isinstance(resolved_verify, str) else None
-        ssl_ctx = (
-            build_ssl_context_with_cert(ca_bundle, cert) if cert is not None else get_secure_ssl_context(ca_bundle)
-        )
-        limits = httpx2_mod.Limits(
-            max_connections=self.config.pool_maxsize,
-            max_keepalive_connections=self.config.pool_connections,
-        )
-        transport: httpx2.AsyncHTTPTransport = httpx2_mod.AsyncHTTPTransport(
-            verify=ssl_ctx,
-            limits=limits,
+        return build_httpx2_transport(
+            httpx2_mod,
+            resolved_verify,
+            pool_connections=self.config.pool_connections,
+            pool_maxsize=self.config.pool_maxsize,
             proxy=proxy,
-            retries=0,
-            socket_options=_KEEPALIVE_SOCKET_OPTIONS,
+            cert=cert,
         )
-        return transport
 
     def _build_session(self) -> httpx2.AsyncClient:
         httpx2_mod = _require_httpx2()
@@ -934,10 +696,10 @@ class AsyncClient(BaseClient):
 
     @property
     def session(self) -> httpx2.AsyncClient:
-        """Lazily create and return the underlying thread-safe async HTTP client.
+        """Lazily create and return the underlying thread-safe ``httpx2.AsyncClient``.
 
         Returns:
-            httpx2.AsyncClient: The configured async client instance.
+            httpx2.AsyncClient: Active async client, or a stripped closed placeholder when closed.
         """
         with self._lock:
             if self._closed:
@@ -958,10 +720,10 @@ class AsyncClient(BaseClient):
             self._session = value
 
     async def __aenter__(self) -> Self:
-        """Enter the async context manager and return the AsyncClient instance.
+        """Enter the async context manager and clear stale closed sessions on re-entry.
 
         Returns:
-            Self: The AsyncClient instance.
+            Self: The active asynchronous client instance.
         """
         stale_session: httpx2.AsyncClient | None = None
         with self._lock:
@@ -979,11 +741,12 @@ class AsyncClient(BaseClient):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Exit the async context manager and safely close the async HTTP client."""
+        """Exit the async context manager and close the underlying ``httpx2.AsyncClient``."""
+        _ = (exc_type, exc_val, exc_tb)
         await self.aclose()
 
     async def aclose(self) -> None:
-        """Secure asynchronous resource teardown closing internal sockets."""
+        """Clear credential headers and close the underlying async connection pool."""
         with self._lock:
             self._closed = True
             session = self._session
@@ -996,14 +759,14 @@ class AsyncClient(BaseClient):
                 await session.aclose()
 
     async def close(self) -> None:
-        """Alias for aclose() providing consistent teardown ergonomics."""
+        """Alias for :meth:`aclose` providing symmetric teardown ergonomics."""
         await self.aclose()
 
     def __getattr__(self, name: str) -> AsyncEndpoint:
-        """O(1) Route mapping returning an AsyncEndpoint instance.
+        """Resolve and cache an asynchronous :class:`AsyncEndpoint` wrapper by route name.
 
         Returns:
-            AsyncEndpoint: A dynamically created asynchronous endpoint instance mapping to the route.
+            AsyncEndpoint: Cached or newly created asynchronous endpoint wrapper.
         """
         return self._resolve_endpoint(name, AsyncEndpoint)
 
@@ -1027,89 +790,6 @@ class AsyncClient(BaseClient):
             response: httpx2.Response = await ephemeral_session.request(**req_kwargs)
             return response
 
-    async def _send_once(
-        self,
-        httpx2_mod: Any,
-        isolated: bool,
-        req_verify: bool | str,
-        proxies: Any,
-        cert: Any,
-        req_kwargs: dict[str, Any],
-    ) -> httpx2.Response:
-        if isolated:
-            return await self._request_isolated(httpx2_mod, req_verify, proxies, cert, req_kwargs)
-        response: httpx2.Response = await self.session.request(**req_kwargs)
-        return response
-
-    async def _send_with_retries(  # ruff: ignore[complex-structure]
-        self,
-        httpx2_mod: Any,
-        isolated: bool,
-        req_verify: bool | str,
-        proxies: Any,
-        cert: Any,
-        req_kwargs: dict[str, Any],
-        data: Any,
-        files: Any,
-    ) -> httpx2.Response:
-        max_retries = self.config.max_retries
-        retryable_errors: tuple[type[Exception], ...] = (
-            httpx2_mod.TimeoutException,
-            httpx2_mod.NetworkError,
-            httpx2_mod.RemoteProtocolError,
-            httpx2_mod.ProxyError,
-        )
-        method = str(req_kwargs.get("method", "GET")).upper()
-        url = str(req_kwargs.get("url", ""))
-
-        for attempt in range(max_retries + 1):
-            try:
-                response = await self._send_once(httpx2_mod, isolated, req_verify, proxies, cert, req_kwargs)
-            except (httpx2_mod.UnsupportedProtocol, httpx2_mod.DecodingError):
-                raise
-            except retryable_errors as exc:
-                if attempt >= max_retries:
-                    raise
-                delay = self._compute_retry_delay(attempt)
-                logger.warning(
-                    "Transient async transport error (%s) on %s %s; retry %d/%d in %.2fs",
-                    type(exc).__name__,
-                    method,
-                    url,
-                    attempt + 1,
-                    max_retries,
-                    delay,
-                )
-            else:
-                status = getattr(response, "status_code", None)
-                if attempt >= max_retries or status not in self._TRANSIENT_STATUS_CODES:
-                    return response
-                resp_headers = getattr(response, "headers", None)
-                retry_after = (
-                    resp_headers.get("Retry-After") or resp_headers.get("retry-after")
-                    if resp_headers is not None
-                    else None
-                )
-                delay = self._compute_retry_delay(attempt, retry_after)
-                logger.warning(
-                    "Transient HTTP %s on %s %s; retry %d/%d in %.2fs",
-                    status,
-                    method,
-                    url,
-                    attempt + 1,
-                    max_retries,
-                    delay,
-                )
-                if not getattr(response, "is_closed", True):
-                    with suppress(Exception):
-                        await response.aclose()
-
-            await asyncio.sleep(delay)
-            self._reset_stream_pointers(data, files)
-
-        msg = "Retry loop exited unexpectedly."  # pragma: no cover
-        raise CriticalApiError(msg)  # pragma: no cover
-
     async def _execute_request(
         self,
         method: str,
@@ -1120,28 +800,16 @@ class AsyncClient(BaseClient):
         timeout: Any,
         **kwargs: Any,
     ) -> httpx2.Response:
-        """Execute the underlying asynchronous HTTP request via httpx2.
-
-        Returns:
-            httpx2.Response: The raw HTTP response directly from the network.
-        """
         httpx2_mod = _require_httpx2()
         default_verify = SecurityGuard.resolve_tls_verify(self.config.verify)
-        req_verify = SecurityGuard.resolve_tls_verify(kwargs.pop("verify", self.config.verify))
-        if kwargs.pop("allow_redirects", False) is not False or kwargs.pop("follow_redirects", False) is not False:
-            msg = "Redirects are strictly disabled (allow_redirects=True / follow_redirects=True is forbidden)."
-            raise ValueError(msg)
-
         proxies = kwargs.pop("proxies", None)
         cert = kwargs.pop("cert", None)
         if kwargs.pop("stream", False):
             msg = "stream=True is not supported on AsyncClient.api_call(); use endpoint.stream()."
             raise ValueError(msg)
 
-        files = kwargs.get("files")
-        clean_headers = self._prepare_clean_headers(headers, files=files)
-        is_json = (
-            not files and isinstance(data, (dict, list)) and "application/json" in clean_headers.get("Content-Type", "")
+        req_verify, clean_headers, is_json, normalized_data, files = self._normalize_request_parts(
+            headers, data, kwargs
         )
         req_kwargs: dict[str, Any] = {
             "method": method,
@@ -1152,54 +820,56 @@ class AsyncClient(BaseClient):
             **kwargs,
         }
         if is_json:
-            req_kwargs["json"] = data
-        elif files and isinstance(data, Mapping):
-            req_kwargs["data"] = data
+            req_kwargs["json"] = normalized_data
+        elif files and isinstance(normalized_data, Mapping):
+            req_kwargs["data"] = normalized_data
         elif data is not None:
             req_kwargs["content"] = data
 
         isolated = req_verify != default_verify or proxies is not None or cert is not None
-        response = await self._send_with_retries(
-            httpx2_mod=httpx2_mod,
-            isolated=isolated,
-            req_verify=req_verify,
-            proxies=proxies,
-            cert=cert,
-            req_kwargs=req_kwargs,
+
+        async def _send() -> httpx2.Response:
+            if isolated:
+                return await self._request_isolated(httpx2_mod, req_verify, proxies, cert, req_kwargs)
+            resp: httpx2.Response = await self.session.request(**req_kwargs)
+            return resp
+
+        response: httpx2.Response = await run_async_with_retries(
+            _send,
+            httpx2_mod,
+            method=str(method).upper(),
+            url=url,
+            raw_retries=self.config.max_retries,
+            max_retries_limit=Config.MAX_RETRIES_LIMIT,
+            allowed_methods=self._RETRY_ALLOWED_METHODS,
+            transient_status_codes=self._TRANSIENT_STATUS_CODES,
+            max_delay=self._MAX_RETRY_DELAY,
             data=data,
             files=files,
+            log=logger,
         )
-
         self._check_unexpected_redirect(url, response)
         return response
 
-    async def api_call(  # ruff: ignore[complex-structure]
+    async def api_call(
         self,
         method: HttpMethod,
         url: str,
-        filters: dict[str, Any] | None = None,
+        filters: QueryFilters | None = None,
         data: PayloadType = None,
-        headers: Mapping[str, str | None] | None = None,
+        headers: HeadersMapping | None = None,
         timeout: TimeoutType = None,
         **kwargs: Any,
     ) -> httpx2.Response:
-        """Execute the authenticated asynchronous API call with idempotency guards.
-
-        Args:
-            method: The HTTP method.
-            url: The fully constructed API URL.
-            filters: Query parameters.
-            data: Request payload.
-            headers: Custom HTTP headers.
-            timeout: Request timeout.
-            **kwargs: Additional arguments passed to the async session request.
+        """Execute an authenticated asynchronous API call with SSRF and idempotency guards.
 
         Returns:
-            httpx2.Response: The authenticated HTTP response from Mailjet.
+            httpx2.Response: Raw asynchronous HTTP response from Mailjet.
         """
         httpx2_mod = _require_httpx2()
         req_headers, req_timeout, clean_filters, safe_kwargs = self._prepare_api_call(
             method=method,
+            url=url,
             filters=filters,
             data=data,
             headers=headers,
@@ -1227,45 +897,32 @@ class AsyncClient(BaseClient):
             )
             if not isinstance(getattr(response, "status_code", None), int) or response.status_code >= 400:
                 response.raise_for_status()
-
         except httpx2_mod.TimeoutException as e:
-            logger.exception("Timeout Error: %s %s", method, url)
-            msg = f"Request to Mailjet API timed out: {e}"
-            raise TimeoutError(msg) from e
-
+            raise_timeout_error(logger, method, url, e)
         except (
             httpx2_mod.ConnectError,
             httpx2_mod.NetworkError,
             httpx2_mod.RemoteProtocolError,
             httpx2_mod.ProxyError,
         ) as e:
-            msg = f"Connection to Mailjet API failed: {e}"
-            raise CriticalApiError(msg) from e
-
+            raise_connection_error(e)
         except httpx2_mod.HTTPError as e:
-            self._handle_api_error(e)
-
+            handle_api_error(e, max_chars=self._MAX_ERROR_DETAIL_CHARS)
         else:
-            if response.status_code in {200, 201, 204} and logger.isEnabledFor(logging.DEBUG):
-                trace_suffix, _ = self._extract_telemetry(data, req_headers)
-                self._log_request(method, url, response, trace_suffix)
+            record_debug_telemetry(logger, method, url, response, data, req_headers)
             return response
 
     async def ping(self, timeout: TimeoutType = None) -> bool:
-        """Verify Mailjet API reachability and credentials with a lightweight GET call.
-
-        Args:
-            timeout: Optional timeout override for the health check.
+        """Verify Mailjet API reachability and credentials asynchronously.
 
         Returns:
-            bool: True if the API responds cleanly (< 400); False on API or network failures.
+            bool: True when the API responds cleanly (< 400); False on API or network error.
         """
         try:
             response = await self.api_call("GET", self._ping_url(), filters={"Limit": 1}, timeout=timeout)
         except ApiError:
             return False
-        else:
-            return bool(response.status_code < 400)
+        return bool(response.status_code < 400)
 
 
 # --- Deprecated Wrappers ---
@@ -1273,7 +930,7 @@ def parse_response(response: requests.Response | httpx2.Response) -> Any:
     """Parse the JSON response or return text if invalid.
 
     Returns:
-        Any: The JSON dictionary structure or the raw text of the response body.
+        Any: Parsed JSON object or raw response text.
     """
     warnings.warn("parse_response is deprecated.", DeprecationWarning, stacklevel=2)
     try:
