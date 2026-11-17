@@ -11,19 +11,19 @@ from __future__ import annotations
 
 import argparse
 import ast
-import http.client
 import io
 import json
 import os
 import re
-import ssl
 import string
 import sys
 import zipfile
 from collections import Counter
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
+
+import requests
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -35,6 +35,8 @@ _END_MARKER = "###### End of recommended dictionary. ######"
 _TS_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?")
 _REC_LINE_RE = re.compile(r'^"(.*)"(?:\s*#\s*Uses:\s*(\d+))?\s*$')
 _ALNUM_RUN_RE = re.compile(r"[A-Za-z0-9+/=_-]{20,}")
+_REPO_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_WORKFLOW_FILE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 _WAVE6_PROTOCOL_TOKENS: tuple[bytes, ...] = (
     b"PATCH",
@@ -312,34 +314,51 @@ def collect_from_path(target: Path) -> Counter[bytes]:
     return totals
 
 
-def _github_https_get(url: str, token: str | None) -> tuple[int, bytes, dict[str, str]]:
+def _build_validated_github_url(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
-    host = parsed.hostname or ""
-    if parsed.scheme != "https" or not (host == "api.github.com" or host.endswith(".blob.core.windows.net")):
-        msg = f"Disallowed GitHub log host: {url!r}"
+    host = (parsed.hostname or "").lower()
+    is_allowed_host = host == "api.github.com" or (
+        host.endswith(".blob.core.windows.net") and host != ".blob.core.windows.net"
+    )
+    has_userinfo = bool(parsed.username or parsed.password)
+    if parsed.scheme != "https" or not is_allowed_host or has_userinfo or parsed.port not in {None, 443}:
+        msg = f"Disallowed GitHub log URL: {url!r}"
         raise ValueError(msg)
+    safe_url = urlunparse(("https", host, parsed.path or "/", "", parsed.query, ""))
+    return host, safe_url
 
-    path = parsed.path or "/"
-    if parsed.query:
-        path = f"{path}?{parsed.query}"
 
-    headers: dict[str, str] = {"User-Agent": "mailjet-fuzzer-dict-harvester/1.0"}
-    if host == "api.github.com":
-        headers["Accept"] = "application/vnd.github+json"
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
+def _github_https_get(url: str, token: str | None) -> tuple[int, bytes, dict[str, str]]:
+    current_url = url
+    current_token = token
+    for _ in range(4):
+        host, safe_url = _build_validated_github_url(current_url)
+        headers: dict[str, str] = {"User-Agent": "mailjet-fuzzer-dict-harvester/1.0"}
+        if host == "api.github.com":
+            headers["Accept"] = "application/vnd.github+json"
+            if current_token:
+                headers["Authorization"] = f"Bearer {current_token}"
 
-    conn = http.client.HTTPSConnection(host, timeout=30.0, context=ssl.create_default_context())
-    try:
-        conn.request("GET", path, headers=headers)
-        resp = conn.getresponse()
-        body = resp.read()
-        resp_headers = {k.lower(): v for k, v in resp.getheaders()}
-        if resp.status in {301, 302, 303, 307, 308} and (loc := resp_headers.get("location")):
-            return _github_https_get(loc, None)
-        return resp.status, body, resp_headers
-    finally:
-        conn.close()
+        resp = requests.get(safe_url, headers=headers, timeout=30.0, verify=True, allow_redirects=False)
+        resp_headers = {k.lower(): v for k, v in resp.headers.items()}
+        if resp.status_code in {301, 302, 303, 307, 308} and (loc := resp_headers.get("location")):
+            current_url = loc
+            current_token = None
+            continue
+        return resp.status_code, resp.content, resp_headers
+
+    msg = "Exceeded maximum redirect hops while fetching GitHub Actions logs."
+    raise ValueError(msg)
+
+
+def _validate_github_query(repo: str, workflows: list[str]) -> None:
+    if not _REPO_SLUG_RE.match(repo):
+        msg = f"Invalid repository slug: {repo!r}"
+        raise ValueError(msg)
+    for workflow in workflows:
+        if not _WORKFLOW_FILE_RE.match(workflow):
+            msg = f"Invalid workflow filename: {workflow!r}"
+            raise ValueError(msg)
 
 
 def collect_from_github(
@@ -356,6 +375,7 @@ def collect_from_github(
     """
     from datetime import datetime, timedelta, timezone  # ruff: ignore[import-outside-top-level]
 
+    _validate_github_query(repo, workflows)
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     totals: Counter[bytes] = Counter()

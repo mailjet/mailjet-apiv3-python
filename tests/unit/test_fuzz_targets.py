@@ -271,3 +271,70 @@ def test_harvest_fuzzer_dict_octal_to_hex_and_non_destructive_merge(tmp_path: Pa
     assert '"\\xff\\xff\\xff\\xff\\xff\\xff\\xff\\xfc"' in merged
     assert any(line.startswith('"\\x68\\x74\\x74\\x70\\x73\\x3a') for line in merged)
     assert harvester.main(["--dict-path", str(temp_dict), "--sync-routes", "--dry-run"]) == 0
+
+
+def test_harvest_fuzzer_dict_github_https_get_security() -> None:
+    """Harvester validates GitHub/Blob URLs and strips Authorization before Azure redirect."""
+    from unittest.mock import patch  # ruff: ignore[import-outside-top-level]
+
+    import pytest  # ruff: ignore[import-outside-top-level]
+    import requests  # ruff: ignore[import-outside-top-level]
+
+    import scripts.harvest_fuzzer_dict as harvester  # ruff: ignore[import-outside-top-level]
+
+    scheme_user = "https://user"
+    bad_urls = [
+        "http://api.github.com/repos/mailjet/mailjet-apiv3-python",
+        "https://evil.example.com/logs.zip",
+        "https://.blob.core.windows.net/logs.zip",
+        f"{scheme_user}:placeholder@api.github.com/repos/mailjet/mailjet-apiv3-python",
+        "https://api.github.com:8443/repos/mailjet/mailjet-apiv3-python",
+    ]
+    for bad in bad_urls:
+        with pytest.raises(ValueError, match="Disallowed GitHub log URL"):
+            harvester._build_validated_github_url(bad)
+
+    calls: list[dict[str, Any]] = []
+
+    class _FakeResp:
+        def __init__(self, status_code: int, content: bytes, headers: dict[str, str]) -> None:
+            self.status_code = status_code
+            self.content = content
+            self.headers = headers
+
+    def _fake_get(url: str, *, headers: dict[str, str], timeout: float, verify: bool, allow_redirects: bool) -> Any:
+        calls.append(
+            {
+                "url": url,
+                "headers": dict(headers),
+                "timeout": timeout,
+                "verify": verify,
+                "allow_redirects": allow_redirects,
+            }
+        )
+        if len(calls) == 1:
+            return _FakeResp(
+                302,
+                b"",
+                {"Location": "https://pipelines.blob.core.windows.net/logs/1.txt?sig=abc"},
+            )
+        return _FakeResp(200, b"ok-log-bytes", {"Content-Type": "text/plain"})
+
+    with patch.object(requests, "get", side_effect=_fake_get):
+        status, body, _ = harvester._github_https_get(
+            "https://api.github.com/repos/mailjet/mailjet-apiv3-python/actions/jobs/1/logs",
+            "tok_test",
+        )
+
+    assert status == 200
+    assert body == b"ok-log-bytes"
+    assert len(calls) == 2
+    assert calls[0]["headers"]["Authorization"] == "Bearer tok_test"
+    assert "Authorization" not in calls[1]["headers"]
+    assert all(c["timeout"] == 30.0 and c["verify"] is True and c["allow_redirects"] is False for c in calls)
+
+    with pytest.raises(ValueError, match="Invalid repository slug"):
+        harvester.collect_from_github("not a slug", [], 30, [], [])
+
+    with pytest.raises(ValueError, match="Invalid workflow filename"):
+        harvester.collect_from_github("mailjet/mailjet-apiv3-python", ["../bad.yml"], 30, [], [])

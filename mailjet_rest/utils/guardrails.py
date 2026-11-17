@@ -350,6 +350,43 @@ def _validate_config_url_cached(url: str, allowed_root_domain: str) -> None:
     _validate_url_uncached(url, allowed_root_domain)
 
 
+def _deep_strip_volatile(
+    data: Any,
+    volatile_keys: frozenset[str],
+    depth: int = 0,
+    seen: set[int] | None = None,
+) -> Any:
+    if seen is None:
+        seen = set()
+
+    obj_id = id(data)
+    # Active Cycle Detection (CWE-674) to prevent RecursionError crashes
+    if obj_id in seen:
+        return "[Circular]"
+
+    if depth > 50:
+        msg = "Security Violation: Payload exceeds maximum safe nesting depth."
+        raise ValueError(msg)
+
+    if isinstance(data, Mapping):
+        seen.add(obj_id)
+        try:
+            return {
+                k: _deep_strip_volatile(v, volatile_keys, depth + 1, seen)
+                for k, v in data.items()
+                if k not in volatile_keys
+            }
+        finally:
+            seen.discard(obj_id)
+    if isinstance(data, (list, tuple, set)):
+        seen.add(obj_id)
+        try:
+            return [_deep_strip_volatile(item, volatile_keys, depth + 1, seen) for item in data]
+        finally:
+            seen.discard(obj_id)
+    return data
+
+
 class SecurityGuard(metaclass=_LazyGuardMeta):
     """Centralized OWASP API security and payload guardrails."""
 
@@ -554,40 +591,8 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
         Returns:
             str: The generated SHA-256 hash.
         """
-
-        def _deep_strip(data: Any, depth: int = 0, seen: set[int] | None = None) -> Any:
-            if seen is None:
-                seen = set()
-
-            obj_id = id(data)
-            # Active Cycle Detection (CWE-674) to prevent RecursionError crashes
-            if obj_id in seen:
-                return "[Circular]"
-
-            if depth > 50:
-                msg = "Security Violation: Payload exceeds maximum safe nesting depth."
-                raise ValueError(msg)
-
-            if isinstance(data, Mapping):
-                seen.add(obj_id)
-                try:
-                    return {
-                        k: _deep_strip(v, depth + 1, seen)
-                        for k, v in data.items()
-                        if k not in SecurityGuard.VOLATILE_IDEMPOTENCY_KEYS
-                    }
-                finally:
-                    seen.discard(obj_id)
-            if isinstance(data, (list, tuple, set)):
-                seen.add(obj_id)
-                try:
-                    return [_deep_strip(item, depth + 1, seen) for item in data]
-                finally:
-                    seen.discard(obj_id)
-            return data
-
         try:
-            safe_payload = _deep_strip(payload)
+            safe_payload = _deep_strip_volatile(payload, SecurityGuard.VOLATILE_IDEMPOTENCY_KEYS)
             serialized_bytes = SecurityGuard._canonical_json_bytes(safe_payload)
             return hashlib.sha256(serialized_bytes).hexdigest()
         except Exception as e:
