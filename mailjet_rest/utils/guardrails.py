@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from html.parser import HTMLParser
 
-    from mailjet_rest.types import TimeoutType
+    from mailjet_rest.types import SendV31Payload, TimeoutType
 
 try:
     import orjson as _orjson_mod
@@ -545,7 +545,7 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
         return json.dumps(safe_payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
 
     @staticmethod
-    def generate_payload_fingerprint(payload: dict[str, Any] | list[Any]) -> str:
+    def generate_payload_fingerprint(payload: dict[str, Any] | SendV31Payload | list[Any]) -> str:
         """Generates a safe SHA-256 Idempotency hash for the exact JSON payload.
 
         Returns:

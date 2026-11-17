@@ -31,19 +31,33 @@ def test_stub_drift_detected_in_temp_copy(tmp_path: Path) -> None:
     assert check_stubs.main(["--check", "--package-dir", str(pkg_copy)]) == 0
 
 
+def _collect_route_properties(tree: ast.Module, class_name: str, expected_return: str) -> set[str]:
+    cls_node = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name)
+    assert any(isinstance(node, ast.FunctionDef) and node.name == "__getattr__" for node in cls_node.body)
+    props: set[str] = set()
+    for node in cls_node.body:
+        if (
+            isinstance(node, ast.FunctionDef)
+            and any(isinstance(dec, ast.Name) and dec.id == "property" for dec in node.decorator_list)
+            and isinstance(node.returns, ast.Name)
+            and node.returns.id == expected_return
+        ):
+            props.add(node.name)
+    return props
+
+
 def test_client_stub_exposes_every_route_map_property() -> None:
-    """Every static route in ROUTE_MAP is declared on Client in client.pyi."""
+    """Every static route in ROUTE_MAP is declared on Client and AsyncClient in client.pyi."""
     stub_source = Path("mailjet_rest/client.pyi").read_text(encoding="utf-8")
     tree = ast.parse(stub_source)
-    client_cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Client")
-    client_props = {
-        node.name
-        for node in client_cls.body
-        if isinstance(node, ast.FunctionDef)
-        and any(isinstance(dec, ast.Name) and dec.id == "property" for dec in node.decorator_list)
-    }
-
     expected_routes = {route for route in ROUTE_MAP if route.isidentifier()}
-    missing = expected_routes - client_props
-    assert not missing, f"Routes missing from client.pyi: {sorted(missing)}"
-    assert any(isinstance(node, ast.FunctionDef) and node.name == "__getattr__" for node in client_cls.body)
+
+    for class_name, return_type in (("Client", "Endpoint"), ("AsyncClient", "AsyncEndpoint")):
+        client_props = _collect_route_properties(tree, class_name, return_type)
+        missing = expected_routes - client_props
+        assert not missing, f"Routes missing from {class_name} in client.pyi: {sorted(missing)}"
+
+    ep_stub = Path("mailjet_rest/endpoint.pyi").read_text(encoding="utf-8")
+    ep_tree = ast.parse(ep_stub)
+    ep_classes = {node.name for node in ep_tree.body if isinstance(node, ast.ClassDef)}
+    assert {"BaseEndpoint", "Endpoint", "AsyncEndpoint"} <= ep_classes

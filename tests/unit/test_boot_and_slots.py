@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import gc
 import json
 import logging
@@ -18,7 +19,8 @@ import pytest
 import requests
 
 from mailjet_rest.builders import ChunkedStreamer
-from mailjet_rest.client import Client, Config
+from mailjet_rest.client import AsyncClient, Client, Config, _httpx2
+from mailjet_rest.endpoint import AsyncEndpoint
 from mailjet_rest.utils.guardrails import RedactingFilter, SecretAuth, SecureHTTPAdapter, SecurityGuard
 from mailjet_rest.utils.transport_security import _cached_ssl_context, get_secure_ssl_context
 
@@ -27,9 +29,11 @@ def test_pep562_lazy_top_level_import_isolation() -> None:
     """Importing mailjet_rest does not eagerly load heavy transport or parser modules."""
     code = (
         "import json, sys, mailjet_rest; "
-        "heavy = ('requests', 'urllib3', 'ssl', 'html.parser', 'difflib', 'mimetypes'); "
+        "heavy = ('requests', 'urllib3', 'ssl', 'html.parser', 'difflib', 'mimetypes', 'httpx2', 'httpcore2'); "
         "loaded = [m for m in heavy if m in sys.modules]; "
-        "print(json.dumps({'loaded': loaded, 'has_client': 'Client' in dir(mailjet_rest)}))"
+        "exported = dir(mailjet_rest); "
+        "print(json.dumps({'loaded': loaded, 'has_client': 'Client' in exported, "
+        "'has_async_client': 'AsyncClient' in exported, 'has_async_endpoint': 'AsyncEndpoint' in exported}))"
     )
     proc = subprocess.run(
         [sys.executable, "-c", code],
@@ -41,18 +45,40 @@ def test_pep562_lazy_top_level_import_isolation() -> None:
     payload = json.loads(proc.stdout)
     assert payload["loaded"] == []
     assert payload["has_client"] is True
+    assert payload["has_async_client"] is True
+    assert payload["has_async_endpoint"] is True
+
+    sync_only_code = (
+        "import json, sys; "
+        "from mailjet_rest.client import Client; "
+        "_ = Client(auth=('k', 's')); "
+        "loaded = [m for m in ('httpx2', 'httpcore2') if m in sys.modules]; "
+        "print(json.dumps({'loaded': loaded}))"
+    )
+    sync_proc = subprocess.run(
+        [sys.executable, "-c", sync_only_code],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=15,
+    )
+    sync_payload = json.loads(sync_proc.stdout)
+    assert sync_payload["loaded"] == []
 
 
 def test_package_lazy_exports_and_missing_attr() -> None:
-    """Top-level PEP 562 exposes Client, Config, __version__ and rejects unknown attributes."""
+    """Top-level PEP 562 exposes Client, AsyncClient, AsyncEndpoint, Config, __version__ and rejects unknown attrs."""
     import mailjet_rest  # ruff: ignore[import-outside-top-level]
 
     assert mailjet_rest.Client is Client
+    assert mailjet_rest.AsyncClient is AsyncClient
+    assert mailjet_rest.AsyncEndpoint is AsyncEndpoint
     assert mailjet_rest.Config is Config
     assert issubclass(mailjet_rest.ApiError, Exception)
     assert callable(mailjet_rest.get_version)
     assert isinstance(mailjet_rest.__version__, str)
     assert "Client" in dir(mailjet_rest)
+    assert "AsyncClient" in dir(mailjet_rest)
     assert "__version__" in dir(mailjet_rest)
 
     with pytest.raises(AttributeError, match="no attribute"):
@@ -63,14 +89,26 @@ def test_package_lazy_exports_and_missing_attr() -> None:
 
 
 def test_slots_enforced_and_secret_auth_unslotted() -> None:
-    """Client, ChunkedStreamer, and SecurityGuard use __slots__; SecretAuth stays unslotted."""
+    """Client, AsyncClient, Endpoints, ChunkedStreamer, and SecurityGuard use __slots__; SecretAuth stays unslotted."""
     with Client(auth=("api_key_value", "api_secret_value")) as client:
         assert not hasattr(client, "__dict__")
+        assert not hasattr(client.contact, "__dict__")
         assert not hasattr(ChunkedStreamer(), "__dict__")
         assert not hasattr(SecurityGuard(), "__dict__")
         # SecretAuth inherits from requests.auth.AuthBase (unslotted in 1.x)
         assert isinstance(client.auth, SecretAuth)
         assert hasattr(client.auth, "__dict__")
+
+    if _httpx2 is not None:
+
+        async def _check_async_slots() -> None:
+            async with AsyncClient(auth=("api_key_value", "api_secret_value")) as aclient:
+                assert not hasattr(aclient, "__dict__")
+                assert isinstance(aclient.contact, AsyncEndpoint)
+                assert not hasattr(aclient.contact, "__dict__")
+                assert isinstance(aclient.auth, SecretAuth)
+
+        asyncio.run(_check_async_slots())
 
 
 def test_lazy_session_and_pool_configuration() -> None:

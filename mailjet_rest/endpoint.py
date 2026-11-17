@@ -14,15 +14,19 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Mapping
+    from collections.abc import AsyncGenerator, Generator, Mapping
 
+    import httpx2
     import requests
 
-    from mailjet_rest.client import Client
+    from mailjet_rest.client import AsyncClient, Client
 
 
-class Endpoint:
-    """Represents a specific Mailjet REST resource path.
+__all__ = ["AsyncEndpoint", "BaseEndpoint", "Endpoint"]
+
+
+class BaseEndpoint:
+    """Shared base implementation for synchronous and asynchronous Mailjet endpoints.
 
     Dynamically binds to the HTTP client and coordinates URL generation,
     handling API resource mappings via the strict ROUTE_MAP.
@@ -33,9 +37,9 @@ class Endpoint:
     # Mailjet API pagination ceiling (https://dev.mailjet.com/docs/api-reference#pagination--sorting)
     MAX_LIMIT: int = 1000
 
-    def __init__(self, client: Client, name: str) -> None:
+    def __init__(self, client: Any, name: str) -> None:
         """Initialize the endpoint handler with the parent client and route name."""
-        self.client = client
+        self.client: Any = client
         self.name = name
         self._name_lower = name.lower()
         parts = name.split("_")
@@ -49,6 +53,14 @@ class Endpoint:
             for part in parts[1:]:
                 dashed = "".join("-" + c.lower() if c.isupper() else c for c in part)
                 self._action_parts.append(dashed.lstrip("-"))
+
+    def __repr__(self) -> str:
+        """Return a readable representation of this endpoint wrapper.
+
+        Returns:
+            str: Formatted endpoint representation.
+        """
+        return f"<{self.__class__.__name__} name={self.name!r}>"
 
     @staticmethod
     def _external_stacklevel() -> int:
@@ -161,7 +173,8 @@ class Endpoint:
                 action_id = SecurityGuard.sanitize_segment(action_id)
 
         else:
-            url = f"{base_url}/{version}/REST/{self._resource_lower}"
+            safe_resource = SecurityGuard.sanitize_segment(self._resource_lower)
+            url = f"{base_url}/{version}/REST/{safe_resource}"
             if len(self._action_parts) > 1:
                 safe_action = "/".join(SecurityGuard.sanitize_segment(p) for p in self._action_parts[1:])
                 if id_val is None:
@@ -189,7 +202,8 @@ class Endpoint:
             str: The fully qualified, sanitized secure URL.
         """
         self._check_deprecation()
-        version = self.client.config.version
+        raw_version = self.client.config.version
+        version = raw_version if raw_version in {"v1", "v3", "v3.1"} else SecurityGuard.sanitize_segment(raw_version)
 
         # Test Parity DX warning:
         if version == "v3" and self._name_lower == "templates":
@@ -315,86 +329,6 @@ class Endpoint:
 
         return current_filters, current_offset
 
-    def __call__(
-        self,
-        method: HttpMethod = "GET",
-        id: int | str | None = None,
-        data: PayloadType = None,
-        filters: dict[str, Any] | None = None,
-        action_id: int | str | None = None,
-        timeout: TimeoutType = None,
-        headers: Mapping[str, str | None] | None = None,
-        **kwargs: Any,
-    ) -> requests.Response:
-        """Execute the specific HTTP method on the constructed endpoint.
-
-        Args:
-            method (HttpMethod): The HTTP method to use (default: "GET").
-            id (int | str | None): The primary resource ID.
-            data (PayloadType): Request payload.
-            filters (dict[str, Any] | None): Query string URL parameters.
-            action_id (int | str | None): Sub-action ID.
-            timeout (TimeoutType): Request timeout.
-            headers (Mapping[str, str | None] | None): Custom HTTP request headers.
-            **kwargs (Any): Additional arguments.
-
-        Returns:
-            requests.Response: The resulting HTTP response from the request execution.
-        """
-        # Pop deprecated/HTTP kwargs safely without overwriting the explicit 'headers' argument
-        if headers is None:
-            headers = kwargs.pop("headers", None)
-        else:
-            kwargs.pop("headers", None)
-
-        ensure_ascii = kwargs.pop("ensure_ascii", None)
-        data_encoding = kwargs.pop("data_encoding", None)
-
-        if ensure_ascii is not None or data_encoding is not None:
-            warnings.warn("'ensure_ascii' and 'data_encoding' are deprecated.", DeprecationWarning, stacklevel=2)
-
-            # Include 'list' to ensure batch payloads (arrays) are serialized properly
-            # for users relying on legacy encoding arguments.
-            if isinstance(data, (dict, list)):
-                # Legacy behavior emulation: force serialize data directly into string/bytes payload
-                data_str = json.dumps(data, ensure_ascii=ensure_ascii if ensure_ascii is not None else True)
-                data = data_str.encode(data_encoding) if data_encoding else data_str
-
-        # Screen and merge headers through _build_headers
-        merged_headers = self._build_headers(headers)
-
-        return self.client.api_call(
-            method=method,
-            url=self._build_url(id_val=id, action_id=action_id),
-            headers=merged_headers,
-            data=data,
-            filters=filters,
-            timeout=timeout,
-            **kwargs,
-        )
-
-    def get(
-        self,
-        id: int | str | None = None,
-        filters: dict[str, Any] | None = None,
-        action_id: int | str | None = None,
-        headers: Mapping[str, str | None] | None = None,
-        **kwargs: Any,
-    ) -> requests.Response:
-        """Perform a GET request on the constructed endpoint.
-
-        Args:
-            id: The primary resource ID.
-            filters: Query string URL parameters.
-            action_id: Sub-action ID.
-            headers: Custom HTTP request headers.
-            **kwargs: Additional arguments passed to the request layer.
-
-        Returns:
-            requests.Response: The resulting HTTP response from the GET request.
-        """
-        return self(method="GET", id=id, filters=filters, action_id=action_id, headers=headers, **kwargs)
-
     @classmethod
     def _validate_stream_args(cls, method: HttpMethod, chunk_size: int, max_items: int | None) -> None:
         if method.upper() != "GET":
@@ -437,6 +371,117 @@ class Endpoint:
             msg = "Expected 'Data' list in stream() response."
             raise MailjetApiError(msg, status_code=status_code, response_body=response_body)
         return raw_data
+
+    def _prepare_call_args(
+        self,
+        id: int | str | None,
+        data: PayloadType,
+        action_id: int | str | None,
+        headers: Mapping[str, str | None] | None,
+        kwargs: dict[str, Any],
+    ) -> tuple[str, dict[str, str | None], PayloadType]:
+        """Prepare URL, sanitized headers, and legacy-serialized payload for sync/async calls.
+
+        Returns:
+            tuple[str, dict[str, str | None], PayloadType]: Resolved URL, sanitized headers, and payload.
+        """
+        # Pop deprecated/HTTP kwargs safely without overwriting the explicit 'headers' argument
+        if headers is None:
+            headers = kwargs.pop("headers", None)
+        else:
+            kwargs.pop("headers", None)
+
+        ensure_ascii = kwargs.pop("ensure_ascii", None)
+        data_encoding = kwargs.pop("data_encoding", None)
+
+        if ensure_ascii is not None or data_encoding is not None:
+            warnings.warn(
+                "'ensure_ascii' and 'data_encoding' are deprecated.",
+                DeprecationWarning,
+                stacklevel=self._external_stacklevel(),
+            )
+
+            # Include 'list' to ensure batch payloads (arrays) are serialized properly
+            # for users relying on legacy encoding arguments.
+            if isinstance(data, (dict, list)):
+                # Legacy behavior emulation: force serialize data directly into string/bytes payload
+                data_str = json.dumps(data, ensure_ascii=ensure_ascii if ensure_ascii is not None else True)
+                data = data_str.encode(data_encoding) if data_encoding else data_str
+
+        merged_headers = self._build_headers(headers)
+        url = self._build_url(id_val=id, action_id=action_id)
+        return url, merged_headers, data
+
+    def _validate_delete_id(self, id: int | str) -> None:
+        if id is None or isinstance(id, bool) or (isinstance(id, str) and not id.strip()):
+            msg = f"{self.__class__.__name__}.delete() requires a non-empty, non-boolean resource 'id'."
+            raise ValueError(msg)
+
+
+class Endpoint(BaseEndpoint):
+    """Represents a specific Mailjet REST resource path for synchronous requests."""
+
+    __slots__ = ()
+    client: Client
+
+    def __call__(
+        self,
+        method: HttpMethod = "GET",
+        id: int | str | None = None,
+        data: PayloadType = None,
+        filters: dict[str, Any] | None = None,
+        action_id: int | str | None = None,
+        timeout: TimeoutType = None,
+        headers: Mapping[str, str | None] | None = None,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Execute the specific HTTP method on the constructed endpoint.
+
+        Args:
+            method (HttpMethod): The HTTP method to use (default: "GET").
+            id (int | str | None): The primary resource ID.
+            data (PayloadType): Request payload.
+            filters (dict[str, Any] | None): Query string URL parameters.
+            action_id (int | str | None): Sub-action ID.
+            timeout (TimeoutType): Request timeout.
+            headers (Mapping[str, str | None] | None): Custom HTTP request headers.
+            **kwargs (Any): Additional arguments.
+
+        Returns:
+            requests.Response: The resulting HTTP response from the request execution.
+        """
+        url, merged_headers, prepared_data = self._prepare_call_args(id, data, action_id, headers, kwargs)
+        return self.client.api_call(
+            method=method,
+            url=url,
+            headers=merged_headers,
+            data=prepared_data,
+            filters=filters,
+            timeout=timeout,
+            **kwargs,
+        )
+
+    def get(
+        self,
+        id: int | str | None = None,
+        filters: dict[str, Any] | None = None,
+        action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Perform a GET request on the constructed endpoint.
+
+        Args:
+            id: The primary resource ID.
+            filters: Query string URL parameters.
+            action_id: Sub-action ID.
+            headers: Custom HTTP request headers.
+            **kwargs: Additional arguments passed to the request layer.
+
+        Returns:
+            requests.Response: The resulting HTTP response from the GET request.
+        """
+        return self(method="GET", id=id, filters=filters, action_id=action_id, headers=headers, **kwargs)
 
     def stream(
         self,
@@ -563,6 +608,41 @@ class Endpoint:
             **kwargs,
         )
 
+    def patch(
+        self,
+        id: int | str,
+        data: PayloadType = None,
+        action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Perform a PATCH request to partially update a resource.
+
+        Args:
+            id: The primary resource ID.
+            data: Request payload.
+            action_id: The sub-action ID.
+            headers: Custom headers.
+            ensure_ascii: Ensure ASCII encoding (deprecated).
+            data_encoding: Data encoding (deprecated).
+            **kwargs: Additional arguments.
+
+        Returns:
+            requests.Response: The HTTP response for the patched resource context.
+        """
+        return self(
+            method="PATCH",
+            id=id,
+            data=data,
+            action_id=action_id,
+            headers=headers,
+            ensure_ascii=ensure_ascii,
+            data_encoding=data_encoding,
+            **kwargs,
+        )
+
     def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> requests.Response:
         """Perform a DELETE request to remove a resource.
 
@@ -574,7 +654,243 @@ class Endpoint:
         Returns:
             requests.Response: The HTTP response representing the deletion confirmation.
         """
-        if id is None or isinstance(id, bool) or (isinstance(id, str) and not id.strip()):
-            msg = "Endpoint.delete() requires a non-empty, non-boolean resource 'id'."
-            raise ValueError(msg)
+        self._validate_delete_id(id)
         return self(method="DELETE", id=id, action_id=action_id, **kwargs)
+
+
+class AsyncEndpoint(BaseEndpoint):
+    """Represents a specific Mailjet REST resource path for asynchronous requests."""
+
+    __slots__ = ()
+    client: AsyncClient
+
+    async def __call__(
+        self,
+        method: HttpMethod = "GET",
+        id: int | str | None = None,
+        data: PayloadType = None,
+        filters: dict[str, Any] | None = None,
+        action_id: int | str | None = None,
+        timeout: TimeoutType = None,
+        headers: Mapping[str, str | None] | None = None,
+        **kwargs: Any,
+    ) -> httpx2.Response:
+        """Execute the specific HTTP method asynchronously on the constructed endpoint.
+
+        Args:
+            method: The HTTP method to use (default: "GET").
+            id: The primary resource ID.
+            data: Request payload.
+            filters: Query string URL parameters.
+            action_id: Sub-action ID.
+            timeout: Request timeout.
+            headers: Custom HTTP request headers.
+            **kwargs: Additional arguments.
+
+        Returns:
+            httpx2.Response: The resulting HTTP response from the request execution.
+        """
+        url, merged_headers, prepared_data = self._prepare_call_args(id, data, action_id, headers, kwargs)
+        return await self.client.api_call(
+            method=method,
+            url=url,
+            headers=merged_headers,
+            data=prepared_data,
+            filters=filters,
+            timeout=timeout,
+            **kwargs,
+        )
+
+    async def get(
+        self,
+        id: int | str | None = None,
+        filters: dict[str, Any] | None = None,
+        action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
+        **kwargs: Any,
+    ) -> httpx2.Response:
+        """Perform an asynchronous GET request on the constructed endpoint.
+
+        Args:
+            id: The primary resource ID.
+            filters: Query string URL parameters.
+            action_id: Sub-action ID.
+            headers: Custom HTTP request headers.
+            **kwargs: Additional arguments passed to the request layer.
+
+        Returns:
+            httpx2.Response: The resulting HTTP response from the GET request.
+        """
+        return await self(method="GET", id=id, filters=filters, action_id=action_id, headers=headers, **kwargs)
+
+    async def stream(
+        self,
+        id: int | str | None = None,
+        filters: Mapping[str, Any] | None = None,
+        action_id: int | str | None = None,
+        chunk_size: int = 1000,
+        method: HttpMethod = "GET",
+        *,
+        max_items: int | None = None,
+        **kwargs: Any,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Automatically paginate asynchronously over GET requests yielding resource dictionaries.
+
+        Args:
+            id: The primary resource ID.
+            filters: Query string URL parameters. Accepts dicts, MappingProxy, or parse_qs multi-dicts.
+            action_id: Sub-action ID.
+            chunk_size: Objects returned per loop (Limit). Defaults to 1000 (Mailjet max limit).
+            method: The HTTP method to use (must be GET).
+            max_items: Optional upper bound on total yielded records across all pages.
+            **kwargs: Additional arguments passed to httpx2.
+
+        Yields:
+            dict[str, Any]: Individual resource objects from the paginated API response.
+        """
+        self._validate_stream_args(method, chunk_size, max_items)
+        current_filters, current_offset = self._normalize_stream_filters(filters, chunk_size)
+
+        if max_items == 0:
+            return
+
+        yielded = 0
+        while True:
+            page_limit = min(chunk_size, max_items - yielded) if max_items is not None else chunk_size
+            current_filters["Limit"] = page_limit
+            current_filters["Offset"] = current_offset
+            response = await self.get(id=id, filters=current_filters.copy(), action_id=action_id, **kwargs)
+
+            if hasattr(response, "raise_for_status"):
+                response.raise_for_status()
+
+            data = self._parse_stream_page(response)
+            for item in data:
+                yield item
+                yielded += 1
+                if max_items is not None and yielded >= max_items:
+                    return
+
+            if not data or len(data) < page_limit:
+                break
+
+            current_offset += len(data)
+
+    async def create(
+        self,
+        data: PayloadType = None,
+        id: int | str | None = None,
+        action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
+        **kwargs: Any,
+    ) -> httpx2.Response:
+        """Perform an asynchronous POST request to create a resource.
+
+        Args:
+            data: Request payload.
+            id: The primary resource ID.
+            action_id: The sub-action ID.
+            headers: Custom headers.
+            ensure_ascii: Ensure ASCII encoding (deprecated).
+            data_encoding: Data encoding (deprecated).
+            **kwargs: Additional arguments.
+
+        Returns:
+            httpx2.Response: The HTTP response containing the created entity representation.
+        """
+        return await self(
+            method="POST",
+            id=id,
+            data=data,
+            action_id=action_id,
+            headers=headers,
+            ensure_ascii=ensure_ascii,
+            data_encoding=data_encoding,
+            **kwargs,
+        )
+
+    async def update(
+        self,
+        id: int | str,
+        data: PayloadType = None,
+        action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
+        **kwargs: Any,
+    ) -> httpx2.Response:
+        """Perform an asynchronous PUT request to update a resource.
+
+        Args:
+            id: The primary resource ID.
+            data: Request payload.
+            action_id: The sub-action ID.
+            headers: Custom headers.
+            ensure_ascii: Ensure ASCII encoding (deprecated).
+            data_encoding: Data encoding (deprecated).
+            **kwargs: Additional arguments.
+
+        Returns:
+            httpx2.Response: The HTTP response for the updated resource context.
+        """
+        return await self(
+            method="PUT",
+            id=id,
+            data=data,
+            action_id=action_id,
+            headers=headers,
+            ensure_ascii=ensure_ascii,
+            data_encoding=data_encoding,
+            **kwargs,
+        )
+
+    async def patch(
+        self,
+        id: int | str,
+        data: PayloadType = None,
+        action_id: int | str | None = None,
+        headers: Mapping[str, str | None] | None = None,
+        ensure_ascii: bool | None = None,
+        data_encoding: str | None = None,
+        **kwargs: Any,
+    ) -> httpx2.Response:
+        """Perform an asynchronous PATCH request to partially update a resource.
+
+        Args:
+            id: The primary resource ID.
+            data: Request payload.
+            action_id: The sub-action ID.
+            headers: Custom headers.
+            ensure_ascii: Ensure ASCII encoding (deprecated).
+            data_encoding: Data encoding (deprecated).
+            **kwargs: Additional arguments.
+
+        Returns:
+            httpx2.Response: The HTTP response for the patched resource context.
+        """
+        return await self(
+            method="PATCH",
+            id=id,
+            data=data,
+            action_id=action_id,
+            headers=headers,
+            ensure_ascii=ensure_ascii,
+            data_encoding=data_encoding,
+            **kwargs,
+        )
+
+    async def delete(self, id: int | str, action_id: int | str | None = None, **kwargs: Any) -> httpx2.Response:
+        """Perform an asynchronous DELETE request to remove a resource.
+
+        Args:
+            id: The primary resource ID.
+            action_id: The sub-action ID.
+            **kwargs: Additional arguments.
+
+        Returns:
+            httpx2.Response: The HTTP response representing the deletion confirmation.
+        """
+        self._validate_delete_id(id)
+        return await self(method="DELETE", id=id, action_id=action_id, **kwargs)

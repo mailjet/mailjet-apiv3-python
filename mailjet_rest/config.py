@@ -29,6 +29,7 @@ class Config:
         pool_connections (int): Number of urllib3 connection pools to cache per Client.
         pool_maxsize (int): Maximum number of persistent connections saved per pool.
         warn_unclosed (bool): Emit ResourceWarning on garbage collection if session was not closed.
+        max_retries (int): Maximum retry attempts for transient connection and HTTP errors.
     """
 
     ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
@@ -44,11 +45,12 @@ class Config:
     pool_connections: int = 100
     pool_maxsize: int = 100
     warn_unclosed: bool = False
+    max_retries: int = 3
 
     @staticmethod
-    def _validate_pool_size(name: str, value: int) -> None:
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            msg = f"{name} must be an integer >= 1, got {value!r}."
+    def _validate_int_min(name: str, value: int, minimum: int) -> None:
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            msg = f"{name} must be an integer >= {minimum}, got {value!r}."
             raise ValueError(msg)
 
     def __post_init__(self) -> None:
@@ -71,9 +73,10 @@ class Config:
             msg = f"Invalid auto_idempotency_mode {self.auto_idempotency_mode!r}; expected one of {sorted(_VALID_IDEMPOTENCY_MODES)}."
             raise ValueError(msg)
 
-        # 5. Validate connection pool bounds and warning flags
-        self._validate_pool_size("pool_connections", self.pool_connections)
-        self._validate_pool_size("pool_maxsize", self.pool_maxsize)
+        # 5. Validate connection pool bounds, retry budget, and warning flags
+        self._validate_int_min("pool_connections", self.pool_connections, 1)
+        self._validate_int_min("pool_maxsize", self.pool_maxsize, 1)
+        self._validate_int_min("max_retries", self.max_retries, 0)
         raw_warn: object = self.warn_unclosed
         if not isinstance(raw_warn, bool):
             msg = f"warn_unclosed must be a bool, got {type(raw_warn).__name__}."

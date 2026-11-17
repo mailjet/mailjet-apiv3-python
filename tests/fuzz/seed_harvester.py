@@ -1,197 +1,188 @@
 #!/usr/bin/env python3
-"""Mailjet Enhanced Fuzzer Seed Harvester
-Harvests successful AND error-case payloads to seed the fuzzing corpus.
+"""Mailjet Enhanced Fuzzer Seed Harvester & Synthetic Corpus Generator.
+
+Harvests live API success/error payloads (including stateful CRUD lifecycles
+with automatic teardown) AND synthesizes structural, binary, and adversarial
+seeds across all synchronous and asynchronous Atheris fuzz targets.
 """
 
+from __future__ import annotations
+
+import argparse
+import hashlib
 import json
+import logging
 import os
+import shutil
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import requests
 
-# Mailjet specific authentication environment variables
-API_KEY_PUBLIC = os.environ.get("MJ_APIKEY_PUBLIC")
-API_KEY_PRIVATE = os.environ.get("MJ_APIKEY_PRIVATE")
+
+logger = logging.getLogger("seed_harvester")
 
 BASE_URL_V3 = "https://api.mailjet.com/v3/REST"
+BASE_URL_V3_DATA = "https://api.mailjet.com/v3/DATA"
 BASE_URL_V3_1 = "https://api.mailjet.com/v3.1"
 BASE_URL_V1 = "https://api.mailjet.com/v1/REST"
 BASE_URL_V3_SEND = "https://api.mailjet.com/v3"
 
-# Schema-aware targets based on Mailjet API documentation
-TARGETS: list[dict[str, Any]] = [
-    # ----------------------------------------------------
-    # SEND API TARGETS (v3.1 and v3)
-    # ----------------------------------------------------
-    {
-        "method": "POST",
-        "name": "send_v31_post",
-        "url": f"{BASE_URL_V3_1}/send",
-        "json": {
+
+@dataclass(frozen=True, slots=True)
+class HarvestTarget:
+    """Descriptor for an individual Mailjet API endpoint harvest probe."""
+
+    name: str
+    method: str
+    url: str
+    params: dict[str, Any] | None = None
+    json_body: dict[str, Any] | list[Any] | None = None
+    raw_data: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
+
+
+TARGETS: tuple[HarvestTarget, ...] = (
+    HarvestTarget(
+        name="send_v31_sandbox_post",
+        method="POST",
+        url=f"{BASE_URL_V3_1}/send",
+        json_body={
+            "SandboxMode": True,
             "Messages": [
                 {
                     "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
-                    "To": [{"Email": "passenger1@mailjet.com", "Name": "passenger 1"}],
+                    "To": [{"Email": "passenger1@mailjet.com", "Name": "Passenger 1"}],
                     "Subject": "Your email flight plan!",
                     "TextPart": "Dear passenger 1, welcome to Mailjet!",
+                    "HTMLPart": "<h3>Dear passenger 1, welcome to Mailjet!</h3>",
                     "CustomID": "AppGettingStartedTest",
                 }
-            ]
+            ],
         },
-    },
-    {
-        "method": "POST",
-        "name": "send_v31_error_post",
-        "url": f"{BASE_URL_V3_1}/send",
-        "json": {
+    ),
+    HarvestTarget(
+        name="send_v31_variables_post",
+        method="POST",
+        url=f"{BASE_URL_V3_1}/send",
+        json_body={
+            "SandboxMode": True,
+            "Globals": {"CustomCampaign": "fuzz-seed-harvest"},
             "Messages": [
                 {
-                    # Intentional Error: Missing required 'To' field to trigger 400 validation error
+                    "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
+                    "To": [{"Email": "passenger1@mailjet.com", "Name": "Passenger 1"}],
+                    "Subject": "Variables {{var:code}}",
+                    "TextPart": "Code: {{var:code}}",
+                    "TemplateLanguage": True,
+                    "Variables": {"code": "XYZ-987", "nested": {"active": True, "count": 3}},
+                }
+            ],
+        },
+    ),
+    HarvestTarget(
+        name="send_v31_error_post",
+        method="POST",
+        url=f"{BASE_URL_V3_1}/send",
+        json_body={
+            "SandboxMode": True,
+            "Messages": [
+                {
                     "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
                     "Subject": "Malicious schema test",
                 }
-            ]
+            ],
         },
-    },
-    {
-        "method": "POST",
-        "name": "send_v3_post",
-        "url": f"{BASE_URL_V3_SEND}/send",
-        "json": {
+    ),
+    HarvestTarget(
+        name="send_v3_post",
+        method="POST",
+        url=f"{BASE_URL_V3_SEND}/send",
+        json_body={
             "FromEmail": "pilot@mailjet.com",
             "FromName": "Mailjet Pilot",
             "Subject": "Fuzzing v3 Send",
             "Text-part": "Legacy send API fuzzing",
-            "Recipients": [{"Email": "passenger1@mailjet.com"}]
+            "Recipients": [{"Email": "passenger1@mailjet.com"}],
         },
-    },
-    # ----------------------------------------------------
-    # CONTACT MANAGEMENT & METADATA
-    # ----------------------------------------------------
-    {"method": "GET", "name": "contact_get", "url": f"{BASE_URL_V3}/contact", "params": {"limit": 5}},
-    {"method": "GET", "name": "contactdata_get", "url": f"{BASE_URL_V3}/contactdata", "params": {"limit": 2}},
-    {"method": "GET", "name": "contactmetadata_get", "url": f"{BASE_URL_V3}/contactmetadata"},
-    {
-        "method": "POST",
-        "name": "contactmetadata_post",
-        "url": f"{BASE_URL_V3}/contactmetadata",
-        "json": {"Datatype": "str", "Name": "fuzz_property", "NameSpace": "static"},
-    },
-    {
-        "method": "POST",
-        "name": "contact_managemanycontacts_post",
-        "url": f"{BASE_URL_V3}/contact/managemanycontacts",
-        "json": {"Action": "addnoforce", "Contacts": [{"Email": "fuzz-contact@example.com"}]},
-    },
-    # ----------------------------------------------------
-    # LISTS, SUBSCRIPTIONS & SEGMENTATION
-    # ----------------------------------------------------
-    {"method": "GET", "name": "contactslist_get", "url": f"{BASE_URL_V3}/contactslist"},
-    {
-        "method": "POST",
-        "name": "contactslist_post",
-        "url": f"{BASE_URL_V3}/contactslist",
-        "json": {"Name": "Fuzz Test List"},
-    },
-    {"method": "GET", "name": "listrecipient_get", "url": f"{BASE_URL_V3}/listrecipient", "params": {"limit": 5}},
-    {
-        "method": "POST",
-        "name": "listrecipient_post",
-        "url": f"{BASE_URL_V3}/listrecipient",
-        "json": {"ContactAlt": "fuzz-contact@example.com", "ListID": 999999}, # Will likely 400
-    },
-    {
-        "method": "POST",
-        "name": "csvimport_post",
-        "url": f"{BASE_URL_V3}/csvimport",
-        "json": {"Method": "addnoforce", "ContactsListID": 999999, "DataID": 888888}, # Intentionally bad IDs
-    },
-    {
-        "method": "POST",
-        "name": "contactfilter_post",
-        "url": f"{BASE_URL_V3}/contactfilter",
-        "json": {"Description": "Fuzz segment", "Expression": "(age<35)", "Name": "Fuzz Under 35"},
-    },
-    # ----------------------------------------------------
-    # CAMPAIGNS & TEMPLATES
-    # ----------------------------------------------------
-    {"method": "GET", "name": "campaign_get", "url": f"{BASE_URL_V3}/campaign", "params": {"limit": 5}},
-    {"method": "GET", "name": "newsletter_get", "url": f"{BASE_URL_V3}/newsletter"},
-    {
-        "method": "POST",
-        "name": "campaigndraft_post",
-        "url": f"{BASE_URL_V3}/campaigndraft",
-        "json": {
-            "Locale": "en_US",
-            "Sender": "pilot@mailjet.com",
-            "SenderName": "Pilot",
-            "Subject": "Fuzz Campaign",
-            "Title": "Fuzz Draft",
-        },
-    },
-    {
-        "method": "POST",
-        "name": "template_post",
-        "url": f"{BASE_URL_V3}/template",
-        "json": {"Name": "Fuzz Template", "Author": "Fuzzer", "Purposes": ["transactional"]},
-    },
-    {
-        "method": "PUT",
-        "name": "template_detailcontent_put",
-        "url": f"{BASE_URL_V3}/template/999999/detailcontent",
-        "json": {"Headers": {"Reply-To": "fuzz@mailjet.com"}, "Html-part": "<html>Fuzz</html>"},
-    },
-    # ----------------------------------------------------
-    # WEBHOOKS & PARSE API
-    # ----------------------------------------------------
-    {"method": "GET", "name": "webhook_get", "url": f"{BASE_URL_V3}/webhook"},
-    {"method": "GET", "name": "eventcallbackurl_get", "url": f"{BASE_URL_V3}/eventcallbackurl"},
-    {
-        "method": "POST",
-        "name": "eventcallbackurl_post",
-        "url": f"{BASE_URL_V3}/eventcallbackurl",
-        "json": {"Url": "https://fuzz-target.example.com/webhook", "EventType": "open"},
-    },
-    {"method": "GET", "name": "parseroute_get", "url": f"{BASE_URL_V3}/parseroute"},
-    {
-        "method": "POST",
-        "name": "parseroute_post",
-        "url": f"{BASE_URL_V3}/parseroute",
-        "json": {"Url": "https://fuzz-target.example.com/parse"},
-    },
-    # ----------------------------------------------------
-    # SETTINGS, SENDERS, AND DOMAINS
-    # ----------------------------------------------------
-    {"method": "GET", "name": "myprofile_get", "url": f"{BASE_URL_V3}/myprofile"},
-    {"method": "GET", "name": "user_get", "url": f"{BASE_URL_V3}/user"},
-    {"method": "GET", "name": "apikey_get", "url": f"{BASE_URL_V3}/apikey"},
-    {"method": "GET", "name": "sender_get", "url": f"{BASE_URL_V3}/sender"},
-    {"method": "GET", "name": "metasender_get", "url": f"{BASE_URL_V3}/metasender"},
-    {"method": "GET", "name": "dns_get", "url": f"{BASE_URL_V3}/dns"},
-    # ----------------------------------------------------
-    # STATISTICS & ANALYTICS
-    # ----------------------------------------------------
-    {"method": "GET", "name": "message_get", "url": f"{BASE_URL_V3}/message", "params": {"limit": 10}},
-    {"method": "GET", "name": "statcounters_get", "url": f"{BASE_URL_V3}/statcounters", "params": {"CounterSource": "APIKey", "CounterTiming": "Message"}},
-    {"method": "GET", "name": "bouncestatistics_get", "url": f"{BASE_URL_V3}/bouncestatistics", "params": {"limit": 5}},
-    {"method": "GET", "name": "clickstatistics_get", "url": f"{BASE_URL_V3}/clickstatistics", "params": {"limit": 5}},
-    {"method": "GET", "name": "domainstatistics_get", "url": f"{BASE_URL_V3}/domainstatistics", "params": {"limit": 5}},
-    {"method": "GET", "name": "contactstatistics_get", "url": f"{BASE_URL_V3}/contactstatistics", "params": {"limit": 5}},
-    {"method": "GET", "name": "liststatistics_get", "url": f"{BASE_URL_V3}/liststatistics"},
-    {"method": "GET", "name": "openinformation_get", "url": f"{BASE_URL_V3}/openinformation", "params": {"limit": 5}},
-    {"method": "GET", "name": "geostatistics_get", "url": f"{BASE_URL_V3}/geostatistics"},
-    {"method": "GET", "name": "toplinkclicked_get", "url": f"{BASE_URL_V3}/toplinkclicked"},
-    # ----------------------------------------------------
-    # V1 CONTENT API TARGETS (Tokens & Labels)
-    # ----------------------------------------------------
-    {"method": "GET", "name": "tokens_get", "url": f"{BASE_URL_V1}/tokens"},
-    {"method": "GET", "name": "labels_get", "url": f"{BASE_URL_V1}/labels"},
-]
+    ),
+    HarvestTarget(
+        name="send_v3_error_post",
+        method="POST",
+        url=f"{BASE_URL_V3_SEND}/send",
+        json_body={},
+    ),
+    HarvestTarget(name="contact_get", method="GET", url=f"{BASE_URL_V3}/contact", params={"Limit": 5, "Offset": 0}),
+    HarvestTarget(name="contact_notfound_get", method="GET", url=f"{BASE_URL_V3}/contact/999999999999"),
+    HarvestTarget(name="contactdata_get", method="GET", url=f"{BASE_URL_V3}/contactdata", params={"Limit": 2}),
+    HarvestTarget(name="contactmetadata_get", method="GET", url=f"{BASE_URL_V3}/contactmetadata"),
+    HarvestTarget(
+        name="contactmetadata_error_post",
+        method="POST",
+        url=f"{BASE_URL_V3}/contactmetadata",
+        json_body={"Datatype": "invalid_type", "Name": "", "NameSpace": "static"},
+    ),
+    HarvestTarget(name="contactslist_get", method="GET", url=f"{BASE_URL_V3}/contactslist", params={"Limit": 5}),
+    HarvestTarget(name="listrecipient_get", method="GET", url=f"{BASE_URL_V3}/listrecipient", params={"Limit": 5}),
+    HarvestTarget(
+        name="listrecipient_error_post",
+        method="POST",
+        url=f"{BASE_URL_V3}/listrecipient",
+        json_body={"ContactAlt": "fuzz-contact@example.com", "ListID": 999999999},
+    ),
+    HarvestTarget(
+        name="csvimport_error_post",
+        method="POST",
+        url=f"{BASE_URL_V3}/csvimport",
+        json_body={"Method": "addnoforce", "ContactsListID": 999999999, "DataID": 888888888},
+    ),
+    HarvestTarget(
+        name="batchjob_csverror_notfound_get",
+        method="GET",
+        url=f"{BASE_URL_V3_DATA}/batchjob/999999999/CSVError/text:csv",
+    ),
+    HarvestTarget(name="contactfilter_get", method="GET", url=f"{BASE_URL_V3}/contactfilter", params={"Limit": 5}),
+    HarvestTarget(name="campaign_get", method="GET", url=f"{BASE_URL_V3}/campaign", params={"Limit": 5}),
+    HarvestTarget(name="campaigndraft_get", method="GET", url=f"{BASE_URL_V3}/campaigndraft", params={"Limit": 5}),
+    HarvestTarget(name="newsletter_get", method="GET", url=f"{BASE_URL_V3}/newsletter", params={"Limit": 2}),
+    HarvestTarget(name="template_get", method="GET", url=f"{BASE_URL_V3}/template", params={"Limit": 5}),
+    HarvestTarget(
+        name="template_detailcontent_notfound_get",
+        method="GET",
+        url=f"{BASE_URL_V3}/template/999999999999/detailcontent",
+    ),
+    HarvestTarget(name="eventcallbackurl_get", method="GET", url=f"{BASE_URL_V3}/eventcallbackurl"),
+    HarvestTarget(name="parseroute_get", method="GET", url=f"{BASE_URL_V3}/parseroute"),
+    HarvestTarget(name="myprofile_get", method="GET", url=f"{BASE_URL_V3}/myprofile"),
+    HarvestTarget(name="user_get", method="GET", url=f"{BASE_URL_V3}/user"),
+    HarvestTarget(name="apikey_get", method="GET", url=f"{BASE_URL_V3}/apikey"),
+    HarvestTarget(name="sender_get", method="GET", url=f"{BASE_URL_V3}/sender"),
+    HarvestTarget(name="sender_error_post", method="POST", url=f"{BASE_URL_V3}/sender", json_body={}),
+    HarvestTarget(name="metasender_get", method="GET", url=f"{BASE_URL_V3}/metasender"),
+    HarvestTarget(name="dns_get", method="GET", url=f"{BASE_URL_V3}/dns"),
+    HarvestTarget(name="message_get", method="GET", url=f"{BASE_URL_V3}/message", params={"Limit": 10}),
+    HarvestTarget(
+        name="statcounters_get",
+        method="GET",
+        url=f"{BASE_URL_V3}/statcounters",
+        params={"CounterSource": "APIKey", "CounterTiming": "Message", "CounterResolution": "Lifetime"},
+    ),
+    HarvestTarget(
+        name="bouncestatistics_get", method="GET", url=f"{BASE_URL_V3}/bouncestatistics", params={"Limit": 5}
+    ),
+    HarvestTarget(name="clickstatistics_get", method="GET", url=f"{BASE_URL_V3}/clickstatistics", params={"Limit": 5}),
+    HarvestTarget(name="openinformation_get", method="GET", url=f"{BASE_URL_V3}/openinformation", params={"Limit": 5}),
+    HarvestTarget(name="geostatistics_get", method="GET", url=f"{BASE_URL_V3}/geostatistics"),
+    HarvestTarget(name="toplinkclicked_get", method="GET", url=f"{BASE_URL_V3}/toplinkclicked"),
+    HarvestTarget(name="useragentstatistics_get", method="GET", url=f"{BASE_URL_V3}/useragentstatistics"),
+    HarvestTarget(name="tokens_get", method="GET", url=f"{BASE_URL_V1}/tokens"),
+    HarvestTarget(name="labels_get", method="GET", url=f"{BASE_URL_V1}/labels"),
+)
 
-# Map specific API targets to their respective fuzzer corpus directories
-CORPUS_MAP: dict[str, list[str]] = {
-    "fuzz_endpoint": [
+CORPUS_MAP: dict[str, tuple[str, ...]] = {
+    "fuzz_endpoint": (
         "contact_get",
         "contactdata_get",
         "contactmetadata_get",
@@ -199,117 +190,455 @@ CORPUS_MAP: dict[str, list[str]] = {
         "listrecipient_get",
         "message_get",
         "campaign_get",
+        "campaigndraft_get",
         "newsletter_get",
+        "template_get",
         "sender_get",
         "metasender_get",
         "dns_get",
         "user_get",
         "apikey_get",
         "myprofile_get",
-        "webhook_get",
         "eventcallbackurl_get",
         "parseroute_get",
         "statcounters_get",
         "bouncestatistics_get",
         "clickstatistics_get",
-        "domainstatistics_get",
-        "contactstatistics_get",
-        "liststatistics_get",
         "openinformation_get",
         "geostatistics_get",
         "toplinkclicked_get",
+        "useragentstatistics_get",
         "tokens_get",
         "labels_get",
-    ],
-    "fuzz_builder": [
-        # Gives the fluent builders native schema constraints to mutate against
-        "send_v31_post",
-        "send_v3_post",
-        "template_post",
-        "campaigndraft_post",
-        "contactmetadata_post",
-        "contactfilter_post",
-        "eventcallbackurl_post",
-        "parseroute_post",
-    ],
-    "fuzz_structure_aware": [
-        # Provides deep JSON trees for the structured mutator to traverse
-        "send_v31_post",
-        "send_v3_post",
-        "contact_managemanycontacts_post",
-        "contactslist_post",
-        "parseroute_post",
-        "template_detailcontent_put",
-        "csvimport_post",
-        "listrecipient_post",
-    ],
-    "fuzz_error_parser": [
-        # Allows the error parser to learn from actual Mailjet 400/404 payloads
-        "send_v31_error_post",
-        "template_detailcontent_put",
-        "csvimport_post",
-        "listrecipient_post",
-    ],
-    "fuzz_pagination_stream": [
-        # Feeds the lazy-eval generator fuzzer actual list arrays returned by the API
+    ),
+    "fuzz_async_endpoint": (
         "contact_get",
+        "contactslist_get",
+        "message_get",
+        "campaign_get",
+        "template_get",
+        "statcounters_get",
+        "tokens_get",
+        "labels_get",
+        "lifecycle_contact_create",
+        "lifecycle_contact_get",
+        "lifecycle_contact_update",
+        "lifecycle_contact_delete",
+    ),
+    "fuzz_async_client": (
+        "send_v31_sandbox_post",
+        "send_v31_variables_post",
+        "send_v31_error_post",
+        "contact_get",
+        "contact_notfound_get",
+        "lifecycle_contact_create",
+        "lifecycle_template_create",
+    ),
+    "fuzz_builder": (
+        "send_v31_sandbox_post",
+        "send_v31_variables_post",
+        "send_v3_post",
+        "lifecycle_template_create",
+        "lifecycle_template_content",
+    ),
+    "fuzz_structure_aware": (
+        "send_v31_sandbox_post",
+        "send_v31_variables_post",
+        "send_v3_post",
+        "lifecycle_contact_create",
+        "lifecycle_template_create",
+        "lifecycle_template_content",
+        "csvimport_error_post",
+        "listrecipient_error_post",
+    ),
+    "fuzz_error_parser": (
+        "send_v31_error_post",
+        "send_v3_error_post",
+        "contact_notfound_get",
+        "contactmetadata_error_post",
+        "template_detailcontent_notfound_get",
+        "batchjob_csverror_notfound_get",
+        "csvimport_error_post",
+        "listrecipient_error_post",
+        "sender_error_post",
+    ),
+    "fuzz_pagination_stream": (
+        "contact_get",
+        "contactslist_get",
         "message_get",
         "campaign_get",
         "bouncestatistics_get",
         "listrecipient_get",
         "clickstatistics_get",
         "openinformation_get",
-    ],
+    ),
+    "fuzz_evil_server": (
+        "send_v31_sandbox_post",
+        "send_v31_error_post",
+        "contact_notfound_get",
+        "batchjob_csverror_notfound_get",
+    ),
+    "fuzz_async_evil_server": (
+        "send_v31_sandbox_post",
+        "send_v31_error_post",
+        "contact_notfound_get",
+        "batchjob_csverror_notfound_get",
+    ),
+    "fuzz_network_chaos": (
+        "send_v31_sandbox_post",
+        "send_v31_error_post",
+        "contact_get",
+        "contact_notfound_get",
+    ),
+    "fuzz_differential": (
+        "send_v31_sandbox_post",
+        "send_v31_variables_post",
+        "send_v3_post",
+        "send_v3_error_post",
+    ),
+    "fuzz_differential_v3": (
+        "send_v31_sandbox_post",
+        "send_v3_post",
+    ),
+    "fuzz_idempotency_fingerprint": (
+        "send_v31_sandbox_post",
+        "send_v31_variables_post",
+        "lifecycle_contact_create",
+        "lifecycle_template_content",
+    ),
 }
 
-def harvest_seeds() -> None:
-    if not API_KEY_PUBLIC or not API_KEY_PRIVATE:
-        print("❌ Error: MJ_APIKEY_PUBLIC or MJ_APIKEY_PRIVATE environment variables are missing.")
-        print("💡 Hint: Set them via `export MJ_APIKEY_PUBLIC=your_key` and `export MJ_APIKEY_PRIVATE=your_secret`")
-        return
 
-    auth = (API_KEY_PUBLIC, API_KEY_PRIVATE)
-    headers = {"Content-Type": "application/json"}
+class CorpusWriter:
+    """Content-addressed seed writer with SHA-256 deduplication and dry-run support."""
 
+    def __init__(self, base_corpus_dir: Path, *, dry_run: bool = False) -> None:
+        self.base_corpus_dir = base_corpus_dir
+        self.dry_run = dry_run
+        self._seen_hashes: dict[str, set[str]] = {}
+        self.written_count = 0
+        self.skipped_duplicates = 0
+
+    def write_seed(self, fuzzer_name: str, seed_name: str, data: bytes) -> None:
+        """Write a unique seed file into the target fuzzer's corpus folder."""
+        if not data:
+            return
+
+        digest = hashlib.sha256(data).hexdigest()
+        seen = self._seen_hashes.setdefault(fuzzer_name, set())
+        if digest in seen:
+            self.skipped_duplicates += 1
+            return
+        seen.add(digest)
+
+        target_dir = self.base_corpus_dir / fuzzer_name
+        file_path = target_dir / f"{seed_name}_{digest[:10]}.seed"
+
+        if self.dry_run:
+            logger.info("[DRY-RUN] Would write %s (%d bytes)", file_path, len(data))
+            self.written_count += 1
+            return
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        file_path.write_bytes(data)
+        self.written_count += 1
+        logger.debug("Saved seed %s (%d bytes)", file_path, len(data))
+
+
+def _serialize_response_body(resp: requests.Response) -> bytes:
+    """Parse response body as pretty JSON if valid, otherwise preserve raw bytes.
+
+    Returns:
+        bytes: Encoded JSON or raw response bytes.
+    """
+    try:
+        parsed = resp.json()
+        return json.dumps(parsed, indent=2, ensure_ascii=False).encode("utf-8")
+    except ValueError:
+        return resp.content or resp.text.encode("utf-8", errors="replace")
+
+
+def _dispatch_target_to_corpora(writer: CorpusWriter, target_name: str, status_code: int, payload: bytes) -> None:
+    """Route a harvested payload to every mapped fuzzer corpus directory."""
+    for fuzzer_folder, target_names in CORPUS_MAP.items():
+        if target_name in target_names:
+            writer.write_seed(fuzzer_folder, f"{status_code}_{target_name}", payload)
+
+
+def harvest_live_static_targets(
+    session: requests.Session,
+    writer: CorpusWriter,
+    timeout: float,
+) -> None:
+    """Execute read-only and stateless validation probes against the live Mailjet API."""
     for target in TARGETS:
-        method = target.get("method", "GET")
-        url = target["url"]
-        print(f"📡 Harvesting {method} {url}...")
-
+        logger.info("Harvesting %s %s (%s)...", target.method, target.url, target.name)
         try:
-            # Capture data to force various API responses (Success vs Error)
-            if method in ("POST", "PUT"):
-                # requests.request allows dynamic execution of both POST and PUT methods safely
-                resp = requests.request(method, url, auth=auth, headers=headers, json=target.get("json"), timeout=10)
-            else:
-                resp = requests.get(url, auth=auth, params=target.get("params"), timeout=10)
+            resp = session.request(
+                target.method,
+                target.url,
+                params=target.params,
+                json=target.json_body,
+                data=target.raw_data,
+                headers=target.headers or None,
+                timeout=timeout,
+            )
+            payload = _serialize_response_body(resp)
+            _dispatch_target_to_corpora(writer, target.name, resp.status_code, payload)
+        except requests.exceptions.RequestException as exc:
+            logger.warning("Network error harvesting %s: %s", target.name, exc)
 
-            # Save the raw JSON payload
-            # We save the status code in the filename so the fuzzer learns
-            # to distinguish between success and error schemas
-            try:
-                parsed_json = resp.json()
-            except ValueError:
-                print(f"  ⚠️ Warning: Non-JSON response for {target['name']} (HTTP {resp.status_code})")
-                parsed_json = {"raw_text": resp.text}
 
-            payload = json.dumps(parsed_json, indent=2).encode("utf-8")
+def harvest_live_crud_lifecycles(
+    session: requests.Session,
+    writer: CorpusWriter,
+    timeout: float,
+) -> None:
+    """Execute stateful Create -> Read -> Update -> Delete lifecycles with guaranteed cleanup."""
+    suffix = uuid.uuid4().hex[:8]
+    contact_email = f"fuzz-harvest-{suffix}@example.com"
+    contact_id: int | None = None
+    list_id: int | None = None
 
-            for folder, target_names in CORPUS_MAP.items():
-                if target["name"] in target_names:
-                    dir_path = Path("tests") / "fuzz" / "corpus" / folder
-                    dir_path.mkdir(parents=True, exist_ok=True)
+    try:
+        c_create = session.post(
+            f"{BASE_URL_V3}/contact",
+            json={"Email": contact_email, "IsExcludedFromCampaigns": True},
+            timeout=timeout,
+        )
+        _dispatch_target_to_corpora(
+            writer, "lifecycle_contact_create", c_create.status_code, _serialize_response_body(c_create)
+        )
+        if c_create.status_code == 201:
+            contact_id = c_create.json()["Data"][0]["ID"]
+            c_get = session.get(f"{BASE_URL_V3}/contact/{contact_id}", timeout=timeout)
+            _dispatch_target_to_corpora(
+                writer, "lifecycle_contact_get", c_get.status_code, _serialize_response_body(c_get)
+            )
+            c_upd = session.put(
+                f"{BASE_URL_V3}/contact/{contact_id}",
+                json={"Name": f"Fuzz User {suffix}"},
+                timeout=timeout,
+            )
+            _dispatch_target_to_corpora(
+                writer, "lifecycle_contact_update", c_upd.status_code, _serialize_response_body(c_upd)
+            )
 
-                    filename = f"{resp.status_code}_{target['name']}.json"
-                    file_path = dir_path / filename
-                    file_path.write_bytes(payload)
+        l_create = session.post(
+            f"{BASE_URL_V3}/contactslist",
+            json={"Name": f"FuzzHarvestList_{suffix}"},
+            timeout=timeout,
+        )
+        if l_create.status_code == 201:
+            list_id = l_create.json()["Data"][0]["ID"]
+            csv_body = f"email,name\n{contact_email},Fuzz User\n"
+            csv_resp = session.post(
+                f"{BASE_URL_V3_DATA}/contactslist/{list_id}/CSVData/text:plain",
+                data=csv_body.encode("utf-8"),
+                headers={"Content-Type": "text/plain"},
+                timeout=timeout,
+            )
+            writer.write_seed(
+                "fuzz_csv_import_flow", f"{csv_resp.status_code}_csv_upload", _serialize_response_body(csv_resp)
+            )
+            writer.write_seed("fuzz_endpoint", f"{csv_resp.status_code}_csv_upload", _serialize_response_body(csv_resp))
+    except requests.exceptions.RequestException as exc:
+        logger.warning("Contact/List lifecycle harvest interrupted: %s", exc)
+    finally:
+        if contact_id is not None:
+            c_del = session.delete(f"{BASE_URL_V3}/contact/{contact_id}", timeout=timeout)
+            _dispatch_target_to_corpora(
+                writer, "lifecycle_contact_delete", c_del.status_code, _serialize_response_body(c_del)
+            )
+        if list_id is not None:
+            session.delete(f"{BASE_URL_V3}/contactslist/{list_id}", timeout=timeout)
 
-                    print(f"  ✅ Saved {filename} to {folder}")
 
-        except requests.exceptions.RequestException as e:
-            print(f"  ❌ Network Failure {target['name']}: {e}")
-        except Exception as e:
-            print(f"  ❌ Unhandled Error {target['name']}: {e}")
+def generate_synthetic_seeds(writer: CorpusWriter) -> None:
+    """Synthesize structural, binary FDP, and adversarial edge-case seeds for all fuzzers."""
+    logger.info("Generating synthetic and adversarial seeds for all sync & async fuzzers...")
+
+    json_seeds: dict[str, bytes] = {
+        "valid_v31_send": json.dumps(
+            {
+                "SandboxMode": True,
+                "Messages": [
+                    {
+                        "From": {"Email": "pilot@mailjet.com", "Name": "Pilot"},
+                        "To": [{"Email": "passenger@mailjet.com", "Name": "Passenger"}],
+                        "Subject": "Flight Plan",
+                        "TextPart": "Hello {{var:name}}",
+                        "HTMLPart": "<h1>Hello {{var:name}}</h1>",
+                        "Variables": {"name": "World", "nested": [1, 2, {"k": "v"}]},
+                        "CustomID": "trace-001",
+                    }
+                ],
+            }
+        ).encode("utf-8"),
+        "valid_pagination_page": json.dumps(
+            {
+                "Count": 2,
+                "Total": 2,
+                "Data": [{"ID": 101, "Email": "a@example.com"}, {"ID": 102, "Email": "b@example.com"}],
+            }
+        ).encode("utf-8"),
+        "empty_pagination_page": json.dumps({"Count": 0, "Total": 0, "Data": []}).encode("utf-8"),
+        "v3_error_payload": json.dumps(
+            {"ErrorIdentifier": "abc-123", "StatusCode": 400, "ErrorMessage": "Invalid payload format"}
+        ).encode("utf-8"),
+    }
+
+    for target_fuzzer in (
+        "fuzz_builder",
+        "fuzz_structure_aware",
+        "fuzz_differential",
+        "fuzz_differential_v3",
+        "fuzz_error_parser",
+        "fuzz_pagination_stream",
+        "fuzz_idempotency_fingerprint",
+    ):
+        for seed_name, seed_bytes in json_seeds.items():
+            writer.write_seed(target_fuzzer, f"synth_{seed_name}", seed_bytes)
+
+    adversarial_vectors: dict[str, bytes] = {
+        "path_traversal_dotdot": b"../../etc/passwd\x00.json",
+        "path_traversal_double_encoded": b"%252e%252e%252fadmin%252fdelete",
+        "template_injection": b"{{7*7}}{% debug %}123",
+        "crlf_header_smuggling": b"X-Custom: val\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+        "xss_script_svg": b"<svg/onload=alert(1)><script>document.cookie</script>",
+        "idn_homograph": b"user@xn--mnchen-3ya.de\x00user@m\xc3\xbcnchen.de",
+        "ssrf_localhost_and_evil": b"http://127.0.0.1:8080/\x00https://evil.com/",
+        "null_byte_control_chars": b"\x00\x01\x02\x07\x08\x0b\x0c\x0e\x1f\x7fBearer secret_token_123",
+        "deep_nested_json": (b'{"a":' * 60) + b"1" + (b"}" * 60),
+        "malformed_truncated_json": b'{"Messages": [{"From": {"Email": "unterminated',
+        "csv_injection": b"email,name\n=cmd|' /C calc'!A0@evil.com,\"Mallory\r\nInjected\"\n",
+    }
+
+    all_fdp_fuzzers = (
+        "fuzz_core",
+        "fuzz_client",
+        "fuzz_async_client",
+        "fuzz_endpoint",
+        "fuzz_async_endpoint",
+        "fuzz_endpoint_routing",
+        "fuzz_config",
+        "fuzz_guardrails",
+        "fuzz_guardrails_crypto",
+        "fuzz_spamguard",
+        "fuzz_redacting_filter",
+        "fuzz_idempotency_fingerprint",
+        "fuzz_secret_auth",
+        "fuzz_jitter_retry",
+        "fuzz_audit_events",
+        "fuzz_chunked_streamer",
+        "fuzz_csv_import_flow",
+        "fuzz_network_chaos",
+        "fuzz_evil_server",
+        "fuzz_async_evil_server",
+        "fuzz_state_machine",
+        "fuzz_state_sequence",
+        "fuzz_router",
+    )
+
+    for fuzzer_name in all_fdp_fuzzers:
+        for vec_name, vec_bytes in adversarial_vectors.items():
+            writer.write_seed(fuzzer_name, f"adv_{vec_name}", vec_bytes)
+
+        for idx in range(16):
+            binary_seed = bytes([(idx * 17 + offset) % 256 for offset in range(32)])
+            writer.write_seed(fuzzer_name, f"bin_fdp_{idx:02d}", binary_seed)
+
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line options for seed harvesting and corpus generation.
+
+    Returns:
+        argparse.Namespace: Parsed CLI options.
+    """
+    parser = argparse.ArgumentParser(description="Mailjet SDK Fuzzer Seed Harvester & Corpus Generator")
+    parser.add_argument(
+        "--mode",
+        choices=("all", "live", "synthetic"),
+        default="all",
+        help="Harvest mode: 'live' API calls only, 'synthetic' offline seeds only, or 'all' (default).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("tests") / "fuzz" / "corpus",
+        help="Root directory where per-fuzzer corpus folders are stored.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=10.0,
+        help="HTTP request timeout in seconds for live harvesting (default: 10.0).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Log planned corpus writes without touching the filesystem.",
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Remove existing corpus directory before generating fresh seeds.",
+    )
+    return parser.parse_args()
+
+
+def harvest_seeds(
+    mode: str = "all",
+    output_dir: Path | None = None,
+    timeout: float = 10.0,
+    *,
+    dry_run: bool = False,
+    clean: bool = False,
+) -> None:
+    """Run the Mailjet seed harvesting and synthetic corpus generation pipeline."""
+    corpus_root = output_dir or (Path("tests") / "fuzz" / "corpus")
+
+    if clean and corpus_root.exists() and not dry_run:
+        logger.info("Cleaning existing corpus directory: %s", corpus_root)
+        shutil.rmtree(corpus_root)
+
+    writer = CorpusWriter(base_corpus_dir=corpus_root, dry_run=dry_run)
+
+    if mode in {"all", "synthetic"}:
+        generate_synthetic_seeds(writer)
+
+    if mode in {"all", "live"}:
+        public_key = os.environ.get("MJ_APIKEY_PUBLIC")
+        private_key = os.environ.get("MJ_APIKEY_PRIVATE")
+
+        if not public_key or not private_key:
+            logger.warning("MJ_APIKEY_PUBLIC or MJ_APIKEY_PRIVATE is not set; skipping live API harvest.")
+        else:
+            with requests.Session() as session:
+                session.auth = (public_key, private_key)
+                session.headers.update({"Content-Type": "application/json"})
+                harvest_live_static_targets(session=session, writer=writer, timeout=timeout)
+                harvest_live_crud_lifecycles(session=session, writer=writer, timeout=timeout)
+
+    logger.info(
+        "Seed harvesting complete: %d unique seeds written, %d duplicates skipped.",
+        writer.written_count,
+        writer.skipped_duplicates,
+    )
+
+
+def main() -> None:
+    """CLI entry point for seed harvester."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    args = parse_args()
+    harvest_seeds(
+        mode=args.mode,
+        output_dir=args.output_dir,
+        timeout=args.timeout,
+        dry_run=args.dry_run,
+        clean=args.clean,
+    )
+
 
 if __name__ == "__main__":
-    harvest_seeds()
+    main()

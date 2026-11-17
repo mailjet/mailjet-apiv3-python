@@ -48,6 +48,17 @@ def _ensure_atheris_stub() -> tuple[Any, bool]:
             text = self._data.decode("utf-8", errors="ignore")
             return text[:count]
 
+        def ConsumeFloat(self) -> float:
+            return float(self._next_byte()) / 10.0
+
+        def ConsumeFloatInRange(self, low: float, high: float) -> float:
+            span = max(0.0, high - low)
+            return low + (self._next_byte() / 255.0) * span
+
+        def PickValueInList(self, items: Any) -> Any:
+            seq = list(items)
+            return seq[self._next_byte() % len(seq)]
+
     stub.FuzzedDataProvider = _StubFDP  # type: ignore[attr-defined]
     stub.instrument_imports = lambda **_kwargs: contextlib.nullcontext()  # type: ignore[attr-defined]
     stub.instrument_all = lambda: None  # type: ignore[attr-defined]
@@ -129,7 +140,7 @@ def _imports_mailjet_rest(node: ast.AST) -> bool:
 def test_all_fuzz_targets_scope_instrumentation_to_mailjet_rest() -> None:
     """Ensure every Atheris target scopes import instrumentation to mailjet_rest and avoids instrument_all()."""
     fuzz_files = sorted(Path("tests/fuzz").glob("fuzz_*.py"))
-    assert len(fuzz_files) == 26
+    assert len(fuzz_files) == 29
 
     for fuzz_file in fuzz_files:
         tree = ast.parse(fuzz_file.read_text(encoding="utf-8"), filename=str(fuzz_file))
@@ -160,3 +171,36 @@ def test_all_fuzz_targets_scope_instrumentation_to_mailjet_rest() -> None:
                 continue
             unscoped = [sub for sub in ast.walk(stmt) if _imports_mailjet_rest(sub)]
             assert not unscoped, f"{fuzz_file} imports mailjet_rest outside scoped instrument_imports block"
+
+
+def test_async_fuzz_targets_smoke() -> None:
+    """Verify the three async Atheris fuzz targets import and process sample inputs cleanly."""
+    _, injected = _ensure_atheris_stub()
+    async_modules = (
+        "tests.fuzz.fuzz_async_client",
+        "tests.fuzz.fuzz_async_endpoint",
+        "tests.fuzz.fuzz_async_evil_server",
+    )
+    loaded_mods: list[Any] = []
+    try:
+        for mod_name in async_modules:
+            sys.modules.pop(mod_name, None)
+            fuzz_mod = importlib.import_module(mod_name)
+            loaded_mods.append(fuzz_mod)
+
+            fuzz_mod.TestOneInput(b"short")
+            for mode_byte in (0, 1, 2):
+                fuzz_mod.TestOneInput(bytes([mode_byte]) + b"fuzz_payload_padding_0123456789")
+    finally:
+        for fuzz_mod in loaded_mods:
+            loop = getattr(fuzz_mod, "_loop", None)
+            for client_attr in ("_base_async_client", "_aclient"):
+                client_obj = getattr(fuzz_mod, client_attr, None)
+                if client_obj is not None and loop is not None and not loop.is_closed():
+                    loop.run_until_complete(client_obj.aclose())
+            if loop is not None and not loop.is_closed():
+                loop.close()
+        for mod_name in async_modules:
+            sys.modules.pop(mod_name, None)
+        if injected:
+            sys.modules.pop("atheris", None)

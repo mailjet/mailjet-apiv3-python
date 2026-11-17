@@ -75,8 +75,13 @@ classifiers = [
 "Issue Tracker" = "https://github.com/mailjet/mailjet-apiv3-python/issues"
 
 [project.optional-dependencies]
+async = [
+    "httpx2>=2.0.0",
+]
+
 linting = [
     "bandit",
+    "httpx2>=2.0.0",
     "mypy",
     "pre-commit",
     "pyright",
@@ -89,6 +94,7 @@ linting = [
 
 tests = [
     "coverage>=4.5.4",
+    "httpx2>=2.0.0",
     "hypothesis",
     "pyfakefs",
     "pytest-benchmark>=5.3.0",

@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
-    from mailjet_rest.client import Client, Config
+    from mailjet_rest.client import AsyncClient, Client, Config
+    from mailjet_rest.endpoint import AsyncEndpoint
     from mailjet_rest.errors import (
         ActionDeniedError,
         ApiError,
@@ -30,6 +31,8 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ActionDeniedError": ("mailjet_rest.errors", "ActionDeniedError"),
     "ApiError": ("mailjet_rest.errors", "ApiError"),
     "ApiRateLimitError": ("mailjet_rest.errors", "ApiRateLimitError"),
+    "AsyncClient": ("mailjet_rest.client", "AsyncClient"),
+    "AsyncEndpoint": ("mailjet_rest.endpoint", "AsyncEndpoint"),
     "AuthorizationError": ("mailjet_rest.errors", "AuthorizationError"),
     "Client": ("mailjet_rest.client", "Client"),
     "Config": ("mailjet_rest.client", "Config"),
@@ -47,6 +50,8 @@ __all__ = [
     "ActionDeniedError",
     "ApiError",
     "ApiRateLimitError",
+    "AsyncClient",
+    "AsyncEndpoint",
     "AuthorizationError",
     "Client",
     "Config",
@@ -69,6 +74,8 @@ def _import_known_submodule(module_name: str) -> Any:
     """
     if module_name == "mailjet_rest.client":
         return importlib.import_module("mailjet_rest.client")
+    if module_name == "mailjet_rest.endpoint":
+        return importlib.import_module("mailjet_rest.endpoint")
     if module_name == "mailjet_rest.errors":
         return importlib.import_module("mailjet_rest.errors")
     if module_name == "mailjet_rest.utils.version":

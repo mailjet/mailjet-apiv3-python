@@ -72,14 +72,12 @@ def resolve_tls_verify(verify: Any) -> bool | str:
     raise TypeError(msg)
 
 
-@lru_cache(maxsize=8)
-def _cached_ssl_context(ca_bundle: str | None, mtime_ns: int, size: int) -> ssl.SSLContext:
-    """Build and cache an isolated TLS 1.2+ SSLContext keyed on CA bundle identity and mtime/size.
+def _new_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
+    """Create a fresh hardened TLS 1.2+ SSLContext with isolated CA trust store.
 
     Returns:
-        ssl.SSLContext: Configured SSL context with isolated CA trust store.
+        ssl.SSLContext: Configured SSL context.
     """
-    _ = (mtime_ns, size)
     if ca_bundle is not None:
         context = ssl.create_default_context(cafile=ca_bundle)
     else:
@@ -93,6 +91,17 @@ def _cached_ssl_context(ca_bundle: str | None, mtime_ns: int, size: int) -> ssl.
     return context
 
 
+@lru_cache(maxsize=8)
+def _cached_ssl_context(ca_bundle: str | None, mtime_ns: int, size: int) -> ssl.SSLContext:
+    """Build and cache an isolated TLS 1.2+ SSLContext keyed on CA bundle identity and mtime/size.
+
+    Returns:
+        ssl.SSLContext: Configured SSL context with isolated CA trust store.
+    """
+    _ = (mtime_ns, size)
+    return _new_secure_ssl_context(ca_bundle)
+
+
 def get_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
     """Return a hardened TLS 1.2+ SSLContext, invalidating cache when a custom CA file changes.
 
@@ -103,6 +112,28 @@ def get_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
         st = Path(ca_bundle).stat()
         return _cached_ssl_context(ca_bundle, st.st_mtime_ns, st.st_size)
     return _cached_ssl_context(None, 0, 0)
+
+
+def build_ssl_context_with_cert(ca_bundle: str | None = None, cert: Any = None) -> ssl.SSLContext:
+    """Return a hardened TLS 1.2+ SSLContext with an optional uncached client certificate chain.
+
+    Returns:
+        ssl.SSLContext: Configured SSL context.
+    """
+    if cert is None:
+        return get_secure_ssl_context(ca_bundle)
+    context = _new_secure_ssl_context(ca_bundle)
+    if isinstance(cert, (tuple, list)):
+        if len(cert) != 2:
+            msg = "Client 'cert' tuple must contain (certfile, keyfile)."
+            raise ValueError(msg)
+        context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
+    elif isinstance(cert, (str, os.PathLike)):
+        context.load_cert_chain(certfile=cert)
+    else:
+        msg = f"Invalid 'cert' type: expected str, PathLike, or (certfile, keyfile) tuple, got {type(cert).__name__}."
+        raise TypeError(msg)
+    return context
 
 
 def _build_tls_context(ca_bundle: str | None = None) -> ssl.SSLContext:
@@ -181,13 +212,33 @@ class SecretAuth(AuthBase):
     Pre-encodes the Basic Authorization header in __init__.
     """
 
-    def __init__(self, auth_tuple: tuple[str, str]) -> None:
+    def __init__(self, auth_tuple: object) -> None:
         """Initialize with API credentials and pre-compute Basic Auth header."""
         __tracebackhide__ = True
-        self._api_key = auth_tuple[0]
-        self._api_secret = auth_tuple[1]
+        if not isinstance(auth_tuple, tuple) or len(auth_tuple) != 2:
+            msg = "auth_tuple must be a 2-tuple of (api_key, api_secret)"
+            raise ValueError(msg)
+        api_key, api_secret = auth_tuple
+        if not isinstance(api_key, str) or not isinstance(api_secret, str):
+            msg = "API credentials must be strings"
+            raise TypeError(msg)
+        for val in (api_key, api_secret):
+            if any(ord(ch) < 32 or ord(ch) == 127 for ch in val):
+                msg = "API credentials contain forbidden control characters or CRLF (CWE-113)"
+                raise ValueError(msg)
+        self._api_key = api_key
+        self._api_secret = api_secret
         auth_bytes = f"{self._api_key}:{self._api_secret}".encode("latin1")
         self._auth_header = "Basic " + base64.b64encode(auth_bytes).decode("ascii")
+
+    @property
+    def auth_header(self) -> str:
+        """The pre-encoded Basic Authorization header value.
+
+        Returns:
+            str: Pre-computed Basic Authorization header string.
+        """
+        return self._auth_header
 
     def __call__(self, r: requests.PreparedRequest) -> requests.PreparedRequest:
         """Apply pre-computed Basic Auth headers to the request.

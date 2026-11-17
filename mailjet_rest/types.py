@@ -33,8 +33,7 @@ __all__ = [
 # ==========================================
 
 TimeoutType: TypeAlias = int | float | tuple[int | float, int | float] | None
-PayloadType: TypeAlias = dict[str, Any] | list[Any] | str | bytes | None
-HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
+HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 AutoIdempotencyMode: TypeAlias = Literal["fingerprint", "uuid4", "off"]
 
 _DEFAULT_TIMEOUT: Final[int] = 60
@@ -89,3 +88,6 @@ class SendV31Payload(TypedDict):
     Messages: list[SendV31Message]
     SandboxMode: NotRequired[bool]
     Globals: NotRequired[dict[str, Any]]
+
+
+PayloadType: TypeAlias = dict[str, Any] | SendV31Payload | list[Any] | str | bytes | None
