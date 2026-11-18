@@ -14,7 +14,7 @@ import sys
 import threading
 import uuid
 import warnings
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn, TypeVar
 
 import requests
@@ -61,7 +61,7 @@ if TYPE_CHECKING:
 
     import httpx2
 
-    from mailjet_rest.endpoint import AsyncEndpoint, BaseEndpoint, Endpoint
+    from mailjet_rest.endpoint import AsyncEndpoint, Endpoint
     from mailjet_rest.types import (
         AuthCredentials,
         CertConfig,
@@ -106,7 +106,7 @@ logger = logging.getLogger(__name__)
 if not any(isinstance(f, RedactingFilter) for f in logger.filters):
     logger.addFilter(RedactingFilter())
 
-_EndpointT = TypeVar("_EndpointT", bound="BaseEndpoint")
+_EndpointT = TypeVar("_EndpointT")
 _AVAILABLE_ENDPOINTS: Final[tuple[str, ...]] = tuple(sorted(ROUTE_MAP))
 _httpx2_cache: list[Any] = []
 
@@ -266,7 +266,7 @@ class BaseClient:
                 msg = f"'{self.__class__.__name__}' has no endpoint or attribute '{name}'. Did you mean '{matches[0]}'?"
                 raise AttributeError(msg)
 
-    def _resolve_endpoint(self, name: str, endpoint_cls: type[_EndpointT]) -> _EndpointT:
+    def _resolve_endpoint(self, name: str, endpoint_cls: Callable[..., _EndpointT]) -> _EndpointT:
         if name.startswith("_"):
             msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
             raise AttributeError(msg)
