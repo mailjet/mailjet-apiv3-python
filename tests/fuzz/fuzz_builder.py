@@ -68,8 +68,9 @@ def TestOneInput(data: bytes) -> None:
                     builder.set_content(text=content)
             elif op == 5:
                 builder.set_list_unsubscribe(
-                    url=fdp.ConsumeUnicodeNoSurrogates(64),
-                    email=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None,
+                    unsubscribe_url=fdp.ConsumeUnicodeNoSurrogates(64),
+                    mailto_address=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None,
+                    one_click=fdp.ConsumeBool(),
                 )
             elif op == 6:
                 builder.set_tracking(
@@ -87,10 +88,9 @@ def TestOneInput(data: bytes) -> None:
                     language_active=fdp.PickValueInList([True, False, "yes"]),  # type: ignore[arg-type]
                 )
             elif op == 8:
-                builder.attach_inline(  # type: ignore[call-arg]
-                    filename=fdp.ConsumeUnicodeNoSurrogates(16),
+                builder.attach_inline(
+                    file_path=fdp.ConsumeUnicodeNoSurrogates(16),
                     content_type=fdp.ConsumeUnicodeNoSurrogates(16),
-                    base64_content=fdp.ConsumeUnicodeNoSurrogates(64),
                     content_id=fdp.ConsumeUnicodeNoSurrogates(16),
                 )
 

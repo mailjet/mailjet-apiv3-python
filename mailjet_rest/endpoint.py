@@ -277,7 +277,7 @@ class Endpoint(BaseEndpoint):
 
     def update(
         self,
-        id: ResourceId,
+        id: ResourceId | None = None,
         data: PayloadType = None,
         action_id: ResourceId | None = None,
         headers: HeadersMapping | None = None,
@@ -450,7 +450,7 @@ class AsyncEndpoint(BaseEndpoint):
 
     async def update(
         self,
-        id: ResourceId,
+        id: ResourceId | None = None,
         data: PayloadType = None,
         action_id: ResourceId | None = None,
         headers: HeadersMapping | None = None,
