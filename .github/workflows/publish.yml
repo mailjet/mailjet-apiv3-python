@@ -103,10 +103,18 @@ jobs:
           VERSION: ${{ steps.get_version.outputs.version }}
         run: |
           mkdir -p sbom
-          python -m venv .sbom-venv
-          .sbom-venv/bin/pip install --no-cache-dir dist/*.whl cyclonedx-bom
-          .sbom-venv/bin/cyclonedx-py environment --of JSON --schema-version 1.5 -o "sbom/mailjet-rest-${VERSION}.cdx.json"
-          rm -rf .sbom-venv
+          python -m venv .sbom-tool-venv
+          python -m venv .sbom-target-venv
+          .sbom-tool-venv/bin/pip install --no-cache-dir cyclonedx-bom
+          .sbom-target-venv/bin/pip install --no-cache-dir dist/*.whl
+          .sbom-tool-venv/bin/cyclonedx-py environment .sbom-target-venv/bin/python \
+            --pyproject pyproject.toml \
+            --mc-type library \
+            --sv 1.5 \
+            --of JSON \
+            --output-reproducible \
+            -o "sbom/mailjet-rest-${VERSION}.cdx.json"
+          rm -rf .sbom-tool-venv .sbom-target-venv
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
