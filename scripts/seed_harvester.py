@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Mailjet Enhanced Fuzzer Seed Harvester & Synthetic Corpus Generator.
 
 Harvests live API success/error payloads (including stateful CRUD lifecycles
@@ -28,7 +27,9 @@ BASE_URL_V3 = "https://api.mailjet.com/v3/REST"
 BASE_URL_V3_DATA = "https://api.mailjet.com/v3/DATA"
 BASE_URL_V3_1 = "https://api.mailjet.com/v3.1"
 BASE_URL_V1 = "https://api.mailjet.com/v1/REST"
+BASE_URL_V1_DATA = "https://api.mailjet.com/v1/data"
 BASE_URL_V3_SEND = "https://api.mailjet.com/v3"
+BASE_URL_V4 = "https://api.mailjet.com/v4"
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +180,38 @@ TARGETS: tuple[HarvestTarget, ...] = (
     HarvestTarget(name="useragentstatistics_get", method="GET", url=f"{BASE_URL_V3}/useragentstatistics"),
     HarvestTarget(name="tokens_get", method="GET", url=f"{BASE_URL_V1}/tokens"),
     HarvestTarget(name="labels_get", method="GET", url=f"{BASE_URL_V1}/labels"),
+    HarvestTarget(name="v1_templates_get", method="GET", url=f"{BASE_URL_V1}/templates"),
+    HarvestTarget(
+        name="template_contents_lock_notfound_post",
+        method="POST",
+        url=f"{BASE_URL_V1}/templates/999999999999/contents/lock",
+    ),
+    HarvestTarget(
+        name="template_contents_publish_notfound_post",
+        method="POST",
+        url=f"{BASE_URL_V1}/templates/999999999999/contents/publish",
+    ),
+    HarvestTarget(
+        name="template_contents_unlock_notfound_post",
+        method="POST",
+        url=f"{BASE_URL_V1}/templates/999999999999/contents/unlock",
+    ),
+    HarvestTarget(
+        name="data_images_by_type_notfound_get",
+        method="GET",
+        url=f"{BASE_URL_V1_DATA}/images/999999999999/image:png",
+    ),
+    HarvestTarget(
+        name="contacts_v4_notfound_delete",
+        method="DELETE",
+        url=f"{BASE_URL_V4}/contacts/999999999999",
+    ),
+    HarvestTarget(
+        name="contact_patch_notfound",
+        method="PATCH",
+        url=f"{BASE_URL_V3}/contact/999999999999",
+        json_body={"Name": "FuzzPatch"},
+    ),
 )
 
 CORPUS_MAP: dict[str, tuple[str, ...]] = {
@@ -210,6 +243,13 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "useragentstatistics_get",
         "tokens_get",
         "labels_get",
+        "v1_templates_get",
+        "template_contents_lock_notfound_post",
+        "template_contents_publish_notfound_post",
+        "template_contents_unlock_notfound_post",
+        "data_images_by_type_notfound_get",
+        "contacts_v4_notfound_delete",
+        "contact_patch_notfound",
     ),
     "fuzz_async_endpoint": (
         "contact_get",
@@ -220,6 +260,13 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "statcounters_get",
         "tokens_get",
         "labels_get",
+        "v1_templates_get",
+        "template_contents_lock_notfound_post",
+        "template_contents_publish_notfound_post",
+        "template_contents_unlock_notfound_post",
+        "data_images_by_type_notfound_get",
+        "contacts_v4_notfound_delete",
+        "contact_patch_notfound",
         "lifecycle_contact_create",
         "lifecycle_contact_get",
         "lifecycle_contact_update",
@@ -231,6 +278,9 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "send_v31_error_post",
         "contact_get",
         "contact_notfound_get",
+        "contacts_v4_notfound_delete",
+        "contact_patch_notfound",
+        "v1_templates_get",
         "lifecycle_contact_create",
         "lifecycle_template_create",
     ),
@@ -313,6 +363,7 @@ class CorpusWriter:
     """Content-addressed seed writer with SHA-256 deduplication and dry-run support."""
 
     def __init__(self, base_corpus_dir: Path, *, dry_run: bool = False) -> None:
+        """Initialize the corpus writer and deduplication cache."""
         self.base_corpus_dir = base_corpus_dir
         self.dry_run = dry_run
         self._seen_hashes: dict[str, set[str]] = {}
@@ -389,6 +440,72 @@ def harvest_live_static_targets(
             logger.warning("Network error harvesting %s: %s", target.name, exc)
 
 
+def _harvest_contact_step(
+    session: requests.Session,
+    writer: CorpusWriter,
+    contact_email: str,
+    suffix: str,
+    timeout: float,
+) -> int | None:
+    """Create, read, and update a temporary contact.
+
+    Returns:
+        The created contact ID, or ``None`` if creation failed.
+    """
+    c_create = session.post(
+        f"{BASE_URL_V3}/contact",
+        json={"Email": contact_email, "IsExcludedFromCampaigns": True},
+        timeout=timeout,
+    )
+    _dispatch_target_to_corpora(
+        writer, "lifecycle_contact_create", c_create.status_code, _serialize_response_body(c_create)
+    )
+    if c_create.status_code != 201:
+        return None
+    contact_id: int = c_create.json()["Data"][0]["ID"]
+    c_get = session.get(f"{BASE_URL_V3}/contact/{contact_id}", timeout=timeout)
+    _dispatch_target_to_corpora(writer, "lifecycle_contact_get", c_get.status_code, _serialize_response_body(c_get))
+    c_upd = session.put(
+        f"{BASE_URL_V3}/contact/{contact_id}",
+        json={"Name": f"Fuzz User {suffix}"},
+        timeout=timeout,
+    )
+    _dispatch_target_to_corpora(writer, "lifecycle_contact_update", c_upd.status_code, _serialize_response_body(c_upd))
+    return contact_id
+
+
+def _harvest_list_csv_step(
+    session: requests.Session,
+    writer: CorpusWriter,
+    contact_email: str,
+    suffix: str,
+    timeout: float,
+) -> int | None:
+    """Create a temporary contacts list and upload CSV data.
+
+    Returns:
+        The created contacts list ID, or ``None`` if creation failed.
+    """
+    l_create = session.post(
+        f"{BASE_URL_V3}/contactslist",
+        json={"Name": f"FuzzHarvestList_{suffix}"},
+        timeout=timeout,
+    )
+    if l_create.status_code != 201:
+        return None
+    list_id: int = l_create.json()["Data"][0]["ID"]
+    csv_body = f"email,name\n{contact_email},Fuzz User\n"
+    csv_resp = session.post(
+        f"{BASE_URL_V3_DATA}/contactslist/{list_id}/CSVData/text:plain",
+        data=csv_body.encode("utf-8"),
+        headers={"Content-Type": "text/plain"},
+        timeout=timeout,
+    )
+    writer.write_seed("fuzz_csv_import_flow", f"{csv_resp.status_code}_csv_upload", _serialize_response_body(csv_resp))
+    writer.write_seed("fuzz_endpoint", f"{csv_resp.status_code}_csv_upload", _serialize_response_body(csv_resp))
+    return list_id
+
+
 def harvest_live_crud_lifecycles(
     session: requests.Session,
     writer: CorpusWriter,
@@ -401,47 +518,8 @@ def harvest_live_crud_lifecycles(
     list_id: int | None = None
 
     try:
-        c_create = session.post(
-            f"{BASE_URL_V3}/contact",
-            json={"Email": contact_email, "IsExcludedFromCampaigns": True},
-            timeout=timeout,
-        )
-        _dispatch_target_to_corpora(
-            writer, "lifecycle_contact_create", c_create.status_code, _serialize_response_body(c_create)
-        )
-        if c_create.status_code == 201:
-            contact_id = c_create.json()["Data"][0]["ID"]
-            c_get = session.get(f"{BASE_URL_V3}/contact/{contact_id}", timeout=timeout)
-            _dispatch_target_to_corpora(
-                writer, "lifecycle_contact_get", c_get.status_code, _serialize_response_body(c_get)
-            )
-            c_upd = session.put(
-                f"{BASE_URL_V3}/contact/{contact_id}",
-                json={"Name": f"Fuzz User {suffix}"},
-                timeout=timeout,
-            )
-            _dispatch_target_to_corpora(
-                writer, "lifecycle_contact_update", c_upd.status_code, _serialize_response_body(c_upd)
-            )
-
-        l_create = session.post(
-            f"{BASE_URL_V3}/contactslist",
-            json={"Name": f"FuzzHarvestList_{suffix}"},
-            timeout=timeout,
-        )
-        if l_create.status_code == 201:
-            list_id = l_create.json()["Data"][0]["ID"]
-            csv_body = f"email,name\n{contact_email},Fuzz User\n"
-            csv_resp = session.post(
-                f"{BASE_URL_V3_DATA}/contactslist/{list_id}/CSVData/text:plain",
-                data=csv_body.encode("utf-8"),
-                headers={"Content-Type": "text/plain"},
-                timeout=timeout,
-            )
-            writer.write_seed(
-                "fuzz_csv_import_flow", f"{csv_resp.status_code}_csv_upload", _serialize_response_body(csv_resp)
-            )
-            writer.write_seed("fuzz_endpoint", f"{csv_resp.status_code}_csv_upload", _serialize_response_body(csv_resp))
+        contact_id = _harvest_contact_step(session, writer, contact_email, suffix, timeout)
+        list_id = _harvest_list_csv_step(session, writer, contact_email, suffix, timeout)
     except requests.exceptions.RequestException as exc:
         logger.warning("Contact/List lifecycle harvest interrupted: %s", exc)
     finally:
@@ -486,6 +564,25 @@ def generate_synthetic_seeds(writer: CorpusWriter) -> None:
         "v3_error_payload": json.dumps(
             {"ErrorIdentifier": "abc-123", "StatusCode": 400, "ErrorMessage": "Invalid payload format"}
         ).encode("utf-8"),
+        "v31_rfc8058_tracking": json.dumps(
+            {
+                "Messages": [
+                    {
+                        "From": {"Email": "pilot@mailjet.com", "Name": "Pilot"},
+                        "To": [{"Email": "passenger@mailjet.com", "Name": "Passenger"}],
+                        "Subject": "RFC 8058 & Tracking",
+                        "TextPart": "Unsubscribe cleanly",
+                        "Headers": {
+                            "List-Unsubscribe": "<https://example.com/unsub?id=1>",
+                            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                        },
+                        "TrackOpens": "enabled",
+                        "TrackClicks": "disabled",
+                        "URLTags": "utm_source=fuzz&utm_medium=email",
+                    }
+                ]
+            }
+        ).encode("utf-8"),
     }
 
     for target_fuzzer in (
@@ -512,6 +609,8 @@ def generate_synthetic_seeds(writer: CorpusWriter) -> None:
         "deep_nested_json": (b'{"a":' * 60) + b"1" + (b"}" * 60),
         "malformed_truncated_json": b'{"Messages": [{"From": {"Email": "unterminated',
         "csv_injection": b"email,name\n=cmd|' /C calc'!A0@evil.com,\"Mallory\r\nInjected\"\n",
+        "form_urlencoded_mapping": b"From=pilot%40mailjet.com&To=passenger%40mailjet.com&Subject=Form+Mapping",
+        "non_latin1_auth_probe": "key_\u2603:\u00e9\u20ac_secret".encode(),
     }
 
     all_fdp_fuzzers = (

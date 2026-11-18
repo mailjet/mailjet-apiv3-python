@@ -37,6 +37,26 @@ def upload_image():
     return content_client.data_images.create(headers={"Content-Type": None}, files=files_payload)
 
 
+def list_v1_templates():
+    """GET https://api.mailjet.com/v1/REST/templates via `v1_templates` route."""
+    return content_client.v1_templates.get()
+
+
+def publish_template_contents(template_id: int):
+    """POST https://api.mailjet.com/v1/REST/templates/{id}/contents/publish."""
+    return content_client.template_contents_publish.create(id=template_id)
+
+
+def unlock_template_contents(template_id: int):
+    """POST https://api.mailjet.com/v1/REST/templates/{id}/contents/unlock."""
+    return content_client.template_contents_unlock.create(id=template_id)
+
+
+def get_image_by_type(image_id: int, content_type: str = "image:png"):
+    """GET https://api.mailjet.com/v1/data/images/{id}/{content_type}."""
+    return content_client.data_images_by_type.get(id=image_id, action_id=content_type)
+
+
 if __name__ == "__main__":
     bearer_token = os.environ.get("MJ_CONTENT_TOKEN")
     if not bearer_token:

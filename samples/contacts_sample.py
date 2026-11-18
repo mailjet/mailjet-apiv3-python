@@ -148,6 +148,11 @@ def delete_the_contact(contact_id=0):
         return MockResp()
 
 
+def gdpr_delete_contact(contact_id: int):
+    """Permanently erase a contact via Mailjet v4 GDPR `contacts` route."""
+    return mailjet30.contacts.delete(id=contact_id)
+
+
 def stream_all_contacts(start_offset: int = 0, batch_size: int = 100):
     """Demonstrates memory-safe lazy pagination using .stream().
 
