@@ -1,0 +1,21 @@
+name: mailjet-fuzz
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # Atheris 3.0.0 supports Python <= 3.12
+  - python >=3.10,<3.13
+  # build & host deps
+  - pip
+  - setuptools-scm
+  # Clang / LLVM / libFuzzer toolchain
+  - clang >=20
+  - clangxx >=20
+  - compiler-rt >=20
+  - llvm-tools >=20
+  - libstdcxx-devel_linux-64  # [linux]
+  # runtime deps
+  - requests >=2.33.0
+  - httpx2 >=2.0.0
+  - pip:
+      - atheris
