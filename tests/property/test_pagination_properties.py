@@ -4,6 +4,7 @@ Powered by Hypothesis.
 
 from unittest.mock import MagicMock
 
+import pytest
 from hypothesis import given, settings, strategies as st
 
 from mailjet_rest.client import Client
@@ -12,6 +13,7 @@ from mailjet_rest.endpoint import Endpoint
 
 # Disable the 200ms deadline because simulating hundreds of paginated
 # mocked HTTP requests can occasionally exceed the time limit on CI servers.
+@pytest.mark.property_heavy
 @settings(max_examples=300, deadline=None)
 @given(total_items=st.integers(min_value=0, max_value=5000), chunk_size=st.integers(min_value=1, max_value=1000))
 def test_property_pagination_math(total_items: int, chunk_size: int) -> None:

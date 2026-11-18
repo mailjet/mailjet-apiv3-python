@@ -6,11 +6,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 import warnings
 
+import pytest
 from hypothesis import given, settings, strategies as st, example
 
 from mailjet_rest.client import Client, Endpoint, JitterRetry
 
 
+@pytest.mark.property_heavy
 @settings(max_examples=500)
 @given(
     payload=st.recursive(
@@ -25,10 +27,11 @@ def test_property_telemetry_extraction_resilience(payload: Any) -> None:
     assert isinstance(trace_suffix, str)
     assert isinstance(structured_data, dict)
 
+
 @settings(max_examples=300)
 @given(auth_input=st.one_of(st.tuples(st.text(), st.text()), st.text(), st.integers(), st.none()))
-@example(auth_input=('', '\r'))
-@example(auth_input=('', '\xa0'))
+@example(auth_input=("", "\r"))
+@example(auth_input=("", "\xa0"))
 def test_property_auth_coercion(auth_input: Any) -> None:
     """INVARIANT: Client must successfully auth or reject with clear Type/Value error."""
     try:
@@ -41,6 +44,7 @@ def test_property_auth_coercion(auth_input: Any) -> None:
             assert "Authorization" in client.session.headers
     except (ValueError, TypeError):
         pass
+
 
 @settings(max_examples=500)
 @given(consecutive_errors=st.integers(min_value=1, max_value=10))

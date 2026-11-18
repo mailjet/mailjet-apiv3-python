@@ -461,3 +461,41 @@ def test_modular_scaffolding_exports_and_dx_helpers() -> None:
                     _ = aclient.snd
 
         asyncio.run(_check_async_dx())
+
+
+def test_build_endpoint_headers_lowercase_content_type_overrides_default() -> None:
+    """Lowercase 'content-type' override must replace default 'Content-Type' without duplicate keys."""
+    from mailjet_rest.utils.routing import build_endpoint_headers  # ruff: ignore[import-outside-top-level]
+
+    merged = build_endpoint_headers("contact", {"content-type": "application/x-www-form-urlencoded"})
+    ct_keys = [k for k in merged if k.lower() == "content-type"]
+    assert ct_keys == ["content-type"]
+    assert merged["content-type"] == "application/x-www-form-urlencoded"
+
+
+def test_async_client_form_mapping_payload_uses_data_not_content() -> None:
+    """Non-JSON Mapping payloads on AsyncClient must use form data= rather than crashing content=."""
+    if _httpx2 is None:
+        pytest.skip("httpx2 not installed")
+
+    captured: list[tuple[str, bytes]] = []
+
+    def handler(request: Any) -> Any:
+        captured.append((request.headers.get("content-type", ""), request.read()))
+        return _httpx2.Response(200, json={"Data": [], "Count": 0})
+
+    async def _run() -> None:
+        async with AsyncClient(
+            auth=("pub_key", "priv_key"),
+            transport=_httpx2.MockTransport(handler),
+        ) as client:
+            resp = await client.contact.create(
+                data={"Name": "Alice"},
+                headers={"content-type": "application/x-www-form-urlencoded"},
+            )
+            assert resp.status_code == 200
+
+    asyncio.run(_run())
+    assert len(captured) == 1
+    assert "application/x-www-form-urlencoded" in captured[0][0]
+    assert b"Name=Alice" in captured[0][1]

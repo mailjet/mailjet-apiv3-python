@@ -239,6 +239,9 @@ def build_endpoint_headers(name_lower: str, custom_headers: HeadersMapping | Non
     base_headers = _TEXT_HEADERS if name_lower.endswith("_csvdata") else _JSON_HEADERS
     if custom_headers:
         clean_custom = SecurityGuard.sanitize_headers(dict(custom_headers))
+        if any(k.lower() == "content-type" for k in clean_custom):
+            filtered_base = {k: v for k, v in base_headers.items() if k.lower() != "content-type"}
+            return {**filtered_base, **clean_custom}
         return {**base_headers, **clean_custom}
     return dict(base_headers)
 

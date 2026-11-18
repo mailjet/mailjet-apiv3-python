@@ -91,6 +91,9 @@ Create a virtual environment and install the wrapper:
 python -m venv venv
 source venv/bin/activate
 pip install mailjet-rest
+
+# Optional async support (AsyncClient / AsyncEndpoint backed by httpx2>=2.0.0)
+pip install "mailjet-rest[async]"
 ```
 
 #### git clone & pip install locally
@@ -191,7 +194,39 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
 ```
 
 > [!WARNING]
-> **Resource Management:** If you choose not to use the context manager, you **must** manually call `mailjet.close()` when your application shuts down to release the underlying sockets.
+> **Resource Management:** If you choose not to use the context manager, you **must** manually call `mailjet.close()` (or `await mailjet.aclose()` for `AsyncClient`) when your application shuts down to release the underlying sockets.
+
+### Async Quick Start (`mailjet-rest[async]`)
+
+For `asyncio` workloads, install `pip install "mailjet-rest[async]"` (`httpx2>=2.0.0`) and use `AsyncClient` with `async with`:
+
+```python
+import asyncio
+import os
+from mailjet_rest import AsyncClient
+
+async def main() -> None:
+    auth = (os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", ""))
+    async with AsyncClient(auth=auth) as mailjet:
+        if await mailjet.ping():
+            resp = await mailjet.send_v31.create(
+                data={
+                    "Messages": [
+                        {
+                            "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
+                            "To": [{"Email": "passenger1@mailjet.com", "Name": "Passenger 1"}],
+                            "Subject": "Async email flight plan!",
+                            "TextPart": "Hello from AsyncClient!",
+                        }
+                    ]
+                }
+            )
+            print(resp.status_code)
+
+asyncio.run(main())
+```
+
+See [samples/async_client_sample.py](samples/async_client_sample.py) for `ping()`, `patch()`, `available_endpoints`, and `async for ... in client.contact.stream()` pagination.
 
 ### Advanced Configuration
 
@@ -847,9 +882,7 @@ When calling retired Mailjet endpoints, the SDK executes the request but emits a
 
 ## Type Hinting
 
-This SDK is fully type-hinted and compatible with static type checkers like `mypy` and `pyright`.
-
-Because of the dynamic URL dispatch engine (`__getattr__`), IDEs may flag endpoints like `client.contact.create` as `Any`. If you enforce strict typing in your application, you may safely ignore these specific dynamically dispatched calls.
+This SDK ships PEP 561 `py.typed` metadata, deterministic `.pyi` type stubs (`mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi`), and consolidated `TypedDict` DTOs in `mailjet_rest.types` (e.g., `SendV31Payload`, `ContactPayload`, `SendV3Payload`). Static type checkers (`mypy --strict`, `pyright`) and IDEs get full autocompletion for all 89 registered routes on both `Client` and `AsyncClient`, plus `client.available_endpoints` for runtime discovery.
 
 ## License
 

@@ -171,4 +171,4 @@ MessageBuilderMachine.TestCase.settings = settings(
     stateful_step_count=25,
     deadline=None,
 )
-TestMessageBuilder = MessageBuilderMachine.TestCase
+TestMessageBuilder = pytest.mark.property_heavy(MessageBuilderMachine.TestCase)

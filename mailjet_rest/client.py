@@ -821,7 +821,7 @@ class AsyncClient(BaseClient):
         }
         if is_json:
             req_kwargs["json"] = normalized_data
-        elif files and isinstance(normalized_data, Mapping):
+        elif isinstance(normalized_data, Mapping):
             req_kwargs["data"] = normalized_data
         elif data is not None:
             req_kwargs["content"] = data

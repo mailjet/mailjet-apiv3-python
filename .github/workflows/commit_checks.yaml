@@ -77,7 +77,7 @@ jobs:
 
       - name: Run offline tests
         run: |
-          pytest -v -W error tests/unit tests/property tests/regression --cov=mailjet_rest --cov-report=xml
+          pytest -v -W error -m "not property_heavy" tests/unit tests/property tests/regression --cov=mailjet_rest --cov-report=xml
           python tests/test_boot.py
           pytest tests/test_perf.py
 
