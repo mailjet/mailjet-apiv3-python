@@ -15,7 +15,7 @@ warnings.simplefilter("ignore", UserWarning)
 logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
+    from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
     from mailjet_rest.client import Client
     from mailjet_rest.config import Config
     from mailjet_rest.errors import ApiError, ValidationError
@@ -128,6 +128,7 @@ def TestOneInput(data: bytes) -> None:
                     headers={"X-Fuzz": fdp.ConsumeUnicodeNoSurrogates(16)},
                 )
     except (ValueError, TypeError, ValidationError, ApiError):
+        # Expected SDK validation and error-handling rejections on malformed fuzz input.
         pass
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in Builder execution: {type(e).__name__} - {e}") from e

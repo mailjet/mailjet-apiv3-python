@@ -6,7 +6,6 @@ import asyncio
 import logging
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,7 +36,7 @@ def test_filesystem_security_bytes_oserror_and_multipart_edges(tmp_path: Path) -
     sample = tmp_path / "attach.txt"
     sample.write_text("ok", encoding="utf-8")
 
-    assert validate_attachment_path(bytes(sample), safe_base_dir=tmp_path) == sample.resolve()
+    assert validate_attachment_path(bytes(sample), safe_base_dir=tmp_path) == sample.resolve()  # type: ignore[arg-type]
 
     with pytest.raises(ValueError, match="Null byte"):
         validate_attachment_path(b"/tmp/evil\x00.txt")  # type: ignore[arg-type]
@@ -51,12 +50,10 @@ def test_filesystem_security_bytes_oserror_and_multipart_edges(tmp_path: Path) -
             validate_attachment_path(sample, safe_base_dir=tmp_path)
 
     # None, non-collection, malformed entry, and None/int fields in multipart spec
-    validate_multipart_files(None, header_sanitizer=lambda h: dict(h))
-    validate_multipart_files(123, header_sanitizer=lambda h: dict(h))
-    validate_multipart_files(
-        ["bad-entry", ("file", (None, b"abc", None, {"X-A": "1"}))], header_sanitizer=lambda h: dict(h)
-    )
-    validate_multipart_files([(123, (123, b"abc"))], header_sanitizer=lambda h: dict(h))
+    validate_multipart_files(None, header_sanitizer=dict)
+    validate_multipart_files(123, header_sanitizer=dict)
+    validate_multipart_files(["bad-entry", ("file", (None, b"abc", None, {"X-A": "1"}))], header_sanitizer=dict)
+    validate_multipart_files([(123, (123, b"abc"))], header_sanitizer=dict)
 
 
 def test_html_guard_endtag_comment_limits_and_script_inspection() -> None:

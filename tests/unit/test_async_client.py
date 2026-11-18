@@ -462,16 +462,12 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
         # 2. Exception purge on exit and clean context manager re-entry
         reusable = AsyncClient(auth=("k", "s"))
         inner_sess = reusable.session
-        caught_async = False
-        try:
+        with pytest.raises(RuntimeError, match="boom"):
             async with reusable as entered:
                 assert entered is reusable
                 assert entered.session is inner_sess
                 raise RuntimeError("boom")
-        except RuntimeError as exc:
-            caught_async = str(exc) == "boom"
 
-        assert caught_async
         assert inner_sess.is_closed
         assert inner_sess.auth is None
         assert "Authorization" not in inner_sess.headers
@@ -486,14 +482,10 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
 
     # Sync Client re-entry check
     sync_client = Client(auth=("k", "s"))
-    caught_sync = False
-    try:
+    with pytest.raises(RuntimeError, match="sync boom"):
         with sync_client as s1:
             _ = s1.session
             raise RuntimeError("sync boom")
-    except RuntimeError as exc:
-        caught_sync = str(exc) == "sync boom"
-    assert caught_sync
     assert sync_client._session is None  # ruff: ignore[private-member-access]
     with sync_client as s2:
         assert s2.session is not None

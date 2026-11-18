@@ -12,17 +12,12 @@ from unittest.mock import MagicMock
 
 import atheris
 
-try:
-    import httpx2
-except ImportError:
-    httpx2 = None  # type: ignore[assignment]
-
 
 warnings.simplefilter("ignore")
 logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.client import AsyncClient
+    from mailjet_rest.client import AsyncClient, _httpx2 as httpx2
     from mailjet_rest.endpoint import AsyncEndpoint
     from mailjet_rest.errors import ApiError, MailjetApiError, ValidationError
     from mailjet_rest.routes import ROUTE_MAP
@@ -143,7 +138,8 @@ def TestOneInput(data: bytes) -> None:
     try:
         _loop.run_until_complete(_fuzz_async_endpoint(fdp))
     except (ValueError, TypeError, AttributeError, KeyError, ValidationError, MailjetApiError, ApiError):
-        return  # Expected SDK validation and routing rejections on malformed fuzz input.
+        # Expected SDK validation and routing rejections on malformed fuzz input.
+        return
     except Exception as e:
         msg = f"UNHANDLED CRASH in AsyncEndpoint fuzzer: {type(e).__name__} - {e}"
         raise RuntimeError(msg) from e

@@ -21,7 +21,6 @@ import requests
 from requests.exceptions import ConnectionError as RequestsConnectionError, RequestException, Timeout as RequestsTimeout
 
 from mailjet_rest.config import Config
-from mailjet_rest.endpoint import AsyncEndpoint, BaseEndpoint, Endpoint
 from mailjet_rest.errors import (
     MAX_ERROR_DETAIL_CHARS,
     MAX_ERROR_LOG_CHARS,
@@ -62,6 +61,7 @@ if TYPE_CHECKING:
 
     import httpx2
 
+    from mailjet_rest.endpoint import AsyncEndpoint, BaseEndpoint, Endpoint
     from mailjet_rest.types import (
         AuthCredentials,
         CertConfig,
@@ -106,7 +106,7 @@ logger = logging.getLogger(__name__)
 if not any(isinstance(f, RedactingFilter) for f in logger.filters):
     logger.addFilter(RedactingFilter())
 
-_EndpointT = TypeVar("_EndpointT", bound=BaseEndpoint)
+_EndpointT = TypeVar("_EndpointT", bound="BaseEndpoint")
 _AVAILABLE_ENDPOINTS: Final[tuple[str, ...]] = tuple(sorted(ROUTE_MAP))
 _httpx2_cache: list[Any] = []
 
@@ -137,6 +137,10 @@ def __getattr__(name: str) -> Any:
     """
     if name == "_httpx2":
         return _get_httpx2()
+    if name in {"AsyncEndpoint", "BaseEndpoint", "Endpoint"}:
+        from mailjet_rest import endpoint  # ruff: ignore[import-outside-top-level]
+
+        return getattr(endpoint, name)
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 
@@ -524,6 +528,8 @@ class Client(BaseClient):
         Returns:
             Endpoint: Cached or newly created synchronous endpoint wrapper.
         """
+        from mailjet_rest.endpoint import Endpoint  # ruff: ignore[import-outside-top-level]
+
         return self._resolve_endpoint(name, Endpoint)
 
     def _execute_request(
@@ -768,6 +774,8 @@ class AsyncClient(BaseClient):
         Returns:
             AsyncEndpoint: Cached or newly created asynchronous endpoint wrapper.
         """
+        from mailjet_rest.endpoint import AsyncEndpoint  # ruff: ignore[import-outside-top-level]
+
         return self._resolve_endpoint(name, AsyncEndpoint)
 
     async def _request_isolated(

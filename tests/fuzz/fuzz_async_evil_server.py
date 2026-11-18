@@ -17,17 +17,12 @@ from typing import Any
 
 import atheris
 
-try:
-    import httpx2
-except ImportError:
-    httpx2 = None  # type: ignore[assignment]
-
 
 warnings.simplefilter("ignore")
 logging.disable(logging.CRITICAL)
 
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.client import AsyncClient
+    from mailjet_rest.client import AsyncClient, _httpx2 as httpx2
     from mailjet_rest.errors import ApiError, MailjetApiError
 
 

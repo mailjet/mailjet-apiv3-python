@@ -1,4 +1,4 @@
-"""Unit tests for Wave 6 OpenAPI routes, consolidated types, and TOKQOR security invariants."""
+"""Unit tests for Wave 6 OpenAPI routes, consolidated types, and security invariants."""
 
 from __future__ import annotations
 
@@ -252,7 +252,7 @@ def test_consolidated_types_exports_and_openapi_typeddicts() -> None:
 
 
 # ==========================================
-# 3. TOKQOR Security Invariants Enforcement
+# 3. Security Invariants Enforcement
 # ==========================================
 
 
@@ -421,11 +421,11 @@ def test_async_client_routes_ssrf_multipart_retry_allowlist_and_gather(monkeypat
 
 def test_modular_scaffolding_exports_and_dx_helpers() -> None:
     """Verify modular utility extraction preserves v1.9.1 re-exports and adds clean DX helpers."""
-    import mailjet_rest  # ruff: ignore[import-outside-top-level]
     from mailjet_rest import (  # ruff: ignore[import-outside-top-level]
         Endpoint,
         errors as mj_errors,
     )
+    from mailjet_rest.endpoint import Endpoint as DirectEndpoint  # ruff: ignore[import-outside-top-level]
     from mailjet_rest.utils import (  # ruff: ignore[import-outside-top-level]
         filesystem_security,
         html_guard,
@@ -435,7 +435,7 @@ def test_modular_scaffolding_exports_and_dx_helpers() -> None:
     )
 
     assert JitterRetry is retry.JitterRetry
-    assert mailjet_rest.Endpoint is Endpoint
+    assert Endpoint is DirectEndpoint
     assert callable(mj_errors.handle_api_error)
     assert callable(telemetry.record_debug_telemetry)
     assert callable(routing.build_endpoint_url)
