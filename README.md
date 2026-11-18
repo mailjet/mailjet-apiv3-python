@@ -205,6 +205,7 @@ import asyncio
 import os
 from mailjet_rest import AsyncClient
 
+
 async def main() -> None:
     auth = (os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", ""))
     async with AsyncClient(auth=auth) as mailjet:
@@ -222,6 +223,7 @@ async def main() -> None:
                 }
             )
             print(resp.status_code)
+
 
 asyncio.run(main())
 ```
