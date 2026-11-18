@@ -1,12 +1,15 @@
 """Atheris fuzzing target for the Mailjet SDK Builders."""
 
 import sys
+import warnings
 
 import atheris
 
 
+warnings.simplefilter("ignore", UserWarning)
+
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
+    from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
     from mailjet_rest.errors import ValidationError
     from mailjet_rest.utils.guardrails import SecurityGuard
 
@@ -38,7 +41,7 @@ def TestOneInput(data: bytes) -> None:
 
         num_ops = fdp.ConsumeIntInRange(1, 6)
         for _ in range(num_ops):
-            op = fdp.ConsumeIntInRange(0, 4)
+            op = fdp.ConsumeIntInRange(0, 8)
             if op == 0:
                 builder.add_recipient(
                     email=fdp.ConsumeUnicodeNoSurrogates(20),
@@ -63,8 +66,36 @@ def TestOneInput(data: bytes) -> None:
                     builder.set_content(html=content)
                 else:
                     builder.set_content(text=content)
+            elif op == 5:
+                builder.set_list_unsubscribe(
+                    url=fdp.ConsumeUnicodeNoSurrogates(64),
+                    email=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None,
+                )
+            elif op == 6:
+                builder.set_tracking(
+                    opens=fdp.PickValueInList(
+                        ["enabled", "disabled", "account_default", fdp.ConsumeUnicodeNoSurrogates(8)]
+                    ),
+                    clicks=fdp.PickValueInList(
+                        ["enabled", "disabled", "account_default", fdp.ConsumeUnicodeNoSurrogates(8)]
+                    ),
+                )
+            elif op == 7:
+                builder.set_custom_id(fdp.ConsumeUnicodeNoSurrogates(64))
+                builder.set_template(
+                    template_id=fdp.PickValueInList([12345, 0, -1, True, fdp.ConsumeInt(8)]),
+                    language_active=fdp.PickValueInList([True, False, "yes"]),  # type: ignore[arg-type]
+                )
+            elif op == 8:
+                builder.attach_inline(  # type: ignore[call-arg]
+                    filename=fdp.ConsumeUnicodeNoSurrogates(16),
+                    content_type=fdp.ConsumeUnicodeNoSurrogates(16),
+                    base64_content=fdp.ConsumeUnicodeNoSurrogates(64),
+                    content_id=fdp.ConsumeUnicodeNoSurrogates(16),
+                )
 
-        builder.build()
+        msg = builder.build()
+        SendPayloadBuilder().add_message(msg).set_sandbox_mode(fdp.ConsumeBool()).build()
     except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
         pass
 

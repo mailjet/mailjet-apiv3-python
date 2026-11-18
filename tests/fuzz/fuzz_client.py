@@ -2,14 +2,23 @@
 Stresses JSON Recursion, Attachment Chunks, and Structural Integrity.
 """
 
+import logging
 import sys
+import warnings
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import atheris
 
 
+warnings.simplefilter("ignore", UserWarning)
+logging.disable(logging.CRITICAL)
+
 with atheris.instrument_imports(include=["mailjet_rest"]):
-    from mailjet_rest.builders import MessageBuilder, TemplateContentBuilder
-    from mailjet_rest.errors import ValidationError
+    from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
+    from mailjet_rest.client import Client
+    from mailjet_rest.config import Config
+    from mailjet_rest.errors import ApiError, ValidationError
 
 
 def TestOneInput(data: bytes) -> None:
@@ -88,6 +97,38 @@ def TestOneInput(data: bytes) -> None:
         pass
     except RecursionError:
         raise RuntimeError("CRASH: Builder JSON Serialization hit Recursion Depth limit.")
+
+    # ==========================================
+    # BLOCK 3: Sync Client Auth, Dry-Run, PATCH & Mocked Dispatch
+    # ==========================================
+    try:
+        cfg = Config(
+            version=fdp.PickValueInList(["v3", "v3.1", "v1", "v4"]),
+            dry_run=fdp.ConsumeBool(),
+            auto_idempotency_mode=fdp.PickValueInList(["fingerprint", "uuid4", "off"]),
+            max_retries=0,
+        )
+        auth = (fdp.ConsumeUnicodeNoSurrogates(24), fdp.ConsumeUnicodeNoSurrogates(24))
+        with Client(auth=auth, config=cfg) as client:
+            _ = client.available_endpoints
+            fake_resp = SimpleNamespace(
+                status_code=fdp.PickValueInList([200, 201, 204, 400, 404, 429, 500]),
+                text=fdp.ConsumeUnicodeNoSurrogates(128),
+                headers={"Content-Type": "application/json"},
+                is_redirect=False,
+                json=lambda: {"Count": 0, "Data": []},
+                raise_for_status=lambda: None,
+            )
+            with patch.object(client.session, "request", return_value=fake_resp):
+                method = fdp.PickValueInList(["GET", "POST", "PUT", "PATCH", "DELETE"])
+                client.api_call(
+                    method,
+                    "https://api.mailjet.com/v3/REST/contact",
+                    data={"Email": fdp.ConsumeUnicodeNoSurrogates(24)} if method != "GET" else None,
+                    headers={"X-Fuzz": fdp.ConsumeUnicodeNoSurrogates(16)},
+                )
+    except (ValueError, TypeError, ValidationError, ApiError):
+        pass
     except Exception as e:
         raise RuntimeError(f"UNHANDLED CRASH in Builder execution: {type(e).__name__} - {e}") from e
 

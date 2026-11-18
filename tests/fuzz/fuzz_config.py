@@ -37,6 +37,17 @@ def TestOneInput(data: bytes) -> None:
             api_url=fdp.ConsumeUnicodeNoSurrogates(100) or "https://api.mailjet.com",
             version=fdp.ConsumeUnicodeNoSurrogates(10),
             timeout=fdp.PickValueInList(chaos_types),
+            user_agent=fdp.ConsumeUnicodeNoSurrogates(40) or "mailjet-fuzz/1.0",
+            dry_run=fdp.ConsumeBool(),
+            enable_security_audit=fdp.ConsumeBool(),
+            verify=fdp.PickValueInList([True, False, None, fdp.ConsumeUnicodeNoSurrogates(32)]),
+            auto_idempotency_mode=fdp.PickValueInList(
+                ["fingerprint", "uuid4", "off", fdp.ConsumeUnicodeNoSurrogates(12)]
+            ),
+            pool_connections=fdp.PickValueInList([1, 10, 0, -1, True, fdp.ConsumeInt(8)]),
+            pool_maxsize=fdp.PickValueInList([1, 10, 0, -1, False, fdp.ConsumeInt(8)]),
+            warn_unclosed=fdp.PickValueInList([True, False, 1, "yes"]),
+            max_retries=fdp.PickValueInList([0, 3, 20, 21, -1, True, fdp.ConsumeInt(8)]),
         )
 
     except (ValueError, TypeError):
