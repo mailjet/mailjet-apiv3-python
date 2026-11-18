@@ -52,9 +52,9 @@ def TestOneInput(data: bytes) -> None:
     if fdp.ConsumeBool():
         mock_response = None
 
-    try:
-        raw_exception = RequestException("Simulated Fuzzed Exception", response=mock_response)  # type: ignore[arg-type]
+    raw_exception = RequestException("Simulated Fuzzed Exception", response=mock_response)  # type: ignore[arg-type]
 
+    try:
         # The SDK should wrap ALL parsing errors inside the ApiError hierarchy safely
         Client._handle_api_error(raw_exception)
 
