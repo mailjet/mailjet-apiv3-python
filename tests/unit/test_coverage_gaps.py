@@ -181,3 +181,17 @@ def test_retry_http_date_stream_and_async_branches() -> None:
             )
 
     asyncio.run(_exercise_async())
+
+
+def test_client_getattr_shutdown_guard_for_del(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify __del__/__getattr__ raises AttributeError instead of ImportError when sys.meta_path is None."""
+    import sys  # ruff: ignore[import-outside-top-level]
+    from mailjet_rest.client import AsyncClient, Client  # ruff: ignore[import-outside-top-level]
+
+    partial_sync = Client.__new__(Client)
+    partial_async = AsyncClient.__new__(AsyncClient)
+    monkeypatch.setattr(sys, "meta_path", None)
+
+    # _warn_if_unclosed must swallow AttributeError cleanly rather than leaking ImportError
+    partial_sync._warn_if_unclosed()  # ruff: ignore[private-member-access]
+    partial_async._warn_if_unclosed()  # ruff: ignore[private-member-access]

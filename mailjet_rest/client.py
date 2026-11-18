@@ -528,6 +528,8 @@ class Client(BaseClient):
         Returns:
             Endpoint: Cached or newly created synchronous endpoint wrapper.
         """
+        if sys.meta_path is None:
+            raise AttributeError(name)
         from mailjet_rest.endpoint import Endpoint  # ruff: ignore[import-outside-top-level]
 
         return self._resolve_endpoint(name, Endpoint)
@@ -774,6 +776,8 @@ class AsyncClient(BaseClient):
         Returns:
             AsyncEndpoint: Cached or newly created asynchronous endpoint wrapper.
         """
+        if sys.meta_path is None:
+            raise AttributeError(name)
         from mailjet_rest.endpoint import AsyncEndpoint  # ruff: ignore[import-outside-top-level]
 
         return self._resolve_endpoint(name, AsyncEndpoint)
