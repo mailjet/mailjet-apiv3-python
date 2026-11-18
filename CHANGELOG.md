@@ -19,6 +19,7 @@ ______________________________________________________________________
 - **Stateful Property Testing, Mutation Gate & Async Fuzzing:** Added `MessageBuilderMachine`, `AsyncClientStateMachine`, `mutmut` v3 config, `3` async Atheris fuzzers (`29` total), `scripts/harvest_fuzzer_dict.py`, and enriched `tests/fuzz/fuzzer.dict` (`2,495` entries).
 - **Documentation & Samples:** Added `samples/async_client_sample.py`, `Async Quick Start` and updated `Type Hinting` in `README.md`, and `AsyncClient` smoke coverage in `samples/smoke_readme_runner.py`.
 - **Release SBOM Artifacts:** Added automated CycloneDX 1.5 JSON SBOM generation (`cyclonedx-py`), CI artifact upload, and GitHub Release asset attachment in `.github/workflows/publish.yml`.
+- **Builder Deliverability, Tracking & Config Controls:** Added RFC 8058 `MessageBuilder.set_list_unsubscribe()`, `set_tracking()`, Gmail `102 KB` clip and missing inline `ContentID` warnings, opt-in `Config.warn_unclosed` (`ResourceWarning`), `Config.max_retries` (`<= 20`), and optional `mailjet-rest[speedups]` (`orjson>=3.10.0`) canonical JSON fingerprinting.
 
 ### Changed
 
@@ -37,7 +38,7 @@ ______________________________________________________________________
 ### Security
 
 - **Per-Call SSRF, Header, Token, Proxy & Multipart Hardening:** Added per-call `validate_target_url()` (with $O(1)$ `scheme://authority/` prefix fast-path), NUL/C1/BiDi filtering across headers/Bearer tokens/proxies/multipart uploads, cached TLS 1.2+ `SSLContext` + `build_ssl_context_with_cert()`, bounded retries (`MAX_RETRIES_LIMIT = 20`) & `60.0s` RFC 9110 `Retry-After` cap, and truncated/control-char-safe error logs (`1024/2048` chars).
-- **Supply-Chain & Workflow Hardening:** Pinned dependencies in `.clusterfuzzlite/Dockerfile` / `build.sh`, added `set -o pipefail` and full wheel content verification in `.github/workflows/publish.yml`, and replaced `http.client.HTTPSConnection` with host-validated `requests.get` in `scripts/harvest_fuzzer_dict.py`.
+- **Supply-Chain & Workflow Hardening:** Pinned dependencies in `.clusterfuzzlite/Dockerfile` / `build.sh`, added `set -o pipefail` and full wheel content verification in `.github/workflows/publish.yml`, replaced `http.client.HTTPSConnection` with host-validated `requests.get` in `scripts/harvest_fuzzer_dict.py`, added `O_NOFOLLOW`/`fstat` TOCTOU pinning in `ChunkedStreamer`, and grouped `github/codeql-action*` updates in `.github/dependabot.yml` with workflows aligned to `4.39.3`.
 
 ### Pull Requests Merged
 
