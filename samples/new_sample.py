@@ -14,6 +14,10 @@ mailjet31 = Client(
 )
 
 if __name__ == "__main__":
+    if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
+        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
+        raise SystemExit(0)
+
     from samples.contacts_sample import edit_contact_data
 
     result = edit_contact_data()

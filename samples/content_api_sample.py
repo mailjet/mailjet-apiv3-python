@@ -60,6 +60,9 @@ def get_image_by_type(image_id: int, content_type: str = "image:png"):
 if __name__ == "__main__":
     bearer_token = os.environ.get("MJ_CONTENT_TOKEN")
     if not bearer_token:
+        if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
+            print("Set MJ_CONTENT_TOKEN (or MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE) to run this sample.")
+            raise SystemExit(0)
         token_resp = generate_token()
         print(f"Status Code: {token_resp.status_code}")
         bearer_token = token_resp.json()["Data"][0]["AccessToken"]

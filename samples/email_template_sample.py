@@ -52,6 +52,10 @@ def use_templates_with_send_api():
 
 
 if __name__ == "__main__":
+    if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
+        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
+        raise SystemExit(0)
+
     try:
         res1 = create_a_template()
         print(f"create_a_template: {res1.status_code}")

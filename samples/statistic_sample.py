@@ -82,7 +82,32 @@ def geographical_statistics():
     return mailjet30.geostatistics.get()
 
 
+def campaign_overview():
+    """GET https://api.mailjet.com/v3/REST/campaignoverview"""
+    return mailjet30.campaignoverview.get(filters={"Limit": 5})
+
+
+def list_recipient_statistics():
+    """GET https://api.mailjet.com/v3/REST/listrecipientstatistics"""
+    return mailjet30.listrecipientstatistics.get(filters={"Limit": 5})
+
+
+def top_links_clicked():
+    """GET https://api.mailjet.com/v3/REST/toplinkclicked"""
+    cmp_id = get_valid_campaign_id()
+    return mailjet30.toplinkclicked.get(filters={"CampaignID": cmp_id, "Limit": 5})
+
+
+def user_agent_statistics():
+    """GET https://api.mailjet.com/v3/REST/useragentstatistics"""
+    return mailjet30.useragentstatistics.get(filters={"Limit": 5})
+
+
 if __name__ == "__main__":
+    if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
+        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
+        raise SystemExit(0)
+
     functions = [
         event_based_vs_message_based_stats_timing,
         view_the_spread_of_events_over_time,
@@ -90,6 +115,10 @@ if __name__ == "__main__":
         stats_for_clicked_links,
         mailbox_provider_statistics,
         geographical_statistics,
+        campaign_overview,
+        list_recipient_statistics,
+        top_links_clicked,
+        user_agent_statistics,
     ]
 
     for func in functions:

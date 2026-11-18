@@ -30,6 +30,10 @@ def create_a_campaign_with_a_segmentation_filter(segmentation_id=0):
 
 
 if __name__ == "__main__":
+    if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
+        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
+        raise SystemExit(0)
+
     try:
         res1 = create_your_segment()
         print(f"create_your_segment: {res1.status_code}")

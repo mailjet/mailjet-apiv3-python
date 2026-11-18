@@ -153,6 +153,16 @@ def gdpr_delete_contact(contact_id: int):
     return mailjet30.contacts.delete(id=contact_id)
 
 
+def list_contactslist_signup_requests():
+    """GET https://api.mailjet.com/v3/REST/contactslistsignup"""
+    return mailjet30.contactslistsignup.get(filters={"Limit": 5})
+
+
+def verify_contactslist(list_id: int):
+    """POST https://api.mailjet.com/v3/REST/contactslist/{id}/verify"""
+    return mailjet30.contactslist_verify.create(id=list_id)
+
+
 def stream_all_contacts(start_offset: int = 0, batch_size: int = 100):
     """Demonstrates memory-safe lazy pagination using .stream().
 
@@ -176,6 +186,10 @@ def stream_all_contacts(start_offset: int = 0, batch_size: int = 100):
 
 
 if __name__ == "__main__":
+    if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
+        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
+        raise SystemExit(0)
+
     c_res = create_a_contact()
     print(f"create_a_contact: {c_res.status_code}")
     cid = c_res.json()["Data"][0]["ID"] if c_res.status_code == 201 else 0

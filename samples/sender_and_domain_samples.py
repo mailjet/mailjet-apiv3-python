@@ -26,7 +26,21 @@ def spf_and_dkim_validation(dns_id=0):
     return mailjet30.dns.get(id=dns_id)
 
 
+def list_metasenders():
+    """GET https://api.mailjet.com/v3/REST/metasender"""
+    return mailjet30.metasender.get(filters={"Limit": 5})
+
+
+def create_metasender(email: str = "noreply@example.com", description: str = "Sample domain"):
+    """POST https://api.mailjet.com/v3/REST/metasender"""
+    return mailjet30.metasender.create(data={"Email": email, "Description": description})
+
+
 if __name__ == "__main__":
+    if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
+        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
+        raise SystemExit(0)
+
     # Dynamically fetch an active DNS ID to prevent 404 Not Found errors
     dns_res = mailjet30.dns.get(filters={"Limit": 1})
     dns_id = dns_res.json()["Data"][0]["ID"] if dns_res.status_code == 200 and dns_res.json().get("Data") else 0
@@ -43,6 +57,7 @@ if __name__ == "__main__":
         (host_a_text_file, {"sender_id": sender_id}),
         (validation_by_doing_a_post, {"sender_id": sender_id}),
         (spf_and_dkim_validation, {"dns_id": dns_id}),
+        (list_metasenders, {}),
     ]
 
     for f, kwargs in funcs:
