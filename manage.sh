@@ -195,9 +195,12 @@ fuzz_all() {
         return 1
     fi
 
+    local fuzz_env="${FUZZ_CONDA_ENV_NAME:-mailjet-fuzz}"
     local -a exec_cmd=()
-    if [[ "${CONDA_DEFAULT_ENV:-}" == "${CONDA_ENV_NAME}" ]]; then
+    if python -c "import atheris" >/dev/null 2>&1; then
         exec_cmd=("python")
+    elif command -v conda >/dev/null 2>&1 && conda run --name "${fuzz_env}" python -c "import atheris" >/dev/null 2>&1; then
+        exec_cmd=("conda" "run" "--name" "${fuzz_env}" "python")
     else
         exec_cmd=("conda" "run" "--name" "${CONDA_ENV_NAME}" "python")
     fi
