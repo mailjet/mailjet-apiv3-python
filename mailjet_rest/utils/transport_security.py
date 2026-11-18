@@ -275,7 +275,11 @@ class SecretAuth(AuthBase):
                 raise ValueError(msg)
         self._api_key = api_key
         self._api_secret = api_secret
-        auth_bytes = f"{self._api_key}:{self._api_secret}".encode("latin1")
+        try:
+            auth_bytes = f"{self._api_key}:{self._api_secret}".encode("latin1")
+        except UnicodeEncodeError as e:
+            msg = "API credentials must contain valid Latin-1 characters (RFC 7617 Basic Auth)."
+            raise ValueError(msg) from e
         self._auth_header = "Basic " + base64.b64encode(auth_bytes).decode("ascii")
 
     @property

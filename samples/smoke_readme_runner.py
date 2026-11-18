@@ -274,6 +274,22 @@ def run_readme_tests():
                     print(f"❌ {name} failed: {e}")
                     assert False, f"Health Check failed for {name}: {e}"
 
+    # 7. ASYNC CLIENT SMOKE CHECK (Optional mailjet-rest[async])
+    section("AsyncClient Smoke Check (Optional [async] Extra)")
+    try:
+        import asyncio
+        from mailjet_rest import AsyncClient
+
+        async def _async_ping() -> None:
+            async with AsyncClient(auth=(api_key, api_secret)) as aclient:
+                assert "send_v31" in aclient.available_endpoints
+                ok = await aclient.ping()
+                print(f"✅ AsyncClient.ping() -> {ok}")
+
+        asyncio.run(_async_ping())
+    except ImportError:
+        print("⚠️ AsyncClient skipped (httpx2 extra not installed).")
+
     print(f"\n{'=' * 60}\n🎉 ALL TESTS AND HEALTH CHECKS COMPLETED SUCCESSFULLY!\n{'=' * 60}")
 
 

@@ -345,6 +345,12 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
+        if isinstance(template_id, bool) or not isinstance(template_id, int) or template_id <= 0:
+            msg = f"template_id must be a strictly positive integer, got {template_id!r}."
+            raise ValueError(msg)
+        if not isinstance(language_active, bool):
+            msg = f"language_active must be a bool, got {type(language_active).__name__}."  # type: ignore[unreachable]
+            raise TypeError(msg)
         self._payload["TemplateID"] = template_id
         self._payload["TemplateLanguage"] = language_active
         return self

@@ -499,3 +499,25 @@ def test_async_client_form_mapping_payload_uses_data_not_content() -> None:
     assert len(captured) == 1
     assert "application/x-www-form-urlencoded" in captured[0][0]
     assert b"Name=Alice" in captured[0][1]
+
+
+def test_message_builder_set_template_rejects_invalid_ids_and_flags() -> None:
+    """MessageBuilder.set_template must reject booleans, non-positive IDs, and non-bool flags."""
+    from mailjet_rest.builders import MessageBuilder  # ruff: ignore[import-outside-top-level]
+
+    mb = MessageBuilder()
+    for bad_id in (True, False, 0, -5, "123"):
+        with pytest.raises((ValueError, TypeError)):
+            mb.set_template(bad_id)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="language_active must be a bool"):
+        mb.set_template(12345, language_active="yes")  # type: ignore[arg-type]
+
+
+def test_secret_auth_rejects_non_latin1_with_clean_value_error() -> None:
+    """SecretAuth must raise explicit ValueError (not raw UnicodeEncodeError) for non-Latin-1 credentials."""
+    from mailjet_rest.utils.guardrails import SecretAuth  # ruff: ignore[import-outside-top-level]
+
+    with pytest.raises(ValueError, match="Latin-1") as exc_info:
+        SecretAuth(("ключ", "secret"))
+    assert type(exc_info.value) is ValueError

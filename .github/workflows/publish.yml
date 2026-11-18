@@ -70,10 +70,25 @@ jobs:
 
       - name: Verify wheel contents
         run: |
-          unzip -l dist/*.whl
-          unzip -l dist/*.whl | grep -q "mailjet_rest/py.typed"
-          unzip -l dist/*.whl | grep -q "mailjet_rest/client.pyi"
-          unzip -l dist/*.whl | grep -q "mailjet_rest/endpoint.pyi"
+          set -o pipefail
+          wheel_listing="$(unzip -l dist/*.whl)"
+          for required_file in \
+            "mailjet_rest/py.typed" \
+            "mailjet_rest/client.pyi" \
+            "mailjet_rest/endpoint.pyi" \
+            "mailjet_rest/errors.py" \
+            "mailjet_rest/utils/retry.py" \
+            "mailjet_rest/utils/routing.py" \
+            "mailjet_rest/utils/telemetry.py" \
+            "mailjet_rest/utils/html_guard.py" \
+            "mailjet_rest/utils/filesystem_security.py" \
+            "mailjet_rest/utils/transport_security.py"
+          do
+            echo "$wheel_listing" | grep -q "$required_file" || {
+              echo "Missing expected file in wheel: $required_file" >&2
+              exit 1
+            }
+          done
 
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
