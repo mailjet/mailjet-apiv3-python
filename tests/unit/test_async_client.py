@@ -466,7 +466,7 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
             async with reusable as entered:
                 assert entered is reusable
                 assert entered.session is inner_sess
-                _raise_boom("boom")
+                _raise_boom("boom", trigger=bool(inner_sess))
 
         assert inner_sess.is_closed
         assert inner_sess.auth is None
@@ -478,8 +478,9 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
             assert rebuilt_sess is not inner_sess
             assert not rebuilt_sess.is_closed
 
-    def _raise_boom(msg: str) -> None:
-        raise RuntimeError(msg)
+    def _raise_boom(msg: str, *, trigger: bool = True) -> None:
+        if trigger:
+            raise RuntimeError(msg)
 
     asyncio.run(_run())
 
@@ -487,8 +488,7 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
     sync_client = Client(auth=("k", "s"))
     with pytest.raises(RuntimeError, match="sync boom"):
         with sync_client as s1:
-            _ = s1.session
-            _raise_boom("sync boom")
+            _raise_boom("sync boom", trigger=bool(s1.session))
     assert sync_client._session is None  # ruff: ignore[private-member-access]
     with sync_client as s2:
         assert s2.session is not None
