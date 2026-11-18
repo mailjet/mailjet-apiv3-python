@@ -51,6 +51,7 @@
     - [POST (Create)](#post-create)
     - [GET Request](#get-request)
     - [PUT (Update / Patch specific fields)](#put-update--patch-specific-fields)
+    - [PATCH (Partial Update)](#patch-partial-update)
     - [DELETE (Returns 204 No Content)](#delete-returns-204-no-content)
   - [Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)](#email-api-ecosystem-webhooks-parse-api-segmentation-stats)
   - [Content API](#content-api)
@@ -70,13 +71,14 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 This library `mailjet-rest` officially supports the following Python versions:
 
-- Python >= 3.10, < 3.15
+- Python >= 3.10
 
 ## Requirements
 
 - **Build backend:** `setuptools`, `wheel`, `setuptools-scm`
 - **Runtime:** `requests >=2.33.0`
 - **Optional async (`mailjet-rest[async]`):** `httpx2 >=2.0.0`
+- **Optional speedups (`mailjet-rest[speedups]`):** `orjson >=3.10.0` (fast canonical JSON idempotency fingerprinting)
 
 ### Test dependencies
 
@@ -96,6 +98,9 @@ pip install mailjet-rest
 
 # Optional async support (AsyncClient / AsyncEndpoint backed by httpx2>=2.0.0)
 pip install "mailjet-rest[async]"
+
+# Optional canonical JSON speedup (orjson>=3.10.0)
+pip install "mailjet-rest[speedups]"
 ```
 
 #### git clone & pip install locally
@@ -234,16 +239,24 @@ See [samples/async_client_sample.py](samples/async_client_sample.py) for `ping()
 
 ### Advanced Configuration
 
-You can pass configuration overrides directly when initializing the `Client` or during individual API calls:
+You can pass configuration overrides directly when initializing the `Client` (or via a `Config` object) and during individual API calls:
 
 ```python
-# Set custom base URL, timeout, and API version
-with Client(
-    auth=(api_key, api_secret),
+from mailjet_rest import Client, Config
+
+cfg = Config(
     version="v3.1",
     api_url="https://api.us.mailjet.com/",
     timeout=30,
-) as mailjet:
+    max_retries=3,  # 0..20 transient retries with full jitter
+    auto_idempotency_mode="fingerprint",  # "fingerprint" | "uuid4" | "off"
+    pool_connections=100,
+    pool_maxsize=100,
+    verify=True,  # or path to a custom CA bundle file
+    warn_unclosed=False,  # opt-in ResourceWarning on unclosed Client/AsyncClient
+)
+
+with Client(auth=(api_key, api_secret), config=cfg) as mailjet:
     # Override timeout for a single, heavy request
     result = mailjet.contact.get(timeout=60)
 ```
@@ -341,7 +354,8 @@ _Console output will feature_: `DEBUG - Sending Request: POST ... | Trace: [Cust
 ### IDE Autocompletion & DX
 
 Because the SDK utilizes dynamic URL dispatching (`__getattr__`), to prevent "Magic Method Traps" (accidentally dispatching internal Python methods), the SDK includes strict _poka-yoke_ guardrails.
-Attempting to access private attributes or removed properties (like `client.auth`) will safely throw an explicit `AttributeError` instead of a ghost API request.
+Attempting to access private attributes or removed properties (like `client.auth`) will safely throw an explicit `AttributeError` instead of a ghost API request, and misspelled endpoints emit `difflib` `"Did you mean '...'?"` suggestions.
+You can also inspect `client.available_endpoints` for runtime route discovery and call `client.ping()` (or `await async_client.ping()`) for lightweight API health/credential checks.
 
 ### URL path
 
@@ -400,7 +414,7 @@ Additional built-in protections:
 - **SSRF & Open Redirects:** Hard-disabled automatic redirects and enforced strict hostname validation.
 - **CRLF Injection:** Native string evaluation blocks header injection attempts via compromised Bearer tokens or custom headers.
 - **Downgrade Attacks:** Enforced TLS 1.2+ minimum version via a custom `SecureHTTPAdapter`.
-- **Idempotency Fingerprinting:** Automatically generates SHA-256 `Idempotency-Key` headers for `POST`, `PUT`, and `DELETE` requests to prevent duplicate mutations.
+- **Idempotency Fingerprinting:** Automatically generates SHA-256 `Idempotency-Key` headers for mutating requests (`POST`, `PUT`, `PATCH`, and `DELETE`), configurable via `Config.auto_idempotency_mode` (`"fingerprint"`, `"uuid4"`, or `"off"`).
 - **SpamGuard Analysis:** Pre-flight HTML static analyzer that intercepts and blocks XSS vectors (e.g., `<script>`, `onerror=`) before network dispatch.
 - **Secret Obfuscation (CWE-316):** Utilizes a custom `SecretAuth` transport adapter and `RedactingFilter` to strictly prevent API credentials from leaking in tracebacks, logs, or memory dumps.
 - **Punycode IDN Support:** Automatically normalizes Internationalized Domain Names (IDNs) in sender and recipient addresses to prevent Homograph attacks.
@@ -561,9 +575,12 @@ message = (
     .add_cc("copilot@mailjet.com")
     .set_subject("Your Boarding Pass")
     .set_content(html="<h3>Welcome aboard!</h3>")
+    .set_custom_id("boarding-pass-001")
+    .set_tracking(opens="enabled", clicks="enabled")
+    .set_list_unsubscribe("https://example.com/unsubscribe", "unsubscribe@example.com")  # RFC 8058
     # Safely encodes using memory-efficient ChunkedStreamer
     .attach_file("tickets/pass.pdf")
-    .attach_inline("assets/logo.png")  # Adds inline attachments seamlessly
+    .attach_inline("assets/logo.png", content_id="logo")  # Adds inline CID attachments safely
     .build()
 )
 
@@ -746,15 +763,28 @@ result = mailjet.contactdata.update(id=id_, data=data)
 print(result.json())
 ```
 
+#### PATCH (Partial Update)
+
+Use `.patch()` (on both `Client` and `AsyncClient`) to send an HTTP `PATCH` request for partial resource updates:
+
+```python
+result = mailjet.contact.patch(id=id_, data={"Name": "Jane Doe"})
+print(result.status_code)
+```
+
 #### DELETE (Returns 204 No Content)
 
 Upon a successful `DELETE` request the response will not include a response body, but only a `204 No Content` response code.
 
 ```python
-# Delete an email template
+# Delete an email template (v3)
 id_ = "Template_ID"
 result = mailjet.template.delete(id=id_)
-print(result.json())
+print(result.status_code)
+
+# Permanently erase a contact (v4 GDPR)
+result = mailjet.contacts.delete(id=contact_id)
+print(result.status_code)
 ```
 
 ### Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)
@@ -833,7 +863,7 @@ with Client(auth=(api_key, api_secret), version="v1") as client:
         "Name": "My Access Token",
         "Permissions": ["read_template", "create_template"],
     }
-    result = client.token.create(data=data)
+    result = client.tokens.create(data=data)
     print(result.json())
 ```
 
@@ -860,12 +890,12 @@ result = client.data_images.create(headers={"Content-Type": None}, files=files_p
 
 #### Locking a Template Content
 
-Sub-actions are safely handled using slashes (e.g., `template_contents_lock` becomes `template/<template_id>/contents/lock`).
+Sub-actions are safely handled using slashes (e.g., `template_contents_lock` becomes `templates/<template_id>/contents/lock`).
 
 ```python
 template_id = 1234567
 
-# This routes to POST /v1/REST/template/1234567/contents/lock
+# This routes to POST /v1/REST/templates/1234567/contents/lock
 result = client.template_contents_lock.create(id=template_id)
 ```
 
