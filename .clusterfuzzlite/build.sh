@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # 1. Install your project and dependencies
-pip3 install --no-cache-dir .
+pip3 install --no-cache-dir --no-deps .
 
 # 2. Package each fuzzer file (matches fuzz_*.py or *_fuzzer.py)
 while IFS= read -r -d '' fuzzer; do

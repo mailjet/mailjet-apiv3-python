@@ -5,7 +5,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends make build-esse
     && rm -rf /var/lib/apt/lists/*
 
 # Install testing dependencies
-RUN pip3 install --no-cache-dir hypothesis httpx2 pyinstaller
+RUN pip3 install --no-cache-dir \
+    hypothesis==6.170.15 \
+    httpx2==2.16.2 \
+    pyinstaller==6.13.0 \
+    requests==2.34.2 \
+    typing-extensions==4.16.0
 
 # Copy project source into the container
 COPY . "$SRC/mailjet-apiv3-python"

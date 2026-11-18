@@ -2,6 +2,7 @@
 Powered by Hypothesis.
 """
 
+import contextlib
 import logging
 import math
 from typing import Any
@@ -40,7 +41,7 @@ def test_property_config_timeout_coercion(timeout_val: Any) -> None:
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        try:
+        with contextlib.suppress(ValueError, TypeError):
             config = Config(api_url="https://api.mailjet.com/", timeout=timeout_val)
 
             if config.timeout is None:
@@ -59,8 +60,6 @@ def test_property_config_timeout_coercion(timeout_val: Any) -> None:
                     assert not math.isnan(config.timeout)
                     assert not math.isinf(config.timeout)
                 assert config.timeout > 0
-        except (ValueError, TypeError):
-            pass
 
 
 @settings(max_examples=500)
@@ -69,7 +68,7 @@ def test_property_url_traversal_prevention(id_val: Any, action_id: Any) -> None:
     r"""INVARIANT: No matter what malicious string is passed as an ID or Action,
     the resulting URL must never contain unencoded directory traversals.
     """
-    try:
+    with contextlib.suppress(ValueError):
         client = Client(auth=("test", "test"), version="v3")
         endpoint = Endpoint(name="contact", client=client)
 
@@ -81,8 +80,6 @@ def test_property_url_traversal_prevention(id_val: Any, action_id: Any) -> None:
         assert "../" not in suffix
         assert "..\\" not in suffix
         assert "\x00" not in suffix
-    except ValueError:
-        pass
 
 
 # ==========================================
@@ -143,7 +140,7 @@ def test_property_message_builder_schema(email: str, name: str, template_id: int
     SendV31Message schema without raising key errors or internal panics.
     """
     builder = MessageBuilder()
-    try:
+    with contextlib.suppress(ValueError):
         builder.set_sender(email=email, name=name)
         builder.add_recipient(email=email, name=name)
         builder.set_template(template_id)
@@ -156,8 +153,6 @@ def test_property_message_builder_schema(email: str, name: str, template_id: int
             assert result.get("From", {}).get("Name") == name
         assert result.get("TemplateID") == template_id
         assert result.get("CustomID") == custom_id
-    except ValueError:
-        pass
 
 
 # ==========================================
@@ -196,11 +191,9 @@ def test_property_idn_normalization(domain: str) -> None:
     """INVARIANT: The IDN normalizer must reliably return a string (punycode) or
     fail-closed with a ValueError. It must not leak UnicodeErrors.
     """
-    try:
+    with contextlib.suppress(ValueError):
         result = SecurityGuard.normalize_domain(domain)
         assert isinstance(result, str)
-    except ValueError:
-        pass
 
 
 # ==========================================

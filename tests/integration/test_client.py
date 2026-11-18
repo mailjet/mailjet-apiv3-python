@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import uuid
 from collections.abc import Generator
@@ -234,12 +235,11 @@ def test_registry_security_cwe22(client_live: Client, malicious_id: str) -> None
 def test_tls_handshake_integration() -> None:
     """Verify that production endpoints accept the enforced TLS 1.2+ configuration."""
     with Client(auth=("dummy", "dummy")) as client:
-        try:
-            client.contact.get()
-        except requests.exceptions.SSLError as e:
-            pytest.fail(f"TLS 1.2+ Handshake failed: {e}")
-        except Exception:
-            pass
+        with contextlib.suppress(Exception):
+            try:
+                client.contact.get()
+            except requests.exceptions.SSLError as e:
+                pytest.fail(f"TLS 1.2+ Handshake failed: {e}")
 
 
 # --- Error Path & General Routing Tests ---
@@ -379,10 +379,8 @@ def test_live_content_api_images_multipart_upload() -> None:
 
             # Try to cleanup to avoid quota exhaustion on the Mailjet account
             image_id = result.json()["Data"][0]["ID"]
-            try:
+            with contextlib.suppress(Exception):
                 client_v1.data_images.delete(id=image_id)
-            except Exception:
-                pass
         except ValidationError as e:
             # Catch 400 Bad Request caused by Mailjet API Free Tier Quota Exhaustion
             pytest.skip(
@@ -488,6 +486,7 @@ def test_live_message_builder_sandbox() -> None:
 
         # Artificial file attachment to trigger base64 encoding coverage
         import tempfile
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tf:
             tf.write(b"Hello from CI!")
             tf_path = tf.name
@@ -505,7 +504,7 @@ def test_live_message_builder_sandbox() -> None:
 
         payload = {
             "Messages": [message],
-            "SandboxMode": True  # Native sandbox routing
+            "SandboxMode": True,  # Native sandbox routing
         }
 
         resp = client_v31.send.create(data=payload)
@@ -525,12 +524,9 @@ def test_live_template_content_builder_lifecycle(client_live: Client) -> None:
 
     # 1. Create a dynamic template
     template_name = f"CI_Builder_Test_{uuid.uuid4().hex[:8]}"
-    create_resp = client_live.template.create(data={
-        "Name": template_name,
-        "Author": "CI Process",
-        "EditMode": 1,
-        "Purposes": ["transactional"]
-    })
+    create_resp = client_live.template.create(
+        data={"Name": template_name, "Author": "CI Process", "EditMode": 1, "Purposes": ["transactional"]}
+    )
     assert create_resp.status_code == 201
     template_id = create_resp.json()["Data"][0]["ID"]
 
@@ -542,7 +538,7 @@ def test_live_template_content_builder_lifecycle(client_live: Client) -> None:
         builder.set_content(
             text="This is text built by CI.",
             html="<html><body><h1>Built by CI</h1></body></html>",
-            mjml="<mjml><mj-body></mj-body></mjml>"
+            mjml="<mjml><mj-body></mj-body></mjml>",
         )
         content_payload = builder.build()
 
@@ -575,6 +571,7 @@ def test_live_dry_run_and_utility_coverage(client_live: Client) -> None:
         logging_handler(None)
 
         import requests
+
         mock_resp = requests.Response()
         mock_resp._content = b'{"status": "ok"}'
         assert parse_response(mock_resp) == {"status": "ok"}
@@ -653,10 +650,7 @@ def test_live_message_builder_exhaustive_options(client_live: Client) -> None:
         message = builder.build()
         message["CustomID"] = "Exhaustive-Telemetry-999"
 
-        payload = {
-            "Messages": [message],
-            "SandboxMode": True
-        }
+        payload = {"Messages": [message], "SandboxMode": True}
 
         resp = client_v31.send.create(data=payload)
         assert resp.status_code == 200
@@ -672,12 +666,9 @@ def test_live_template_content_builder_exhaustive(client_live: Client) -> None:
     import uuid
 
     template_name = f"Exhaustive_Tpl_{uuid.uuid4().hex[:8]}"
-    create_resp = client_live.template.create(data={
-        "Name": template_name,
-        "Author": "Exhaustive CI",
-        "EditMode": 1,
-        "Purposes": ["transactional"]
-    })
+    create_resp = client_live.template.create(
+        data={"Name": template_name, "Author": "Exhaustive CI", "EditMode": 1, "Purposes": ["transactional"]}
+    )
     assert create_resp.status_code == 201
     template_id = create_resp.json()["Data"][0]["ID"]
 
@@ -688,7 +679,7 @@ def test_live_template_content_builder_exhaustive(client_live: Client) -> None:
         builder.set_content(
             text="Template plain text.",
             html="<div>Template HTML content</div>",
-            mjml="<mjml><mj-body><mj-text>Hello</mj-text></mj-body></mjml>"
+            mjml="<mjml><mj-body><mj-text>Hello</mj-text></mj-body></mjml>",
         )
         content_payload = builder.build()
 
@@ -719,6 +710,7 @@ def test_live_client_edge_cases_and_utilities(client_live: Client) -> None:
         logging_handler(None)
 
         import requests
+
         mock_res = requests.Response()
         mock_res._content = b'{"Count": 1}'
         assert parse_response(mock_res) == {"Count": 1}
@@ -777,13 +769,16 @@ def test_live_account_metadata_endpoints(client_live: Client) -> None:
     assert resp_key.status_code == 200
 
 
-@pytest.mark.parametrize("stats_endpoint", [
-    "bouncestatistics",
-    "clickstatistics",
-    "openinformation",
-    "toplinkclicked",
-    "useragentstatistics",
-])
+@pytest.mark.parametrize(
+    "stats_endpoint",
+    [
+        "bouncestatistics",
+        "clickstatistics",
+        "openinformation",
+        "toplinkclicked",
+        "useragentstatistics",
+    ],
+)
 def test_live_event_statistics_endpoints(client_live: Client, stats_endpoint: str) -> None:
     """Verify real-time event tracking and statistics log retrieval."""
     endpoint = getattr(client_live, stats_endpoint)
@@ -873,21 +868,15 @@ def test_live_contact_subresources_and_actions(client_live: Client) -> None:
     list_name = f"CI_List_{uuid.uuid4().hex[:8]}"
     create_list = client_live.contactslist.create(data={"Name": list_name})
     if create_list.status_code != 201:
-        try:
+        with contextlib.suppress(MailjetAuthError):
             client_live.contact.delete(id=contact_id)
-        except MailjetAuthError:
-            pass
         pytest.skip(f"ContactsList creation failed: {create_list.text}")
 
     list_id = create_list.json()["Data"][0]["ID"]
 
     try:
         # 1. Test REST/contact/{id}/managecontactslists (POST action on specific contact)
-        sub_payload = {
-            "ContactsLists": [
-                {"ListID": list_id, "Action": "addnoforce"}
-            ]
-        }
+        sub_payload = {"ContactsLists": [{"ListID": list_id, "Action": "addnoforce"}]}
         resp_manage = client_live.contact_managecontactslists.create(
             id=contact_id,
             data=sub_payload,
@@ -912,13 +901,8 @@ def test_live_contact_subresources_and_actions(client_live: Client) -> None:
 
     finally:
         # Resilient Teardown
-        try:
+        with contextlib.suppress(MailjetAuthError):
             client_live.contact.delete(id=contact_id)
-        except MailjetAuthError:
-            # Contact deletion is restricted without GDPR delete privileges
-            pass
 
-        try:
+        with contextlib.suppress(MailjetAuthError, DoesNotExistError):
             client_live.contactslist.delete(id=list_id)
-        except (MailjetAuthError, DoesNotExistError):
-            pass

@@ -2,6 +2,7 @@
 Powered by Hypothesis.
 """
 
+import contextlib
 from typing import Any
 from unittest.mock import MagicMock, patch
 import warnings
@@ -34,7 +35,7 @@ def test_property_telemetry_extraction_resilience(payload: Any) -> None:
 @example(auth_input=("", "\xa0"))
 def test_property_auth_coercion(auth_input: Any) -> None:
     """INVARIANT: Client must successfully auth or reject with clear Type/Value error."""
-    try:
+    with contextlib.suppress(ValueError, TypeError):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
             client = Client(auth=auth_input, version="v3")
@@ -42,8 +43,6 @@ def test_property_auth_coercion(auth_input: Any) -> None:
             assert client.auth == (auth_input[0].strip(), auth_input[1].strip())
         elif isinstance(auth_input, str):
             assert "Authorization" in client.session.headers
-    except (ValueError, TypeError):
-        pass
 
 
 @settings(max_examples=500)

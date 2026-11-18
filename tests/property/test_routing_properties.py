@@ -2,6 +2,7 @@
 Powered by Hypothesis.
 """
 
+import contextlib
 import warnings
 from typing import Any
 from urllib.parse import urlparse
@@ -17,7 +18,7 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 @given(segment=st.one_of(st.text(), st.integers(), st.floats(allow_nan=False), st.none()))
 def test_property_segment_sanitization(segment: Any) -> None:
     """INVARIANT: The segment sanitizer must mathematically guarantee the absence of traversal vectors."""
-    try:
+    with contextlib.suppress(ValueError, TypeError):
         clean_segment = SecurityGuard.sanitize_segment(segment)
         assert isinstance(clean_segment, str)
         assert "." not in clean_segment
@@ -25,8 +26,6 @@ def test_property_segment_sanitization(segment: Any) -> None:
         assert "\r" not in clean_segment
         if segment is None:
             assert clean_segment == ""
-    except (ValueError, TypeError):
-        pass
 
 
 @settings(max_examples=400)

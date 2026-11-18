@@ -81,8 +81,10 @@ def TestOneInput(data: bytes) -> None:
         except RecursionError:
             raise RuntimeError("CRASH: Payload builder hit Infinite Recursion.")
     else:
+        import contextlib  # ruff: ignore[import-outside-top-level]
+
         t_builder = TemplateContentBuilder()
-        try:
+        with contextlib.suppress(ValueError, ValidationError, TypeError, AttributeError):
             t_builder.set_meta(fdp.ConsumeUnicodeNoSurrogates(10), fdp.ConsumeUnicodeNoSurrogates(10))
             t_builder.set_content(  # type: ignore[call-arg]
                 text=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
@@ -90,8 +92,6 @@ def TestOneInput(data: bytes) -> None:
                 mjml=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
             )
             t_builder.build()
-        except (ValueError, ValidationError, TypeError, AttributeError):
-            pass
 
 
 if __name__ == "__main__":

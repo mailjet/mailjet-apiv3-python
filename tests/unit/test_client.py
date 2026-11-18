@@ -428,11 +428,9 @@ def test_client_context_manager_lifecycle() -> None:
 
 
 def test_client_context_manager_exception_safety() -> None:
-    client = None
-    with pytest.raises(ValueError):
-        with Client(auth=("test", "test")) as c:
-            client = c
-            raise ValueError("Test error")
+    client = Client(auth=("test", "test"))
+    with pytest.raises(ValueError), client:
+        raise ValueError("Test error")
     assert client.session.auth is None  # type: ignore[unreachable]
 
 

@@ -2,6 +2,7 @@
 Powered by Hypothesis.
 """
 
+import contextlib
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -17,13 +18,11 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 @given(url=st.text())
 def test_property_ssrf_url_validator(url: str) -> None:
     """INVARIANT: The URL validator must reject any scheme other than HTTPS/mailjet.com."""
-    try:
+    with contextlib.suppress(ValueError):
         SecurityGuard.validate_config_url(url, "mailjet.com")
         parsed = urlparse(url)
         assert parsed.scheme == "https"
         assert parsed.hostname == "mailjet.com" or str(parsed.hostname).endswith(".mailjet.com")
-    except ValueError:
-        pass
 
 
 @settings(max_examples=500)
@@ -41,15 +40,13 @@ def test_property_log_trace_sanitizer(trace_str: str) -> None:
 @given(payload=st.text())
 def test_property_control_character_rejection(payload: str) -> None:
     """INVARIANT: Must raise ValueError if any non-printable ASCII character is detected."""
-    try:
+    with contextlib.suppress(ValueError):
         SecurityGuard.check_control_characters("test_field", payload)
         for char in payload:
             char_code = ord(char)
             if char_code < 32 and char_code != 9:
                 raise AssertionError("Control character slipped past validation.")
             assert char_code != 127
-    except ValueError:
-        pass
 
 
 @settings(max_examples=400)
@@ -96,12 +93,10 @@ def test_property_idempotency_fingerprint_lists(base_payload: Any) -> None:
     """INVARIANT: Hashing must safely generate strings for both dicts and lists,
     ensuring nested structures don't crash the idempotency lock.
     """
-    try:
+    with contextlib.suppress(ValueError):
         hash_result = SecurityGuard.generate_payload_fingerprint(base_payload)
         assert isinstance(hash_result, str)
         assert len(hash_result) == 64  # SHA-256 length
-    except ValueError:
-        pass
 
 
 @settings(max_examples=100)
