@@ -250,6 +250,20 @@ fuzz_all() {
     success "All fuzz tests finished cleanly."
 }
 
+mutation() {
+    if ! command -v mutmut >/dev/null 2>&1; then
+        error "mutmut is not installed. Install with: pip install -e '.[mutation]'"
+        exit 1
+    fi
+    info "Running local mutation testing (mutmut)..."
+    if [[ $# -eq 0 ]]; then
+        mutmut run
+        mutmut results
+    else
+        mutmut "$@"
+    fi
+}
+
 # ==============================================================================
 # PERFORMANCE & BENCHMARKING
 # ==============================================================================
@@ -352,6 +366,7 @@ help() {
     echo ""
     echo -e "${YELLOW}Security & Fuzzing:${NC}"
     echo "  fuzz_all             - Run all fuzz tests (duration_s [libfuzzer flags])"
+    echo "  mutation             - Run local mutation testing via mutmut ([subcommand/args])"
     echo "  audit_deps           - Run pip-audit and osv-scanner (fail closed)"
     echo ""
     echo -e "${YELLOW}Performance & Release:${NC}"
@@ -372,7 +387,7 @@ COMMAND="$1"
 shift
 
 case "${COMMAND}" in
-    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|test_examples|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|fuzz_all)
+    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|test_examples|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|fuzz_all|mutation)
         "${COMMAND}" "$@"
         ;;
     help)
