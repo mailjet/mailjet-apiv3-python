@@ -14,7 +14,7 @@ import sys
 import threading
 import uuid
 import warnings
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn, TypeVar
 
 import requests
@@ -266,7 +266,7 @@ class BaseClient:
                 msg = f"'{self.__class__.__name__}' has no endpoint or attribute '{name}'. Did you mean '{matches[0]}'?"
                 raise AttributeError(msg)
 
-    def _resolve_endpoint(self, name: str, endpoint_cls: Callable[..., _EndpointT]) -> _EndpointT:
+    def _resolve_endpoint(self, name: str, endpoint_cls: type[_EndpointT]) -> _EndpointT:
         if name.startswith("_"):
             msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
             raise AttributeError(msg)
@@ -277,10 +277,11 @@ class BaseClient:
                 return cached
 
         self._validate_endpoint_name(name)
+        ctor: Any = endpoint_cls
         with self._lock:
             resolved: _EndpointT = self._endpoint_cache.setdefault(
                 name,
-                endpoint_cls(client=self, name=name),
+                ctor(client=self, name=name),
             )
             return resolved
 
