@@ -18,6 +18,7 @@ ______________________________________________________________________
 - **PEP 484 Stubs & AST Sync:** Added deterministic `mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi` stubs verified by `scripts/check_stubs.py --check`.
 - **Stateful Property Testing, Mutation Gate & Async Fuzzing:** Added `MessageBuilderMachine`, `AsyncClientStateMachine`, `mutmut` v3 config, `3` async Atheris fuzzers (`29` total), `scripts/harvest_fuzzer_dict.py`, and enriched `tests/fuzz/fuzzer.dict` (`2,495` entries).
 - **Documentation & Samples:** Added `samples/async_client_sample.py`, `Async Quick Start` and updated `Type Hinting` in `README.md`, and `AsyncClient` smoke coverage in `samples/smoke_readme_runner.py`.
+- **Release SBOM Artifacts:** Added automated CycloneDX 1.5 JSON SBOM generation (`cyclonedx-py`), CI artifact upload, and GitHub Release asset attachment in `.github/workflows/publish.yml`.
 
 ### Changed
 
