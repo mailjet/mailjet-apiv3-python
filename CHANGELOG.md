@@ -9,6 +9,44 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
+### Added
+
+- **Asynchronous Client (`mailjet-rest[async]`):** Added `AsyncClient` and `AsyncEndpoint` backed by `httpx2>=2.0.0` (with HTTP/2 support, connection pool self-healing on `.is_closed`, isolated ephemeral mTLS/proxy clients, and non-blocking `asyncio.sleep` full-jitter retries).
+- **PEP 562 Lazy Top-Level Exports:** Added lazy exports in `mailjet_rest/__init__.py` for `Client`, `AsyncClient`, `Endpoint`, `AsyncEndpoint`, `Config`, `get_version`, `__version__`, and all exception classes so synchronous callers pay zero `httpx2`/`asyncio` import cost.
+- **HTTP `PATCH`, Health Probe & DX Helpers:** Added `.patch()` to `Endpoint` and `AsyncEndpoint`, `client.ping()` / `await client.ping()`, `client.available_endpoints`, and `difflib` `"Did you mean '...'?"` attribute typo hints.
+- **OpenAPI Route Parity & Consolidated Types:** Added 7 routes to `ROUTE_MAP` (`89` total: `send_v31`, `v4` `contacts`, `v1_templates`, `template_contents_lock`, `template_contents_publish`, `template_contents_unlock`, `data_images_by_type`) and consolidated `17` type aliases + `16` OpenAPI `TypedDict` DTOs in `mailjet_rest/types.py`.
+- **PEP 484 Stubs & AST Sync:** Added deterministic `mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi` stubs verified by `scripts/check_stubs.py --check`.
+- **Stateful Property Testing, Mutation Gate & Async Fuzzing:** Added `MessageBuilderMachine`, `AsyncClientStateMachine`, `mutmut` v3 config, `3` async Atheris fuzzers (`29` total), `scripts/harvest_fuzzer_dict.py`, and enriched `tests/fuzz/fuzzer.dict` (`2,495` entries).
+- **Documentation & Samples:** Added `samples/async_client_sample.py`, `Async Quick Start` and updated `Type Hinting` in `README.md`, and `AsyncClient` smoke coverage in `samples/smoke_readme_runner.py`.
+
+### Changed
+
+- **Modular Package Scaffolding:** Extracted cohesive internal modules (`mailjet_rest/errors.py`, `mailjet_rest/utils/retry.py`, `telemetry.py`, `routing.py`, `html_guard.py`, `filesystem_security.py`, `transport_security.py`) while preserving 100% `v1.9.1` facade compatibility (`BaseClient`, `BaseEndpoint`, `SecurityGuard`).
+- **Slotted Memory Layout & Cold-Boot Optimization:** Applied `__slots__` across `BaseClient`, `Client`, `AsyncClient`, `BaseEndpoint`, `Endpoint`, `AsyncEndpoint`, `Config`, and builders (`18` modules, `47` classes), plus lazy `asyncio` and `HTMLParser` loading.
+- **PEP 440 Semver Parsing & CI Speedup:** Replaced naive dot-splitting with `parse_semver_triplet()` in `mailjet_rest/utils/version.py`; marked 3 heavy Hypothesis tests `@pytest.mark.property_heavy` and excluded them in `.github/workflows/commit_checks.yaml` (`-m "not property_heavy"`).
+
+### Fixed
+
+- **Async Non-JSON Mapping Payloads:** Fixed `AsyncClient._execute_request` passing `dict`/`Mapping` payloads to `content=` (raising `TypeError` in `httpx2`) when `files=None` and `Content-Type` is non-JSON; now dispatches to `data=`.
+- **Case-Insensitive `Content-Type` Override:** Fixed `build_endpoint_headers()` retaining duplicate `"Content-Type": "application/json"` when callers pass lowercase `"content-type"`.
+- **Closure Reference-Cycle Leak:** Hoisted recursive `_deep_strip` out of `SecurityGuard.generate_payload_fingerprint()` into module-level `_deep_strip_volatile()` to eliminate per-call CPython closure cycles.
+- **Builder & Credential Validation:** Enforced strictly positive non-boolean `int` `template_id` and `bool` `language_active` in `MessageBuilder.set_template()`, and wrapped non-Latin-1 `SecretAuth` encoding errors in explicit `ValueError`.
+- **Code Scanning Alerts:** Resolved cyclic `client`/`endpoint` `TYPE_CHECKING` imports, unused imports/variables, and empty `except` blocks across tests/samples/fuzzers.
+
+### Security
+
+- **Per-Call SSRF, Header, Token, Proxy & Multipart Hardening:** Added per-call `validate_target_url()` (with $O(1)$ `scheme://authority/` prefix fast-path), NUL/C1/BiDi filtering across headers/Bearer tokens/proxies/multipart uploads, cached TLS 1.2+ `SSLContext` + `build_ssl_context_with_cert()`, bounded retries (`MAX_RETRIES_LIMIT = 20`) & `60.0s` RFC 9110 `Retry-After` cap, and truncated/control-char-safe error logs (`1024/2048` chars).
+- **Supply-Chain & Workflow Hardening:** Pinned dependencies in `.clusterfuzzlite/Dockerfile` / `build.sh`, added `set -o pipefail` and full wheel content verification in `.github/workflows/publish.yml`, and replaced `http.client.HTTPSConnection` with host-validated `requests.get` in `scripts/harvest_fuzzer_dict.py`.
+
+### Pull Requests Merged
+
+- PR #177: feat(typing): add strict .pyi stubs, stateful Hypothesis rules, and mutation gates.
+- PR #176: fix(builders): harden stream pagination, RFC 8058 builders, and PEP 440 semver.
+- PR #175: perf(core): add lazy imports, `__slots__`, TLS context caching, and lazy sessions.
+- PR #174: fix(security): harden TLS verification, streaming, redaction, and routing guards.
+- PR #173: fix(ci): harden workflows, fuzz harness, and dev scripts for v1.9.2.
+- PR #162–#170: build(deps): bump GitHub Actions (`upload-artifact`, `codeql-action`, `osv-scanner-action`, `ossf/scorecard-action`, `setup-python`, `gh-action-pypi-publish`).
+
 ## [1.9.1] - 2026-10-08
 
 ### Fixed

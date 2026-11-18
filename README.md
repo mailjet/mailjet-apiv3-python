@@ -26,6 +26,7 @@
     - [Management script](#management-script)
 - [Authentication](#authentication)
 - [Quick Start](#quick-start)
+  - [Async Quick Start (`mailjet-rest[async]`)](#async-quick-start-mailjet-restasync)
   - [Advanced Configuration](#advanced-configuration)
     - [API Versioning](#api-versioning)
     - [Base URL](#base-url)
@@ -46,7 +47,7 @@
     - [Send a basic email](#send-a-basic-email)
   - [Send an email using a Mailjet Template](#send-an-email-using-a-mailjet-template)
   - [Building Complex Payloads (MessageBuilder & SendPayloadBuilder)](#building-complex-payloads-messagebuilder--sendpayloadbuilder)
-  - [Standard REST Actions (GET, POST, PUT, DELETE)](#standard-rest-actions-get-post-put-delete)
+  - [Standard REST Actions (GET, POST, PUT, PATCH, DELETE)](#standard-rest-actions-get-post-put-patch-delete)
     - [POST (Create)](#post-create)
     - [GET Request](#get-request)
     - [PUT (Update / Patch specific fields)](#put-update--patch-specific-fields)
@@ -75,6 +76,7 @@ This library `mailjet-rest` officially supports the following Python versions:
 
 - **Build backend:** `setuptools`, `wheel`, `setuptools-scm`
 - **Runtime:** `requests >=2.33.0`
+- **Optional async (`mailjet-rest[async]`):** `httpx2 >=2.0.0`
 
 ### Test dependencies
 
@@ -253,6 +255,7 @@ The Mailjet API is spread among distinct versions:
 - `v3` - The Email API
 - `v3.1` - Email Send API v3.1, which is the latest version of our Send API
 - `v1` - Content API (Templates, Blocks, Images)
+- `v4` - GDPR Contact Erasure API (`client.contacts.delete(id=...)`)
 
 Since most Email API endpoints are located under `v3`, it is set as the default one and does not need to be specified when making your request.
 For the others you need to specify the version using `version`. For example, if using Send API `v3.1`:
@@ -576,7 +579,7 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
 
 <!-- mdformat on -->
 
-### Standard REST Actions (GET, POST, PUT, DELETE)
+### Standard REST Actions (GET, POST, PUT, PATCH, DELETE)
 
 > [!NOTE]\
 > All examples in this section assume that you have already opened a session using the context manager, for example: with Client(auth=(api_key, api_secret)) as mailjet:.

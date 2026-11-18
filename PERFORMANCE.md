@@ -85,6 +85,19 @@ Version 1.9.0 introduces route deprecation advisories, dynamic stream parameter 
 
 *Note: Benchmarks measure network-isolated internal overhead using mocked `responses`. Testing hardware: Apple M4 Pro, Darwin-CPython-3.12-64bit.*
 
+### v1.9.1 vs. Current (`wave-6-async-client` / Unreleased)
+
+The post-`1.9.1` architecture (`Wave 3`–`Wave 6`) adds `AsyncClient`/`AsyncEndpoint` (`httpx2>=2.0.0`), PEP 562 lazy top-level exports, `__slots__` across `47` classes (`18` modules), lazy `asyncio`/`HTMLParser` loading, zero-allocation `scheme://authority/` SSRF prefix fast-paths, and module-level `_deep_strip_volatile()` (eliminating `~185 KiB` cyclic-closure retention).
+
+| Metric                              | Measured (`wave-6-async-client`) | Notes                                              |
+| :---------------------------------- | :------------------------------- | :------------------------------------------------- |
+| **Routing Speed (Mean)**            | **~417 ns** (`2.40M ops/sec`)    | Measured via `pytest tests/test_perf.py` (Linux py3.15) |
+| **Idempotency Fingerprint Hashing** | **~9.94 µs** (`100.6K ops/sec`)  | Refcount-clean `_deep_strip_volatile()`            |
+| **Message Builder Validation**      | **~10.65 µs** (`93.9K ops/sec`)  | `MessageBuilder.build()` with full OWASP checks    |
+| **Cold-Boot Profiler / Wall-Clock** | **~0.231 s / 0.305 s**           | `tests/test_boot.py`; `0` `httpx2` imports for sync |
+
+*Note: Local measurements on Linux CPython 3.15.2 (`tests/test_boot.py` and `tests/test_perf.py`).*
+
 ______________________________________________________________________
 
 ## Profiling the Codebase
