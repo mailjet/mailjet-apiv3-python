@@ -338,3 +338,46 @@ def test_harvest_fuzzer_dict_github_https_get_security() -> None:
 
     with pytest.raises(ValueError, match="Invalid workflow filename"):
         harvester.collect_from_github("mailjet/mailjet-apiv3-python", ["../bad.yml"], 30, [], [])
+
+
+def test_harvest_fuzzer_dict_skips_processed_ci_runs_and_jobs(tmp_path: Path) -> None:
+    """Harvester only fetches GitHub logs for run_ids and job_ids not yet in state."""
+    from unittest.mock import patch  # ruff: ignore[import-outside-top-level]
+
+    import scripts.harvest_fuzzer_dict as harvester  # ruff: ignore[import-outside-top-level]
+
+    state_path = tmp_path / ".harvest_state.json"
+    harvester.save_harvest_state(state_path, {101}, {201})
+    loaded_runs, loaded_jobs = harvester.load_harvest_state(state_path)
+    assert loaded_runs == {101}
+    assert loaded_jobs == {201}
+
+    fetched_urls: list[str] = []
+
+    def _fake_https_get(url: str, _token: str | None) -> tuple[int, bytes, dict[str, str]]:
+        fetched_urls.append(url)
+        if url.endswith("/jobs/202/logs"):
+            log = (
+                "###### Recommended dictionary. ######\n"
+                '"fresh_ci_token" # Uses: 5\n'
+                "###### End of recommended dictionary. ######\n"
+            )
+            return 200, log.encode("utf-8"), {}
+        return 404, b"", {}
+
+    with patch.object(harvester, "_github_https_get", side_effect=_fake_https_get):
+        counts = harvester.collect_from_github(
+            "mailjet/mailjet-apiv3-python",
+            [],
+            30,
+            [201, 202],
+            [101, 102],
+            processed_run_ids=loaded_runs,
+            processed_job_ids=loaded_jobs,
+        )
+
+    assert all("/runs/101/" not in u and "/jobs/201/" not in u for u in fetched_urls)
+    assert any("/runs/102/logs" in u for u in fetched_urls)
+    assert any("/jobs/202/logs" in u for u in fetched_urls)
+    assert counts[b"fresh_ci_token"] == 5
+    assert 202 in loaded_jobs

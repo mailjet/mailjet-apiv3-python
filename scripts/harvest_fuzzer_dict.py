@@ -1,10 +1,11 @@
 r"""Harvest libFuzzer Recommended dictionary entries and enrich tests/fuzz/fuzzer.dict.
 
-Converts libFuzzer's octal-escaped Recommended dictionary stdout entries (``\ooo``)
-to libFuzzer-compatible canonical ``.dict`` entries (``\xhh`` hex escapes and
+Converts libFuzzer's octal-escaped Recommended dictionary stdout entries (`\ooo`)
+to libFuzzer-compatible canonical `.dict` entries (`\xhh` hex escapes and
 escaped quotes/backslashes), validates 1..128 byte bounds, shields credential-like
-or truncated typo substrings via hex encoding, and optionally extracts static
-route/protocol tokens from ``mailjet_rest/routes.py``.
+or truncated typo substrings via hex encoding, auto-discovers local fuzzer logs
+from `tests/fuzz/<fuzzer_file_name>.py` -> `logs/<fuzzer_file_name>/fuzzer_output.log`,
+and optionally extracts static route/protocol tokens from `mailjet_rest/routes.py`.
 """
 
 from __future__ import annotations
@@ -27,7 +28,10 @@ import requests
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DICT_PATH = REPO_ROOT / "tests" / "fuzz" / "fuzzer.dict"
+DEFAULT_FUZZ_DIR = REPO_ROOT / "tests" / "fuzz"
+DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
+DEFAULT_DICT_PATH = DEFAULT_FUZZ_DIR / "fuzzer.dict"
+DEFAULT_STATE_PATH = DEFAULT_FUZZ_DIR / ".harvest_state.json"
 MAX_DICT_ENTRY_BYTES = 128
 
 _START_MARKER = "###### Recommended dictionary. ######"
@@ -69,6 +73,7 @@ _TYPO_EXACT_HEX_TOKENS: frozenset[bytes] = frozenset(
         b"\x5f\x5f\x63\x6c\x61\x73",
         b"\x5f\x5f\x68\x65\x6c\x6c\x6f\x5f\x6f\x6e\x6c",
         b"\x65\x6e\x63\x6f\x64\x69\x6e",
+        b"\x75\x2d\x69\x6d\x6f\x72\x74\x2d\x6f\x71\x74\x69\x6f\x6e\x73\xef\xbf\xbd\x62\x25",
     }
 )
 
@@ -90,7 +95,12 @@ def _decode_octal_escape(inner: str, index: int) -> tuple[bytes, int]:
 
 
 def _decode_escape(inner: str, index: int, *, allow_octal: bool) -> tuple[bytes, int]:
-    """Decode one escape sequence starting at backslash ``index``.
+    """Decode one escape sequence starting at backslash `index`.
+
+    Args:
+        inner (str): Quoted string interior without surrounding quotes.
+        index (int): Current backslash character index.
+        allow_octal (bool): Whether octal and control escapes are enabled.
 
     Returns:
         tuple[bytes, int]: Decoded byte sequence and next character index.
@@ -116,6 +126,10 @@ def _decode_escape(inner: str, index: int, *, allow_octal: bool) -> tuple[bytes,
 def _decode_token(raw_inner: str, *, allow_octal: bool) -> bytes:
     """Decode a quoted dictionary string inner body into raw bytes.
 
+    Args:
+        raw_inner (str): Quoted dictionary entry interior.
+        allow_octal (bool): Whether to parse libFuzzer octal escapes.
+
     Returns:
         bytes: Unescaped raw token bytes.
     """
@@ -134,7 +148,10 @@ def _decode_token(raw_inner: str, *, allow_octal: bool) -> bytes:
 
 
 def parse_dict_line(line: str) -> bytes | None:
-    """Parse an existing libFuzzer ``.dict`` line into raw bytes.
+    """Parse an existing libFuzzer `.dict` line into raw bytes.
+
+    Args:
+        line (str): Single line from an existing `.dict` file.
 
     Returns:
         bytes | None: Decoded entry bytes, or None for blank/comment/unquoted lines.
@@ -150,6 +167,9 @@ def parse_dict_line(line: str) -> bytes | None:
 def parse_recommended_token(raw_inner: str) -> bytes:
     """Decode a libFuzzer Recommended dictionary inner string supporting octal escapes.
 
+    Args:
+        raw_inner (str): Inner quoted token from libFuzzer stdout/stderr logs.
+
     Returns:
         bytes: Raw byte token corresponding to the Recommended dictionary entry.
     """
@@ -157,7 +177,10 @@ def parse_recommended_token(raw_inner: str) -> bytes:
 
 
 def extract_recommended_from_text(log_text: str) -> dict[bytes, int]:
-    """Extract Recommended dictionary entries and aggregate ``Uses`` counts from CI logs.
+    """Extract Recommended dictionary entries and aggregate `Uses` counts from logs.
+
+    Args:
+        log_text (str): Full text content of a fuzzer log file.
 
     Returns:
         dict[bytes, int]: Mapping from decoded entry bytes (1..128 bytes) to total Uses.
@@ -193,8 +216,12 @@ def extract_recommended_from_text(log_text: str) -> dict[bytes, int]:
 def _needs_hex_shield(raw: bytes, hex_words: frozenset[str] = frozenset()) -> bool:
     r"""Detect substrings that should be hex-encoded to avoid secret/typo false positives.
 
+    Args:
+        raw (bytes): Candidate dictionary entry bytes.
+        hex_words (frozenset[str]): Lowercase substrings to always hex-encode.
+
     Returns:
-        bool: True when encoding every byte as ``\xhh`` avoids false positives while preserving bytes.
+        bool: True when encoding every byte as `\xhh` avoids false positives while preserving bytes.
     """
     if raw.lower() in _TYPO_EXACT_HEX_TOKENS:
         return True
@@ -215,10 +242,15 @@ def _needs_hex_shield(raw: bytes, hex_words: frozenset[str] = frozenset()) -> bo
 
 
 def format_dict_entry(raw: bytes, *, force_hex: bool = False, hex_words: frozenset[str] = frozenset()) -> str:
-    r"""Serialize a raw byte sequence into a libFuzzer ``.dict`` quoted string.
+    r"""Serialize a raw byte sequence into a libFuzzer `.dict` quoted string.
+
+    Args:
+        raw (bytes): Raw dictionary entry bytes.
+        force_hex (bool): Force full `\xhh` hex escaping for every byte.
+        hex_words (frozenset[str]): Substrings that trigger full hex escaping.
 
     Returns:
-        str: Quoted pure-ASCII dictionary entry using ``\xhh`` escapes for non-printable bytes.
+        str: Quoted pure-ASCII dictionary entry using `\xhh` escapes for non-printable bytes.
     """
     hex_all = force_hex or _needs_hex_shield(raw, hex_words=hex_words)
     parts: list[str] = ['"']
@@ -263,6 +295,9 @@ def _collect_route_call_tokens(val_node: ast.Call, tokens: set[bytes]) -> None:
 def harvest_sdk_route_tokens(repo_root: Path) -> set[bytes]:
     """Extract static route names, path segments, and Wave 6 protocol tokens from AST.
 
+    Args:
+        repo_root (Path): Repository root directory containing `mailjet_rest/routes.py`.
+
     Returns:
         set[bytes]: Validated 1..128 byte SDK protocol and routing tokens.
     """
@@ -281,6 +316,35 @@ def harvest_sdk_route_tokens(repo_root: Path) -> set[bytes]:
     return {tok for tok in tokens if 1 <= len(tok) <= MAX_DICT_ENTRY_BYTES}
 
 
+def discover_fuzzer_logs(
+    fuzz_dir: Path = DEFAULT_FUZZ_DIR,
+    logs_dir: Path = DEFAULT_LOGS_DIR,
+) -> list[Path]:
+    """Map `tests/fuzz/<fuzzer_file_name>.py` targets to `logs/<fuzzer_file_name>/fuzz_output.log`.
+
+    Args:
+        fuzz_dir (Path): Directory containing fuzz target scripts (`*.py`).
+        logs_dir (Path): Root directory containing per-fuzzer log subdirectories.
+
+    Returns:
+        list[Path]: Sorted list of existing log file paths matching discovered fuzz targets.
+    """
+    discovered: list[Path] = []
+    if not fuzz_dir.is_dir() or not logs_dir.is_dir():
+        return discovered
+
+    for fuzz_script in sorted(fuzz_dir.glob("*.py")):
+        if fuzz_script.name.startswith("_"):
+            continue
+        fuzzer_name = fuzz_script.stem
+        target_dir = logs_dir / fuzzer_name
+        for candidate in (target_dir / "fuzz_output.log", target_dir / f"{fuzzer_name}.log"):
+            if candidate.is_file():
+                discovered.append(candidate)
+                break
+    return discovered
+
+
 def _collect_from_zip(zip_bytes: bytes) -> Counter[bytes]:
     totals: Counter[bytes] = Counter()
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
@@ -294,6 +358,9 @@ def _collect_from_zip(zip_bytes: bytes) -> Counter[bytes]:
 
 def collect_from_path(target: Path) -> Counter[bytes]:
     """Recursively harvest Recommended dictionary entries from a log file, zip, or directory.
+
+    Args:
+        target (Path): File, archive, or directory path to scan.
 
     Returns:
         Counter[bytes]: Aggregated counts of discovered dictionary entries.
@@ -361,26 +428,31 @@ def _validate_github_query(repo: str, workflows: list[str]) -> None:
             raise ValueError(msg)
 
 
-def collect_from_github(
-    repo: str,
-    workflows: list[str],
-    days: int,
-    job_ids: list[int],
-    run_ids: list[int],
-) -> Counter[bytes]:
-    """Fetch logs directly via GitHub REST API and harvest Recommended dictionary entries.
+def load_harvest_state(state_path: Path) -> tuple[set[int], set[int]]:
+    """Load previously processed GitHub Actions run and job IDs from JSON state.
 
     Returns:
-        Counter[bytes]: Aggregated Recommended dictionary entries fetched from GitHub Actions.
+        tuple[set[int], set[int]]: ``(processed_run_ids, processed_job_ids)``.
     """
-    from datetime import datetime, timedelta, timezone  # ruff: ignore[import-outside-top-level]
+    if not state_path.is_file():
+        return set(), set()
+    raw: dict[str, Any] = json.loads(state_path.read_text(encoding="utf-8"))
+    run_ids = {int(x) for x in raw.get("processed_run_ids", []) if isinstance(x, int)}
+    job_ids = {int(x) for x in raw.get("processed_job_ids", []) if isinstance(x, int)}
+    return run_ids, job_ids
 
-    _validate_github_query(repo, workflows)
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
-    totals: Counter[bytes] = Counter()
-    seen_runs = set(run_ids)
 
+def save_harvest_state(state_path: Path, run_ids: set[int], job_ids: set[int]) -> None:
+    """Persist processed GitHub Actions run and job IDs to JSON state."""
+    payload = {
+        "processed_run_ids": sorted(run_ids),
+        "processed_job_ids": sorted(job_ids),
+    }
+    state_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def _discover_completed_runs(repo: str, workflows: list[str], cutoff: str, token: str | None) -> set[int]:
+    discovered: set[int] = set()
     for workflow in workflows:
         url = (
             f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/runs?created=%3E%3D{cutoff}&per_page=100"
@@ -391,18 +463,81 @@ def collect_from_github(
         data: dict[str, Any] = json.loads(body.decode("utf-8"))
         for run in data.get("workflow_runs", []):
             if run.get("status") == "completed" and isinstance(run.get("id"), int):
-                seen_runs.add(run["id"])
+                discovered.add(run["id"])
+    return discovered
 
-    for rid in sorted(seen_runs):
+
+def _fetch_unprocessed_runs(
+    repo: str,
+    run_ids: set[int],
+    processed_run_ids: set[int] | None,
+    token: str | None,
+) -> Counter[bytes]:
+    totals: Counter[bytes] = Counter()
+    skip = processed_run_ids if processed_run_ids is not None else set()
+    for rid in sorted(run_ids):
+        if rid in skip:
+            continue
         status, body, _ = _github_https_get(f"https://api.github.com/repos/{repo}/actions/runs/{rid}/logs", token)
         if status == 200 and body:
             totals.update(_collect_from_zip(body))
+        if status in {200, 410} and processed_run_ids is not None:
+            processed_run_ids.add(rid)
+    return totals
 
+
+def _fetch_unprocessed_jobs(
+    repo: str,
+    job_ids: list[int],
+    processed_job_ids: set[int] | None,
+    token: str | None,
+) -> Counter[bytes]:
+    totals: Counter[bytes] = Counter()
+    skip = processed_job_ids if processed_job_ids is not None else set()
     for jid in job_ids:
+        if jid in skip:
+            continue
         status, body, _ = _github_https_get(f"https://api.github.com/repos/{repo}/actions/jobs/{jid}/logs", token)
         if status == 200 and body:
             totals.update(extract_recommended_from_text(body.decode("utf-8", errors="replace")))
+        if status in {200, 410} and processed_job_ids is not None:
+            processed_job_ids.add(jid)
+    return totals
 
+
+def collect_from_github(
+    repo: str,
+    workflows: list[str],
+    days: int,
+    job_ids: list[int],
+    run_ids: list[int],
+    *,
+    processed_run_ids: set[int] | None = None,
+    processed_job_ids: set[int] | None = None,
+) -> Counter[bytes]:
+    """Fetch logs for unprocessed GitHub Actions runs/jobs and harvest Recommended dictionary entries.
+
+    Args:
+        repo (str): GitHub repository slug (`owner/name`).
+        workflows (list[str]): Workflow filenames to query.
+        days (int): Lookback window in days for completed workflow runs.
+        job_ids (list[int]): Explicit GitHub Actions job IDs to inspect.
+        run_ids (list[int]): Explicit GitHub Actions run IDs to inspect.
+        processed_run_ids (set[int] | None): Optional set of already-processed run IDs (updated in place).
+        processed_job_ids (set[int] | None): Optional set of already-processed job IDs (updated in place).
+
+    Returns:
+        Counter[bytes]: Aggregated Recommended dictionary entries fetched from GitHub Actions.
+    """
+    from datetime import datetime, timedelta, timezone  # ruff: ignore[import-outside-top-level]
+
+    _validate_github_query(repo, workflows)
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    seen_runs = set(run_ids) | _discover_completed_runs(repo, workflows, cutoff, token)
+
+    totals = _fetch_unprocessed_runs(repo, seen_runs, processed_run_ids, token)
+    totals.update(_fetch_unprocessed_jobs(repo, job_ids, processed_job_ids, token))
     return totals
 
 
@@ -414,10 +549,17 @@ def merge_dictionary(
     hex_words: frozenset[str] = frozenset(),
     write: bool = False,
 ) -> tuple[int, int, list[str]]:
-    """Non-destructively merge newly harvested byte tokens into ``fuzzer.dict``.
+    """Non-destructively merge newly harvested byte tokens into `fuzzer.dict`.
+
+    Args:
+        dict_path (Path): Target `.dict` file path.
+        candidate_counts (Counter[bytes]): Candidate tokens mapped to aggregate use counts.
+        min_uses (int): Minimum aggregate `Uses` threshold required to include a token.
+        hex_words (frozenset[str]): Lowercase substrings to force-encode as hex.
+        write (bool): Whether to write the updated dictionary back to `dict_path`.
 
     Returns:
-        tuple[int, int, list[str]]: ``(existing_line_count, added_count, sorted_merged_lines)``.
+        tuple[int, int, list[str]]: `(existing_line_count, added_count, sorted_merged_lines)`.
     """
     existing_lines = dict_path.read_text(encoding="utf-8").splitlines() if dict_path.exists() else []
     existing_bytes: set[bytes] = set()
@@ -442,15 +584,62 @@ def merge_dictionary(
     return len(existing_lines), len(new_lines), merged_lines
 
 
+def _collect_candidates(args: argparse.Namespace) -> Counter[bytes]:
+    totals: Counter[bytes] = Counter()
+    log_paths: list[Path] = list(args.log_path)
+
+    if args.local or (not log_paths and not args.repo):
+        log_paths.extend(discover_fuzzer_logs(fuzz_dir=args.fuzz_dir, logs_dir=args.logs_dir))
+
+    for path_item in log_paths:
+        totals.update(collect_from_path(path_item))
+
+    if args.repo:
+        processed_runs, processed_jobs = (set(), set()) if args.force_refetch else load_harvest_state(args.state_path)
+        totals.update(
+            collect_from_github(
+                args.repo,
+                args.workflows,
+                args.days,
+                args.job_id,
+                args.run_id,
+                processed_run_ids=processed_runs,
+                processed_job_ids=processed_jobs,
+            )
+        )
+        if args.write:
+            save_harvest_state(args.state_path, processed_runs, processed_jobs)
+
+    if args.sync_routes:
+        for tok in harvest_sdk_route_tokens(REPO_ROOT):
+            totals[tok] = max(totals[tok], args.min_uses)
+
+    return totals
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point for harvesting ClusterFuzzLite dictionary suggestions.
+    """CLI entry point for harvesting ClusterFuzzLite and local libFuzzer dictionary suggestions.
+
+    Args:
+        argv (list[str] | None): Optional CLI argument vector.
 
     Returns:
         int: Process exit code (`0` when cleanly synced or updated, `1` on `--check` drift).
     """
     parser = argparse.ArgumentParser(description="Harvest libFuzzer Recommended dictionary entries into fuzzer.dict.")
     parser.add_argument(
-        "--log-path", type=Path, action="append", default=[], help="Log file, zip archive, or directory."
+        "--local",
+        action="store_true",
+        help="Auto-discover logs/<fuzzer>/fuzz_output.log from tests/fuzz/<fuzzer>.py (default when no source is given).",
+    )
+    parser.add_argument(
+        "--fuzz-dir", type=Path, default=DEFAULT_FUZZ_DIR, help="Directory with fuzz target *.py files."
+    )
+    parser.add_argument(
+        "--logs-dir", type=Path, default=DEFAULT_LOGS_DIR, help="Root directory with local fuzzer logs."
+    )
+    parser.add_argument(
+        "--log-path", type=Path, action="append", default=[], help="Explicit log file, zip archive, or directory."
     )
     parser.add_argument("--repo", default="", help="Optional GitHub repo owner/name for REST log retrieval.")
     parser.add_argument(
@@ -463,6 +652,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--job-id", type=int, action="append", default=[], help="Specific GitHub Actions job ID.")
     parser.add_argument("--run-id", type=int, action="append", default=[], help="Specific GitHub Actions run ID.")
     parser.add_argument("--dict-path", type=Path, default=DEFAULT_DICT_PATH, help="Target .dict path.")
+    parser.add_argument("--state-path", type=Path, default=DEFAULT_STATE_PATH, help="Processed CI run/job state JSON.")
+    parser.add_argument("--force-refetch", action="store_true", help="Ignore processed CI state and refetch all logs.")
     parser.add_argument("--min-uses", type=int, default=1, help="Minimum aggregate Uses threshold.")
     parser.add_argument("--sync-routes", action="store_true", help="Include static ROUTE_MAP and protocol tokens.")
     parser.add_argument("--hex-word", action="append", default=[], help="Substring to force-hex for typos hygiene.")
@@ -472,17 +663,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--dry-run", action="store_true", help="Preview summary without modifying --dict-path.")
 
     args = parser.parse_args(argv)
-    totals: Counter[bytes] = Counter()
-
-    for path_item in args.log_path:
-        totals.update(collect_from_path(path_item))
-
-    if args.repo:
-        totals.update(collect_from_github(args.repo, args.workflows, args.days, args.job_id, args.run_id))
-
-    if args.sync_routes:
-        for tok in harvest_sdk_route_tokens(REPO_ROOT):
-            totals[tok] = max(totals[tok], args.min_uses)
+    totals = _collect_candidates(args)
 
     hex_words = frozenset(w.lower() for w in args.hex_word if w)
     orig_count, added_count, merged_lines = merge_dictionary(
