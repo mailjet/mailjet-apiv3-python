@@ -1,28 +1,41 @@
+from __future__ import annotations
+
 import base64
 import json
 import os
 import uuid
+from typing import Any
 
 from mailjet_rest import Client
 
-# Authenticate and optionally generate token
-auth_client = Client(
-    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
-    version="v1",
-)
+
+def _get_auth_client() -> Client:
+    """Create a v1 Basic-Auth client lazily for token generation."""
+    return Client(
+        auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
+        version="v1",
+    )
 
 
-def generate_token():
+def _get_content_client(bearer_token: str | None = None) -> Client:
+    """Create a v1 Content API client lazily from MJ_CONTENT_TOKEN or API key credentials."""
+    token = bearer_token if bearer_token is not None else os.environ.get("MJ_CONTENT_TOKEN", "")
+    if token:
+        return Client(auth=token, version="v1")
+    return _get_auth_client()
+
+
+def generate_token(client: Client | None = None) -> Any:
     """POST https://api.mailjet.com/v1/REST/tokens using a unique name to prevent 409 Conflict."""
     unique_name = f"Sample Access Token {uuid.uuid4().hex[:6]}"
     data = {
         "Name": unique_name,
         "Permissions": ["read_template", "create_template", "create_image"],
     }
-    return auth_client.tokens.create(data=data)
+    return (client or _get_auth_client()).tokens.create(data=data)
 
 
-def upload_image():
+def upload_image(client: Client | None = None) -> Any:
     """POST https://api.mailjet.com/v1/data/images via multipart/form-data"""
     b64_string = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
     image_bytes = base64.b64decode(b64_string)
@@ -34,27 +47,34 @@ def upload_image():
 
     # Note: 'Content-Type: None' is explicitly passed to override the SDK's default `application/json`
     # header, allowing the 'requests' library to auto-generate the multipart boundary.
-    return content_client.data_images.create(headers={"Content-Type": None}, files=files_payload)
+    return (client or _get_content_client()).data_images.create(
+        headers={"Content-Type": None},
+        files=files_payload,
+    )
 
 
-def list_v1_templates():
+def list_v1_templates(client: Client | None = None) -> Any:
     """GET https://api.mailjet.com/v1/REST/templates via `v1_templates` route."""
-    return content_client.v1_templates.get()
+    return (client or _get_content_client()).v1_templates.get()
 
 
-def publish_template_contents(template_id: int):
+def publish_template_contents(template_id: int, client: Client | None = None) -> Any:
     """POST https://api.mailjet.com/v1/REST/templates/{id}/contents/publish."""
-    return content_client.template_contents_publish.create(id=template_id)
+    return (client or _get_content_client()).template_contents_publish.create(id=template_id)
 
 
-def unlock_template_contents(template_id: int):
+def unlock_template_contents(template_id: int, client: Client | None = None) -> Any:
     """POST https://api.mailjet.com/v1/REST/templates/{id}/contents/unlock."""
-    return content_client.template_contents_unlock.create(id=template_id)
+    return (client or _get_content_client()).template_contents_unlock.create(id=template_id)
 
 
-def get_image_by_type(image_id: int, content_type: str = "image:png"):
+def get_image_by_type(
+    image_id: int,
+    content_type: str = "image:png",
+    client: Client | None = None,
+) -> Any:
     """GET https://api.mailjet.com/v1/data/images/{id}/{content_type}."""
-    return content_client.data_images_by_type.get(id=image_id, action_id=content_type)
+    return (client or _get_content_client()).data_images_by_type.get(id=image_id, action_id=content_type)
 
 
 if __name__ == "__main__":
@@ -63,21 +83,21 @@ if __name__ == "__main__":
         if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
             print("Set MJ_CONTENT_TOKEN (or MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE) to run this sample.")
             raise SystemExit(0)
-        token_resp = generate_token()
-        print(f"Status Code: {token_resp.status_code}")
-        bearer_token = token_resp.json()["Data"][0]["AccessToken"]
-        print(f"\nSuccessfully generated bearer token: {bearer_token[:10]}...")
+        with _get_auth_client() as auth_client:
+            token_resp = generate_token(client=auth_client)
+            print(f"Status Code: {token_resp.status_code}")
+            bearer_token = token_resp.json()["Data"][0]["AccessToken"]
+            print("\nSuccessfully generated bearer token.")
 
-    content_client = Client(auth=bearer_token, version="v1")
-
-    try:
-        result = upload_image()
-        print(f"Status Code: {result.status_code}")
+    with _get_content_client(bearer_token=bearer_token) as content_client:
         try:
-            print(json.dumps(result.json(), indent=4))
-        except ValueError:
-            print(result.text)
-    except Exception as e:
-        print(f"Error during image upload: {e}")
-        if hasattr(e, "response") and e.response is not None:
-            print(e.response.text)
+            result = upload_image(client=content_client)
+            print(f"Status Code: {result.status_code}")
+            try:
+                print(json.dumps(result.json(), indent=4))
+            except ValueError:
+                print(result.text)
+        except Exception as e:
+            print(f"Error during image upload: {e}")
+            if hasattr(e, "response") and e.response is not None:
+                print(e.response.text)
