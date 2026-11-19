@@ -250,7 +250,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-See [samples/async_client_sample.py](samples/async_client_sample.py) for `ping()`, `patch()`, `available_endpoints`, and `async for ... in client.contact.stream()` pagination.
+See [samples/async_client_sample.py](samples/async_client_sample.py) for `ping()`, `update()`, `available_endpoints`, and `async for ... in client.contact.stream()` pagination.
 
 ### Advanced Configuration
 
@@ -465,14 +465,14 @@ with Client(auth=(api_key, api_secret), config=cfg) as mailjet:
 ### Network Resilience & Retries
 
 The SDK incorporates a custom `JitterRetry` connection pooling policy to gracefully handle transient network drops, 5xx server errors, and `429 Too Many Requests` limits. It utilizes exponential backoff combined with randomized full jitter to prevent the "Thundering Herd" effect on Mailjet's upstream API during concurrent high-throughput batching.
-While the SDK automatically configures resilient retries natively, you can override the default connection pool by mounting a custom HTTPAdapter to the client's session.
+While the SDK automatically configures resilient retries natively, you can tune the retry budget via `Config(max_retries=5)` or subclass/mount `SecureHTTPAdapter` (never raw `HTTPAdapter`, which would strip TLS 1.2+ pinning and CA trust-store isolation):
 
 ```python
 import os
 import random
 from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
-from mailjet_rest import Client
+from mailjet_rest import Client, Config
+from mailjet_rest.utils.guardrails import SecureHTTPAdapter
 
 
 class CustomJitterRetry(Retry):
@@ -484,7 +484,11 @@ class CustomJitterRetry(Retry):
         return random.uniform(0, backoff) if backoff > 0 else 0
 
 
-# Configure custom total retries and backoff factor
+# 1. Recommended: tune transient retry budget directly via Config
+with Client(auth=(api_key, api_secret), config=Config(max_retries=5)) as mailjet:
+    result = mailjet.contact.get()
+
+# 2. Advanced: mount SecureHTTPAdapter with a custom Retry policy (preserves TLS 1.2+ pinning)
 custom_retry_strategy = CustomJitterRetry(
     total=5,
     backoff_factor=0.5,
@@ -496,8 +500,8 @@ api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
 api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
 
 with Client(auth=(api_key, api_secret)) as mailjet:
-    # Mount the custom adapter to the underlying requests session
-    adapter = HTTPAdapter(max_retries=custom_retry_strategy)
+    # Always use SecureHTTPAdapter so TLS 1.2+ and isolated CA verification remain enforced
+    adapter = SecureHTTPAdapter(max_retries=custom_retry_strategy)
     mailjet.session.mount("https://", adapter)
 
     # Subsequent API calls will utilize your custom retry engine
@@ -786,11 +790,12 @@ print(result.json())
 
 #### PATCH (Partial Update)
 
-Use `.patch()` (on both `Client` and `AsyncClient`) to send an HTTP `PATCH` request for partial resource updates:
+Use `.patch()` (on both `Client` and `AsyncClient`) to send an HTTP `PATCH` request for partial resource updates (for example, updating Content API v1 template metadata):
 
 ```python
-result = mailjet.contact.patch(id=id_, data={"Name": "Jane Doe"})
-print(result.status_code)
+with Client(auth=(api_key, api_secret), version="v1") as content_client:
+    result = content_client.v1_templates.patch(id=template_id, data={"Name": "Updated Template"})
+    print(result.status_code)
 ```
 
 #### DELETE (Returns 204 No Content)
@@ -959,7 +964,7 @@ is_valid = verify_webhook_signature(
 
 ## Type Hinting
 
-This SDK ships PEP 561 `py.typed` metadata with inline PEP 484 annotations and hover docstrings across all 20 modules, deterministic `.pyi` stubs only for dynamic `__getattr__` route dispatch (`mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi`), and consolidated `TypedDict` DTOs in `mailjet_rest.types` (e.g., `SendV31Payload`, `ContactPayload`, `SendV3Payload`). Static type checkers (`mypy --strict`, `pyright`) and IDEs get full autocompletion for all 89 registered routes on both `Client` and `AsyncClient`, plus `client.available_endpoints` for runtime discovery.
+This SDK ships PEP 561 `py.typed` metadata with inline PEP 484 annotations and hover docstrings across all 20 modules, deterministic `.pyi` stubs only for dynamic `__getattr__` route dispatch (`mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi`), and consolidated `TypedDict` DTOs in `mailjet_rest.types` (e.g., `SendV31Payload`, `SendV31Response`, `ContactPayload`, `V1TemplatePayload`). Static type checkers (`mypy --strict`, `pyright`) and IDEs get full autocompletion for all 89 registered routes on both `Client` and `AsyncClient`, plus `client.available_endpoints` for runtime discovery.
 
 ## License
 

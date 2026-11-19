@@ -87,19 +87,19 @@ Version 1.9.0 introduces route deprecation advisories, dynamic stream parameter 
 
 ### v1.9.1 vs. Current (`wave-6-async-client` / Unreleased)
 
-The post-`1.9.1` architecture (`Wave 3`–`Wave 6` + `MOD-03`/`MOD-06`) adds `AsyncClient`/`AsyncEndpoint` (`httpx2>=2.0.0`), `MockMailjetClient`/`verify_webhook_signature`, PEP 562 lazy top-level exports, `__slots__` across `33` classes (`50` classes scanned across `20` modules via `slotscheck`), lazy `asyncio`/`HTMLParser` loading, zero-allocation `scheme://authority/` SSRF prefix fast-paths, and module-level `_deep_strip_volatile()` (eliminating `~185 KiB` cyclic-closure retention).
+The post-`1.9.1` architecture (`Wave 3`–`Wave 6` + `MOD-03`/`MOD-06`) adds `AsyncClient`/`AsyncEndpoint` (`httpx2>=2.0.0`), `MockMailjetClient`/`verify_webhook_signature`, PEP 562 lazy top-level exports, `__slots__` across `33` classes (`53` classes scanned across `20` modules via `slotscheck`), lazy `asyncio`/`HTMLParser` loading, zero-allocation `scheme://authority/` SSRF prefix fast-paths, O(1) cached `__getattr__` route lookup before lazy `Endpoint` import, O(1) UTF-8 char-length bounds in `MessageBuilder`, and module-level `_deep_strip_volatile()` (eliminating `~185 KiB` cyclic-closure retention).
 
-| Metric                                                   | Baseline (`v1.9.1`)           | Current (`wave-6-async-client`) | Delta / Notes                                            |
-| :------------------------------------------------------- | :---------------------------- | :------------------------------ | :------------------------------------------------------- |
-| **Cold-Boot Profiler (`test_boot.py`)**                  | `0.248 s` (`220,116` calls)   | **`0.184 s` (`207,078` calls)** | **`-25.8%` profiler time, `-5.9%` calls**                |
-| **Cold-Boot Wall-Clock (`test_boot.py`)**                | `0.3383 s`                    | **`0.2498 s`**                  | **`-26.2%` faster subprocess boot**                      |
-| **Sync Client Init `httpx2` Imports**                    | `0`                           | **`0`**                         | PEP 562 lazy exports isolate async deps                  |
-| **Client Instance `__dict__`**                           | Present (`48 B` + `__dict__`) | **Eliminated (`__slots__`)**    | Zero per-instance `__dict__` allocation                  |
-| **Routing Speed (`test_client_routing_speed`)**          | `365.2 ns` (`2.74M ops/s`)    | `635.2 ns` (`1.57M ops/s`)      | Includes lazy `Endpoint` import & shutdown guard         |
-| **Message Builder (`test_message_builder_performance`)** | `3.22 µs` (`310.1K ops/s`)    | `10.08 µs` (`99.2K ops/s`)      | Includes RFC 8058, inline CID & `102 KB` HTML checks     |
-| **Idempotency Fingerprint Hashing**                      | `9.68 µs` (`103.3K ops/s`)    | **`9.47 µs` (`105.6K ops/s`)**  | **`-2.2%` faster** + cycle-free `_deep_strip_volatile()` |
-| **Request Cycle (`test_request_cycle_performance`)**     | `461.9 µs` (`2,164.9 ops/s`)  | `467.0 µs` (`2,141.4 ops/s`)    | Parity (`~1%`) with per-call SSRF & header guardrails    |
-| **Concurrent Sync Throughput**                           | `36.95 ms` (`27.06 ops/s`)    | **`32.53 ms` (`30.74 ops/s`)**  | **`+13.6%` faster** concurrent execution                 |
+| Metric                                                   | Baseline (`v1.9.1`)           | Current (`wave-6-async-client`)  | Delta / Notes                                                       |
+| :------------------------------------------------------- | :---------------------------- | :------------------------------- | :------------------------------------------------------------------ |
+| **Cold-Boot Profiler (`test_boot.py`)**                  | `0.248 s` (`220,116` calls)   | **`0.181 s` (`207,131` calls)**  | **`-27.0%` profiler time, `-5.9%` calls**                           |
+| **Cold-Boot Wall-Clock (`test_boot.py`)**                | `0.3383 s`                    | **`0.2503 s`**                   | **`-26.0%` faster subprocess boot**                                 |
+| **Sync Client Init `httpx2` Imports**                    | `0`                           | **`0`**                          | PEP 562 lazy exports isolate async deps                             |
+| **Client Instance `__dict__`**                           | Present (`48 B` + `__dict__`) | **Eliminated (`__slots__`)**     | Zero per-instance `__dict__` allocation                             |
+| **Routing Speed (`test_client_routing_speed`)**          | `365.2 ns` (`2.74M ops/s`)    | **`298.4 ns` (`3.35M ops/s`)**   | **`-18.3%` faster** via O(1) pre-lock `_endpoint_cache` hit         |
+| **Message Builder (`test_message_builder_performance`)** | `3.22 µs` (`310.1K ops/s`)    | **`6.57 µs` (`152.2K ops/s`)**   | Includes RFC 8058, fast-path CID & `102 KB` char-bound check        |
+| **Idempotency Fingerprint Hashing**                      | `9.68 µs` (`103.3K ops/s`)    | `10.57 µs` (`94.6K ops/s`)       | Method/URL/SandboxMode scoped + cycle-free `_deep_strip_volatile()` |
+| **Request Cycle (`test_request_cycle_performance`)**     | `461.9 µs` (`2,164.9 ops/s`)  | **`428.5 µs` (`2,334.0 ops/s`)** | **`-7.2%` faster** with per-call SSRF & header guardrails           |
+| **Concurrent Sync Throughput**                           | `36.95 ms` (`27.06 ops/s`)    | **`33.09 ms` (`30.22 ops/s`)**   | **`+11.7%` faster** concurrent execution                            |
 
 *Note: Head-to-head measurements on Linux CPython 3.15.2 via `tests/test_boot.py` and `pytest tests/test_perf.py --benchmark-only` (network-isolated mocked `responses`). Quality & security gates verified alongside benchmarks: `99.38%` branch coverage (`>= 93%` gate), `30` Atheris fuzzers (`21.39M` units / `2,716`-entry `fuzzer.dict`), and `87.3%` `mutmut` mutation score (`2,346/2,688`).*
 
