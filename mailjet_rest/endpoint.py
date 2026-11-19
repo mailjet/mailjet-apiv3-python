@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from mailjet_rest.utils.routing import (
     build_endpoint_headers,
@@ -75,7 +75,12 @@ class BaseEndpoint:
     __slots__ = ("_action_parts", "_name_lower", "_resource_lower", "client", "name")
 
     # Mailjet API pagination ceiling (https://dev.mailjet.com/docs/api-reference#pagination--sorting)
-    MAX_LIMIT: int = 1000
+    MAX_LIMIT: ClassVar[int] = 1000
+    client: Any
+    name: str
+    _name_lower: str
+    _resource_lower: str
+    _action_parts: list[str]
 
     def __init__(self, client: Any, name: str) -> None:
         """Initialize the endpoint handler with the parent client and route name."""
@@ -145,6 +150,25 @@ class BaseEndpoint:
             response.raise_for_status()
         return self._parse_stream_page(response)
 
+    @staticmethod
+    def _prepare_stream_page(
+        current_filters: dict[str, Any],
+        current_offset: int,
+        chunk_size: int,
+        max_items: int | None,
+        yielded: int,
+    ) -> tuple[dict[str, Any], int]:
+        page_limit = min(chunk_size, max_items - yielded) if max_items is not None else chunk_size
+        current_filters["Limit"] = page_limit
+        current_filters["Offset"] = current_offset
+        return current_filters.copy(), page_limit
+
+    @staticmethod
+    def _next_stream_offset(data: list[dict[str, Any]], page_limit: int, current_offset: int) -> int | None:
+        if not data or len(data) < page_limit:
+            return None
+        return current_offset + len(data)
+
     def _prepare_call_args(
         self,
         id: ResourceId | None,
@@ -157,10 +181,13 @@ class BaseEndpoint:
         url = self._build_url(id_val=id, action_id=action_id)
         return url, merged_headers, prepared_data
 
-    def _validate_delete_id(self, id: ResourceId) -> None:
+    def _validate_required_id(self, id: ResourceId, action: str = "delete") -> None:
         if id is None or isinstance(id, bool) or (isinstance(id, str) and not id.strip()):
-            msg = f"{self.__class__.__name__}.delete() requires a non-empty, non-boolean resource 'id'."
+            msg = f"{self.__class__.__name__}.{action}() requires a non-empty, non-boolean resource 'id'."
             raise ValueError(msg)
+
+    def _validate_delete_id(self, id: ResourceId) -> None:
+        self._validate_required_id(id, "delete")
 
 
 class Endpoint(BaseEndpoint):
@@ -233,21 +260,23 @@ class Endpoint(BaseEndpoint):
             return
 
         yielded = 0
-        while True:
-            page_limit = min(chunk_size, max_items - yielded) if max_items is not None else chunk_size
-            current_filters["Limit"] = page_limit
-            current_filters["Offset"] = current_offset
-            response = self.get(id=id, filters=current_filters.copy(), action_id=action_id, **kwargs)
-            data = self._extract_stream_page(response)
-            for item in data:
-                yield item
-                yielded += 1
-                if max_items is not None and yielded >= max_items:
+        next_offset: int | None = current_offset
+        while next_offset is not None:
+            page_filters, page_limit = self._prepare_stream_page(
+                current_filters, next_offset, chunk_size, max_items, yielded
+            )
+            data = self._extract_stream_page(self.get(id=id, filters=page_filters, action_id=action_id, **kwargs))
+            if max_items is None:
+                yield from data
+                yielded += len(data)
+            else:
+                remaining = max_items - yielded
+                page_slice = data[:remaining]
+                yield from page_slice
+                yielded += len(page_slice)
+                if yielded >= max_items:
                     return
-            # REST endpoints report a page-local Total unless countOnly is used; continue through full pages.
-            if not data or len(data) < page_limit:
-                break
-            current_offset += len(data)
+            next_offset = self._next_stream_offset(data, page_limit, next_offset)
 
     def create(
         self,
@@ -316,6 +345,7 @@ class Endpoint(BaseEndpoint):
         Returns:
             requests.Response: Resulting HTTP response.
         """
+        self._validate_required_id(id, "patch")
         return self(
             method="PATCH",
             id=id,
@@ -408,19 +438,20 @@ class AsyncEndpoint(BaseEndpoint):
 
         yielded = 0
         while True:
-            page_limit = min(chunk_size, max_items - yielded) if max_items is not None else chunk_size
-            current_filters["Limit"] = page_limit
-            current_filters["Offset"] = current_offset
-            response = await self.get(id=id, filters=current_filters.copy(), action_id=action_id, **kwargs)
+            page_filters, page_limit = self._prepare_stream_page(
+                current_filters, current_offset, chunk_size, max_items, yielded
+            )
+            response = await self.get(id=id, filters=page_filters, action_id=action_id, **kwargs)
             data = self._extract_stream_page(response)
             for item in data:
                 yield item
                 yielded += 1
                 if max_items is not None and yielded >= max_items:
                     return
-            if not data or len(data) < page_limit:
-                break
-            current_offset += len(data)
+            next_offset = self._next_stream_offset(data, page_limit, current_offset)
+            if next_offset is None:
+                return
+            current_offset = next_offset
 
     async def create(
         self,
@@ -489,6 +520,7 @@ class AsyncEndpoint(BaseEndpoint):
         Returns:
             httpx2.Response: Resulting HTTP response.
         """
+        self._validate_required_id(id, "patch")
         return await self(
             method="PATCH",
             id=id,

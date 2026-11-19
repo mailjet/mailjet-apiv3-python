@@ -127,14 +127,39 @@ def _validate_multipart_text(label: str, value: Any) -> None:
         raise ValueError(msg)
 
 
+def _validate_multipart_spec(
+    file_spec: Any,
+    *,
+    header_sanitizer: Callable[[HeadersMapping], RequestHeaders],
+) -> None:
+    if not isinstance(file_spec, (tuple, list)):
+        return
+    if len(file_spec) >= 1 and file_spec[0] is not None:
+        _validate_multipart_text("filename", file_spec[0])
+    if len(file_spec) >= 3 and file_spec[2] is not None:
+        _validate_multipart_text("content_type", file_spec[2])
+    if len(file_spec) >= 4 and isinstance(file_spec[3], Mapping):
+        header_sanitizer(file_spec[3])
+
+
+def _validate_multipart_entry(
+    entry: Any,
+    *,
+    header_sanitizer: Callable[[HeadersMapping], RequestHeaders],
+) -> None:
+    if not isinstance(entry, tuple) or len(entry) != 2:
+        return
+    field_name, file_spec = entry
+    _validate_multipart_text("field_name", field_name)
+    _validate_multipart_spec(file_spec, header_sanitizer=header_sanitizer)
+
+
 def validate_multipart_files(
     files: Any,
     *,
     header_sanitizer: Callable[[HeadersMapping], RequestHeaders],
 ) -> None:
     """Validate multipart upload metadata against CRLF and NUL smuggling (CWE-93, CWE-434)."""
-    if files is None:
-        return
     if isinstance(files, Mapping):
         items: Any = files.items()
     elif isinstance(files, (list, tuple)):
@@ -143,14 +168,4 @@ def validate_multipart_files(
         return
 
     for entry in items:
-        if not isinstance(entry, tuple) or len(entry) != 2:
-            continue
-        field_name, file_spec = entry
-        _validate_multipart_text("field_name", field_name)
-        if isinstance(file_spec, (tuple, list)):
-            if len(file_spec) >= 1 and file_spec[0] is not None:
-                _validate_multipart_text("filename", file_spec[0])
-            if len(file_spec) >= 3 and file_spec[2] is not None:
-                _validate_multipart_text("content_type", file_spec[2])
-            if len(file_spec) >= 4 and isinstance(file_spec[3], Mapping):
-                header_sanitizer(file_spec[3])
+        _validate_multipart_entry(entry, header_sanitizer=header_sanitizer)

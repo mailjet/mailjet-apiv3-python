@@ -10,6 +10,7 @@ import argparse
 import ast
 import importlib.util
 import sys
+from operator import itemgetter
 from pathlib import Path
 
 
@@ -101,24 +102,124 @@ def _find_class(tree: ast.Module, class_name: str) -> ast.ClassDef:
     raise RuntimeError(msg)
 
 
-def _find_top_function(tree: ast.Module, func_name: str) -> ast.FunctionDef:
+def _is_overload_decorator(dec: ast.expr) -> bool:
+    return (isinstance(dec, ast.Name) and dec.id == "overload") or (
+        isinstance(dec, ast.Attribute) and dec.attr == "overload"
+    )
+
+
+def _extract_all_exports(tree: ast.Module) -> list[str]:
     for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == func_name:
-            return node
-    msg = f"Function {func_name!r} not found in AST"
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets) and isinstance(
+            value, (ast.List, ast.Tuple)
+        ):
+            return [elt.value for elt in value.elts if isinstance(elt, ast.Constant) and isinstance(elt.value, str)]
+    msg = "Unable to locate __all__ exports in module AST"
     raise RuntimeError(msg)
 
 
+def _format_all_block(exports: list[str]) -> list[str]:
+    if len(exports) <= 3:
+        rendered = ", ".join(f'"{name}"' for name in exports)
+        return [f"__all__ = [{rendered}]"]
+    lines = ["__all__ = ["]
+    lines.extend(f'    "{name}",' for name in exports)
+    lines.append("]")
+    return lines
+
+
+def _extract_class_annassigns(cls_node: ast.ClassDef, type_aliases: dict[str, str] | None = None) -> list[str]:
+    entries: list[tuple[int, str, str]] = []
+    for item in cls_node.body:
+        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+            ann = ast.unparse(item.annotation)
+            if type_aliases and ann in type_aliases:
+                ann = type_aliases[ann]
+            name = item.target.id
+            rank = 0 if "ClassVar[" in ann else 1
+            entries.append((rank, name, f"    {name}: {ann}"))
+    entries.sort(key=itemgetter(0, 1))
+    return [line for _, _, line in entries]
+
+
+def _extract_reserved_attrs(*classes: ast.ClassDef) -> set[str]:
+    reserved: set[str] = {"__getattr__"}
+    for cls_node in classes:
+        for item in cls_node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and not item.name.startswith("_"):
+                reserved.add(item.name)
+            elif (
+                isinstance(item, ast.AnnAssign)
+                and isinstance(item.target, ast.Name)
+                and not item.target.id.startswith("_")
+            ):
+                reserved.add(item.target.id)
+    return reserved
+
+
 def _format_class_methods(cls_node: ast.ClassDef) -> list[str]:
+    overloaded = {
+        item.name
+        for item in cls_node.body
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and any(_is_overload_decorator(dec) for dec in item.decorator_list)
+    }
     lines: list[str] = []
     for item in cls_node.body:
         if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if item.name in {"__repr__", "__str__"}:
             continue
+        has_overload = any(_is_overload_decorator(dec) for dec in item.decorator_list)
+        if item.name in overloaded and not has_overload:
+            continue
         lines.extend(f"    @{ast.unparse(dec)}" for dec in item.decorator_list)
         lines.append(f"    {_format_signature(item)}")
     return lines
+
+
+def _format_top_functions(tree: ast.Module, func_names: tuple[str, ...]) -> list[str]:
+    overloaded = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in func_names
+        and any(_is_overload_decorator(dec) for dec in node.decorator_list)
+    }
+    lines: list[str] = []
+    for func_name in func_names:
+        matched = [
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name
+        ]
+        if not matched:
+            msg = f"Function {func_name!r} not found in AST"
+            raise RuntimeError(msg)
+        for node in matched:
+            has_overload = any(_is_overload_decorator(dec) for dec in node.decorator_list)
+            if func_name in overloaded and not has_overload:
+                continue
+            lines.extend(f"@{ast.unparse(dec)}" for dec in node.decorator_list)
+            lines.append(_format_signature(node))
+    return lines
+
+
+def _tree_has_overloads(tree: ast.Module) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+            _is_overload_decorator(dec) for dec in node.decorator_list
+        ):
+            return True
+    return False
 
 
 def render_endpoint_stub(package_dir: Path) -> str:
@@ -131,11 +232,13 @@ def render_endpoint_stub(package_dir: Path) -> str:
     base_cls = _find_class(tree, "BaseEndpoint")
     ep_cls = _find_class(tree, "Endpoint")
     async_ep_cls = _find_class(tree, "AsyncEndpoint")
+    exports = _extract_all_exports(tree)
+    typing_names = "Any, ClassVar, overload" if _tree_has_overloads(tree) else "Any, ClassVar"
 
     lines = [
         "# Generated by scripts/check_stubs.py --write. Do not edit manually.",
         "from collections.abc import AsyncGenerator, Generator",
-        "from typing import Any, ClassVar",
+        f"from typing import {typing_names}",
         "",
         "import httpx2",
         "import requests",
@@ -151,22 +254,21 @@ def render_endpoint_stub(package_dir: Path) -> str:
         "    TimeoutType,",
         ")",
         "",
-        '__all__ = ["AsyncEndpoint", "BaseEndpoint", "Endpoint"]',
+        *_format_all_block(exports),
         "",
         "class BaseEndpoint:",
-        "    MAX_LIMIT: ClassVar[int]",
-        "    client: Any",
-        "    name: str",
-        "    _name_lower: str",
-        "    _resource_lower: str",
-        "    _action_parts: list[str]",
+        *_extract_class_annassigns(base_cls),
+        *_format_class_methods(base_cls),
+        "",
+        "class Endpoint(BaseEndpoint):",
+        *_extract_class_annassigns(ep_cls, {"_SyncClientProtocol": "Client"}),
+        *_format_class_methods(ep_cls),
+        "",
+        "class AsyncEndpoint(BaseEndpoint):",
+        *_extract_class_annassigns(async_ep_cls, {"_AsyncClientProtocol": "AsyncClient"}),
+        *_format_class_methods(async_ep_cls),
+        "",
     ]
-    lines.extend(_format_class_methods(base_cls))
-    lines.extend(["", "class Endpoint(BaseEndpoint):", "    client: Client"])
-    lines.extend(_format_class_methods(ep_cls))
-    lines.extend(["", "class AsyncEndpoint(BaseEndpoint):", "    client: AsyncClient"])
-    lines.extend(_format_class_methods(async_ep_cls))
-    lines.append("")
     return "\n".join(lines)
 
 
@@ -190,17 +292,22 @@ def render_client_stub(package_dir: Path) -> str:
     base_client_cls = _find_class(tree, "BaseClient")
     client_cls = _find_class(tree, "Client")
     async_client_cls = _find_class(tree, "AsyncClient")
-    parse_response_fn = _find_top_function(tree, "parse_response")
-    logging_handler_fn = _find_top_function(tree, "logging_handler")
+    exports = _extract_all_exports(tree)
+    reserved_attrs = _extract_reserved_attrs(base_client_cls, client_cls, async_client_cls)
+    typing_names = (
+        "Any, ClassVar, NoReturn, TypeVar, overload"
+        if _tree_has_overloads(tree)
+        else "Any, ClassVar, NoReturn, TypeVar"
+    )
 
     lines = [
         "# Generated by scripts/check_stubs.py --write. Do not edit manually.",
         "import logging",
         "import sys",
         "import threading",
-        "from collections.abc import Mapping",
+        "from collections.abc import Callable, Mapping",
         "from types import TracebackType",
-        "from typing import Any, ClassVar, NoReturn, TypeVar",
+        f"from typing import {typing_names}",
         "",
         "import httpx2",
         "import requests",
@@ -237,88 +344,29 @@ def render_client_stub(package_dir: Path) -> str:
         "else:",
         "    from typing_extensions import Self",
         "",
-        "__all__ = [",
-        '    "ActionDeniedError",',
-        '    "ApiError",',
-        '    "ApiRateLimitError",',
-        '    "AsyncClient",',
-        '    "AsyncEndpoint",',
-        '    "AuthorizationError",',
-        '    "BaseClient",',
-        '    "Client",',
-        '    "Config",',
-        '    "CriticalApiError",',
-        '    "DoesNotExistError",',
-        '    "Endpoint",',
-        '    "JitterRetry",',
-        '    "MailjetApiError",',
-        '    "MailjetAuthError",',
-        '    "TimeoutError",',
-        '    "ValidationError",',
-        '    "logging_handler",',
-        '    "parse_response",',
-        "]",
+        *_format_all_block(exports),
         "",
         '_EndpointT = TypeVar("_EndpointT", bound=BaseEndpoint)',
         "_httpx2: Any",
         "logger: logging.Logger",
         "",
         "class BaseClient:",
-        "    _MAX_ERROR_DETAIL_CHARS: ClassVar[int]",
-        "    _MAX_ERROR_LOG_CHARS: ClassVar[int]",
-        "    _MUTATING_METHODS: ClassVar[frozenset[str]]",
-        "    _RETRY_STRATEGY: ClassVar[JitterRetry]",
-        "    _closed: bool",
-        "    _endpoint_cache: Any",
-        "    _lock: threading.RLock",
-        "    _session: Any",
-        "    auth: str | SecretAuth | None",
-        "    config: Config",
+        *_extract_class_annassigns(base_client_cls),
+        *_format_class_methods(base_client_cls),
+        "",
+        "class Client(BaseClient):",
+        *_extract_class_annassigns(client_cls),
+        *_format_class_methods(client_cls),
+        *_format_route_properties(routes, reserved_attrs, "Endpoint"),
+        "",
+        "class AsyncClient(BaseClient):",
+        *_extract_class_annassigns(async_client_cls),
+        *_format_class_methods(async_client_cls),
+        *_format_route_properties(routes, reserved_attrs, "AsyncEndpoint"),
+        "",
+        *_format_top_functions(tree, ("parse_response", "logging_handler")),
+        "",
     ]
-    lines.extend(_format_class_methods(base_client_cls))
-
-    reserved_attrs = {
-        "__getattr__",
-        "aclose",
-        "api_call",
-        "auth",
-        "available_endpoints",
-        "close",
-        "config",
-        "ping",
-        "session",
-    }
-    lines.extend(
-        [
-            "",
-            "class Client(BaseClient):",
-            "    _endpoint_cache: dict[str, Endpoint]",
-            "    _session: requests.Session | None",
-        ]
-    )
-    lines.extend(_format_class_methods(client_cls))
-    lines.extend(_format_route_properties(routes, reserved_attrs, "Endpoint"))
-
-    lines.extend(
-        [
-            "",
-            "class AsyncClient(BaseClient):",
-            "    _custom_transport: httpx2.AsyncBaseTransport | None",
-            "    _endpoint_cache: dict[str, AsyncEndpoint]",
-            "    _session: httpx2.AsyncClient | None",
-        ]
-    )
-    lines.extend(_format_class_methods(async_client_cls))
-    lines.extend(_format_route_properties(routes, reserved_attrs, "AsyncEndpoint"))
-
-    lines.extend(
-        [
-            "",
-            _format_signature(parse_response_fn),
-            _format_signature(logging_handler_fn),
-            "",
-        ]
-    )
     return "\n".join(lines)
 
 

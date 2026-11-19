@@ -28,6 +28,7 @@ __all__ = [
     "parse_retry_after_http_date",
     "reset_stream_pointers",
     "run_async_with_retries",
+    "snapshot_stream_offsets",
 ]
 
 
@@ -114,23 +115,56 @@ def compute_retry_delay(
     return secrets.SystemRandom().uniform(0.0, base_backoff)
 
 
-def reset_stream_pointers(data: Any, files: Any) -> None:
-    """Rewind seekable payload and multipart file streams before retrying a request."""
+def _is_active_seekable_stream(item: Any) -> bool:
+    seek_fn = getattr(item, "seek", None)
+    if not callable(seek_fn) or getattr(item, "closed", False):
+        return False
+    seekable_fn = getattr(item, "seekable", None)
+    return not callable(seekable_fn) or bool(seekable_fn())
+
+
+def _iter_stream_nodes(data: Any, files: Any) -> list[Any]:
+    nodes: list[Any] = []
     stack: list[tuple[Any, int]] = [(data, 0), (files, 0)]
     while stack:
         item, depth = stack.pop()
         if item is None or depth > 4:
             continue
-        seek_fn = getattr(item, "seek", None)
-        if callable(seek_fn) and not getattr(item, "closed", False):
-            seekable_fn = getattr(item, "seekable", None)
-            if not callable(seekable_fn) or seekable_fn():
-                with suppress(OSError, ValueError):
-                    seek_fn(0)
-            continue
-        if isinstance(item, (Mapping, list, tuple)):
+        if _is_active_seekable_stream(item):
+            nodes.append(item)
+        elif isinstance(item, (Mapping, list, tuple)):
             children = item.values() if isinstance(item, Mapping) else item
             stack.extend((elem, depth + 1) for elem in children)
+    return nodes
+
+
+def snapshot_stream_offsets(data: Any, files: Any) -> dict[int, int]:
+    """Capture initial seek positions for open seekable payload and multipart streams.
+
+    Returns:
+        dict[int, int]: Mapping from stream ``id()`` to initial offset.
+    """
+    offsets: dict[int, int] = {}
+    for item in _iter_stream_nodes(data, files):
+        tell_fn = getattr(item, "tell", None)
+        if callable(tell_fn):
+            with suppress(OSError, ValueError):
+                pos = tell_fn()
+                if isinstance(pos, int) and not isinstance(pos, bool):
+                    offsets[id(item)] = pos
+    return offsets
+
+
+def reset_stream_pointers(
+    data: Any,
+    files: Any,
+    offsets: Mapping[int, int] | None = None,
+) -> None:
+    """Rewind seekable payload and multipart file streams before retrying a request."""
+    for item in _iter_stream_nodes(data, files):
+        target_pos = offsets.get(id(item), 0) if offsets is not None else 0
+        with suppress(OSError, ValueError):
+            item.seek(target_pos)
 
 
 async def _check_async_retry_response(
@@ -158,6 +192,31 @@ async def _check_async_retry_response(
     if not getattr(response, "is_closed", True):
         with suppress(Exception):
             await response.aclose()
+    return delay
+
+
+def _handle_retryable_exception(
+    exc: Exception,
+    attempt: int,
+    max_retries: int,
+    method: str,
+    url: str,
+    *,
+    max_delay: float,
+    log: logging.Logger,
+) -> float:
+    if attempt >= max_retries:
+        raise exc
+    delay = compute_retry_delay(attempt, max_delay=max_delay)
+    log.warning(
+        "Transient async transport error (%s) on %s %s; retry %d/%d in %.2fs",
+        type(exc).__name__,
+        method,
+        url,
+        attempt + 1,
+        max_retries,
+        delay,
+    )
     return delay
 
 
@@ -194,24 +253,14 @@ async def run_async_with_retries(
         httpx2_mod.ProxyError,
     )
 
+    initial_offsets = snapshot_stream_offsets(data, files)
     for attempt in range(max_retries + 1):
         try:
             response = await send_fn()
         except (httpx2_mod.UnsupportedProtocol, httpx2_mod.DecodingError):
             raise
         except retryable_errors as exc:
-            if attempt >= max_retries:
-                raise
-            delay = compute_retry_delay(attempt, max_delay=max_delay)
-            log.warning(
-                "Transient async transport error (%s) on %s %s; retry %d/%d in %.2fs",
-                type(exc).__name__,
-                method,
-                url,
-                attempt + 1,
-                max_retries,
-                delay,
-            )
+            delay = _handle_retryable_exception(exc, attempt, max_retries, method, url, max_delay=max_delay, log=log)
         else:
             delay_or_done = await _check_async_retry_response(
                 response,
@@ -228,7 +277,7 @@ async def run_async_with_retries(
             delay = delay_or_done
 
         await asyncio.sleep(delay)
-        reset_stream_pointers(data, files)
+        reset_stream_pointers(data, files, initial_offsets)
 
     msg = "Retry loop exited unexpectedly."  # pragma: no cover
     raise CriticalApiError(msg)  # pragma: no cover

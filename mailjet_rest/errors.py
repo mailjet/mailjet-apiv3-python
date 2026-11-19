@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import re
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any, Final, NoReturn
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "MAX_ERROR_BODY_CHARS",
     "MAX_ERROR_DETAIL_CHARS",
     "MAX_ERROR_LOG_CHARS",
     "ActionDeniedError",
@@ -36,6 +38,7 @@ __all__ = [
 
 MAX_ERROR_LOG_CHARS: Final[int] = 2048
 MAX_ERROR_DETAIL_CHARS: Final[int] = 1024
+MAX_ERROR_BODY_CHARS: Final[int] = 16384
 _LOG_CONTROL_CHAR_RE: Final = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -73,8 +76,8 @@ class MailjetAuthError(MailjetApiError):
 # Kept as subclasses of the modern hierarchy to preserve backward compatibility.
 
 
-class TimeoutError(MailjetNetworkError):  # ruff: ignore[builtin-variable-shadowing]
-    """Legacy exception raised on request timeouts; prefer MailjetNetworkError."""
+class TimeoutError(MailjetNetworkError, builtins.TimeoutError):  # ruff: ignore[builtin-variable-shadowing]
+    """Raised on request timeouts; satisfies both ``MailjetNetworkError`` and ``builtins.TimeoutError``."""
 
 
 class CriticalApiError(MailjetNetworkError):
@@ -122,6 +125,20 @@ def sanitize_error_text(raw: Any, *, max_chars: int) -> str:
     return _LOG_CONTROL_CHAR_RE.sub(" ", text)
 
 
+def _extract_json_error_message(response: Any) -> str:
+    resp_json = response.json()
+    if not isinstance(resp_json, dict):
+        return ""
+    if "ErrorMessage" in resp_json:
+        return str(resp_json["ErrorMessage"])
+    messages = resp_json.get("Messages")
+    if isinstance(messages, list) and messages and isinstance(messages[0], dict):
+        errors = messages[0].get("Errors")
+        if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+            return str(errors[0].get("ErrorMessage", ""))
+    return ""
+
+
 def extract_error_detail(
     response: Any,
     body: str,
@@ -135,20 +152,8 @@ def extract_error_detail(
     """
     raw_detail = ""
     with suppress(Exception):
-        resp_json = response.json()
-        if isinstance(resp_json, dict):
-            if "ErrorMessage" in resp_json:
-                raw_detail = str(resp_json["ErrorMessage"])
-            elif isinstance(messages := resp_json.get("Messages"), list) and messages:
-                first_msg = messages[0]
-                if (
-                    isinstance(first_msg, dict)
-                    and isinstance(errors := first_msg.get("Errors"), list)
-                    and errors
-                    and isinstance(errors[0], dict)
-                ):
-                    raw_detail = str(errors[0].get("ErrorMessage", ""))
-    if not raw_detail and body:
+        raw_detail = _extract_json_error_message(response)
+    if not raw_detail:
         raw_detail = body
     if not raw_detail:
         return ""
@@ -164,8 +169,9 @@ def raise_mapped_http_error(
 ) -> NoReturn:
     """Map an HTTP response status code to the Mailjet exception hierarchy."""
     status = int(response.status_code)
-    body = str(getattr(response, "text", "") or "")
-    error_detail = extract_error_detail(response, body, max_chars=max_chars)
+    raw_body = str(getattr(response, "text", "") or "")
+    error_detail = extract_error_detail(response, raw_body, max_chars=max_chars)
+    body = f"{raw_body[:MAX_ERROR_BODY_CHARS]}...[truncated]" if len(raw_body) > MAX_ERROR_BODY_CHARS else raw_body
 
     if entry := _HTTP_ERROR_MAP.get(status):
         exc_cls, prefix = entry

@@ -35,10 +35,12 @@ if importlib.util.find_spec("pytest_benchmark") is None:
         """Provide a fallback benchmark fixture if pytest-benchmark is unavailable."""
         return _FallbackBenchmark()
 
+
 # Graceful import fallback for Differential Benchmarking against older tags (v1.7.0)
 try:
     from mailjet_rest.builders import MessageBuilder
     from mailjet_rest.utils.guardrails import SecurityGuard
+
     MODERN_SDK_AVAILABLE = (
         MessageBuilder is not None
         and SecurityGuard is not None
@@ -52,6 +54,7 @@ except ImportError:
 # ------------------------------------------------------------------------
 # FIXTURES
 # ------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mocked_mailjet() -> Generator[responses.RequestsMock, None, None]:
@@ -70,6 +73,7 @@ def mocked_mailjet() -> Generator[responses.RequestsMock, None, None]:
 # BENCHMARK 1: ROUTING OVERHEAD (CPU)
 # ------------------------------------------------------------------------
 
+
 def test_client_routing_speed(benchmark: Any) -> None:
     """Measure CPU overhead of the dynamic __getattr__ router and caching logic."""
     client = Client(auth=("api", "key"))
@@ -84,6 +88,7 @@ def test_client_routing_speed(benchmark: Any) -> None:
 # ------------------------------------------------------------------------
 # BENCHMARK 2: FULL REQUEST CYCLE (MOCKED NETWORK)
 # ------------------------------------------------------------------------
+
 
 def test_request_cycle_performance(benchmark: Any, mocked_mailjet: responses.RequestsMock) -> None:
     """Measure the time from method call to response (with zero network delay)."""
@@ -101,9 +106,11 @@ def test_request_cycle_performance(benchmark: Any, mocked_mailjet: responses.Req
 # BENCHMARK 3: FLUENT BUILDERS (v1.8.0+)
 # ------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not MODERN_SDK_AVAILABLE, reason="Builders not available in this tag")
 def test_message_builder_performance(benchmark: Any) -> None:
     """Measure the CPU cost of fluent schema validation and structural limits."""
+
     def build_payload() -> Any:
         assert MessageBuilder is not None
         return (
@@ -114,6 +121,7 @@ def test_message_builder_performance(benchmark: Any) -> None:
             .set_content(text="Hello", html="<b>Hello</b>")
             .build()
         )
+
     benchmark(build_payload)
 
 
@@ -121,12 +129,13 @@ def test_message_builder_performance(benchmark: Any) -> None:
 # BENCHMARK 4: SECURITY GUARDRAILS (v1.8.0+)
 # ------------------------------------------------------------------------
 
+
 @pytest.mark.skipif(not MODERN_SDK_AVAILABLE, reason="Guardrails not available in this tag")
 def test_idempotency_fingerprint_performance(benchmark: Any) -> None:
     """Measure the CPU cost of recursive SHA-256 payload hashing."""
     payload = {
         "Messages": [{"To": "test@test.com", "CustomID": "ignore_me", "Variables": {"A": 1, "B": 2}}],
-        "SandboxMode": True
+        "SandboxMode": True,
     }
 
     def generate_hash() -> Any:
@@ -139,6 +148,7 @@ def test_idempotency_fingerprint_performance(benchmark: Any) -> None:
 # ------------------------------------------------------------------------
 # BENCHMARK 5: SYNCHRONOUS CONNECTION POOLING (THREADING)
 # ------------------------------------------------------------------------
+
 
 def test_sync_client_concurrent_throughput(benchmark: Any, mocked_mailjet: responses.RequestsMock) -> None:
     """Measures how fast the synchronous Client can dispatch concurrent requests.
@@ -156,9 +166,11 @@ def test_sync_client_concurrent_throughput(benchmark: Any, mocked_mailjet: respo
     with Client(auth=("api", "key")) as client:
         benchmark.pedantic(dispatch_batch, rounds=10, iterations=5)
 
+
 # ------------------------------------------------------------------------
 # BENCHMARK 6: MEMORY FOOTPRINT & LEAK PREVENTION (__slots__)
 # ------------------------------------------------------------------------
+
 
 def test_memory_footprint_leak_prevention() -> None:
     """Proves that processing large requests doesn't bloat the RSS memory footprint."""
@@ -174,7 +186,7 @@ def test_memory_footprint_leak_prevention() -> None:
     snapshot_after = tracemalloc.take_snapshot()
     tracemalloc.stop()
 
-    stats = snapshot_after.compare_to(snapshot_before, 'lineno')
+    stats = snapshot_after.compare_to(snapshot_before, "lineno")
     total_diff_kb = sum(stat.size_diff for stat in stats) / 1024
 
     print(f"\nMemory Delta after 5,000 operations: {total_diff_kb:.2f} KB")
