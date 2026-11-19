@@ -10,7 +10,7 @@ mailjet30 = Client(auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get(
 
 def create_a_contact():
     unique_email = f"passenger+{uuid.uuid4().hex[:8]}@mailjet.com"
-    data = {"IsExcludedFromCampaigns": "true", "Name": "New Contact", "Email": unique_email}
+    data = {"IsExcludedFromCampaigns": False, "Name": "New Contact", "Email": unique_email}
     return mailjet30.contact.create(data=data)
 
 
@@ -29,7 +29,8 @@ def edit_contact_data():
         try:
             mailjet30.contactmetadata.create(data={"Datatype": "str", "Name": prop, "NameSpace": "static"})
         except ApiError as exc:
-            print(f"Metadata setup note for '{prop}': {exc}")
+            if "CM01" not in str(exc) and "already exists" not in str(exc):
+                raise
     data = {"Data": [{"Name": "first_name", "Value": "John"}, {"Name": "last_name", "Value": "Smith"}]}
     return mailjet30.contactdata.update(id=contact_id, data=data)
 
@@ -92,7 +93,12 @@ def upload_the_csv(list_id=0):
 
 
 def import_csv_content_to_a_list(list_id=0, data_id=0):
-    data = {"ErrThreshold": 1, "Method": "addnoforce", "ContactsListID": list_id, "DataID": data_id}
+    data = {
+        "ErrTreshold": 1,
+        "Method": "addnoforce",
+        "ContactsListID": list_id,
+        "DataID": data_id,
+    }
     return mailjet30.csvimport.create(data=data)
 
 
@@ -115,7 +121,7 @@ def error_handling():
 
 
 def single_contact_exclusion(contact_id=0):
-    data = {"IsExcludedFromCampaigns": "true"}
+    data = {"IsExcludedFromCampaigns": True, "Name": f"Excluded {uuid.uuid4().hex[:6]}"}
     return mailjet30.contact.update(id=contact_id, data=data)
 
 
@@ -183,6 +189,7 @@ def stream_all_contacts(start_offset: int = 0, batch_size: int = 100):
         if count >= 10:  # Break early to keep demo concise
             print("... stopped demo stream after 10 contacts.")
             break
+    return f"{count} contacts streamed"
 
 
 if __name__ == "__main__":
@@ -250,7 +257,14 @@ if __name__ == "__main__":
         import_res.json()["Data"][0]["ID"] if import_res.status_code == 201 and import_res.json().get("Data") else 0
     )
 
-    run_step("using_csv_with_atetime_contact_data", using_csv_with_atetime_contact_data, list_id=lid, data_id=data_id)
+    dt_res = run_step(
+        "using_csv_with_atetime_contact_data",
+        using_csv_with_atetime_contact_data,
+        list_id=lid,
+        data_id=data_id,
+    )
+    if not import_job_id and dt_res.status_code == 201 and dt_res.json().get("Data"):
+        import_job_id = dt_res.json()["Data"][0]["ID"]
     run_step("monitor_the_import_progress", monitor_the_import_progress, job_id=import_job_id)
 
     run_step("single_contact_exclusion", single_contact_exclusion, contact_id=cid)

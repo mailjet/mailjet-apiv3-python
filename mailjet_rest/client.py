@@ -15,6 +15,7 @@ import threading
 import uuid
 import warnings
 from collections.abc import Mapping
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn, TypeVar
 
 import requests
@@ -354,7 +355,7 @@ class BaseClient:
     @staticmethod
     def _check_unexpected_redirect(url: str, response: Any) -> None:
         status_code = getattr(response, "status_code", None)
-        if isinstance(status_code, int) and 300 <= status_code < 400:
+        if isinstance(status_code, int) and 300 <= status_code < 400 and status_code != 304:
             sys.audit("mailjet.security.unexpected_redirect", url, status_code)
             logger.warning("Unexpected HTTP redirect (%s) from %s; redirects are disabled.", status_code, url)
 
@@ -453,6 +454,7 @@ class Client(BaseClient):
                 backoff_factor=1,
                 status_forcelist=sorted(self._TRANSIENT_STATUS_CODES),
                 allowed_methods=list(self._RETRY_ALLOWED_METHODS),
+                raise_on_status=False,
             )
         )
         adapter = SecureHTTPAdapter(
@@ -712,11 +714,15 @@ class AsyncClient(BaseClient):
         """
         with self._lock:
             if self._closed:
-                if self._session is None or getattr(self._session, "is_closed", False):
+                if self._session is None:
                     httpx2_mod = _require_httpx2()
                     closed_session: httpx2.AsyncClient = httpx2_mod.AsyncClient(follow_redirects=False)
                     closed_session.auth = None
                     closed_session.headers.clear()
+                    client_state = getattr(getattr(httpx2_mod, "_client", None), "ClientState", None)
+                    if client_state is not None:
+                        with suppress(AttributeError):
+                            closed_session._state = client_state.CLOSED  # ruff: ignore[private-member-access]
                     self._session = closed_session
                 return self._session
             if self._session is None or getattr(self._session, "is_closed", False):
@@ -840,11 +846,17 @@ class AsyncClient(BaseClient):
             req_kwargs["content"] = data
 
         isolated = req_verify != default_verify or proxies is not None or cert is not None
+        stream_reader = getattr(data, "read", None) if "content" in req_kwargs else None
 
         async def _send() -> httpx2.Response:
+            call_kwargs = req_kwargs
+            if callable(stream_reader):
+                raw_chunk = stream_reader()
+                payload_bytes = raw_chunk.encode("utf-8") if isinstance(raw_chunk, str) else raw_chunk
+                call_kwargs = {**req_kwargs, "content": payload_bytes}
             if isolated:
-                return await self._request_isolated(httpx2_mod, req_verify, proxies, cert, req_kwargs)
-            resp: httpx2.Response = await self.session.request(**req_kwargs)
+                return await self._request_isolated(httpx2_mod, req_verify, proxies, cert, call_kwargs)
+            resp: httpx2.Response = await self.session.request(**call_kwargs)
             return resp
 
         response: httpx2.Response = await run_async_with_retries(

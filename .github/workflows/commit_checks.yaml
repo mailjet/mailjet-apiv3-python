@@ -73,6 +73,7 @@ jobs:
       - name: Run static typing & slot checks
         run: |
           mypy --strict mailjet_rest
+          mypy --strict mailjet_rest/client.py mailjet_rest/endpoint.py
           pyright mailjet_rest
           slotscheck -m mailjet_rest
           python scripts/check_stubs.py --check

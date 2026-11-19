@@ -33,8 +33,19 @@ def get_message_information(message_id: int) -> Any:
 
 
 def list_message_sent_statistics(limit: int = 5) -> Any:
-    """GET https://api.mailjet.com/v3/REST/messagesentstatistics"""
+    """GET https://api.mailjet.com/v3/REST/messagesentstatistics (deprecated 410 Gone; prefer statcounters)."""
     return mailjet30.messagesentstatistics.get(filters={"Limit": limit})
+
+
+def get_api_key_statcounters() -> Any:
+    """GET https://api.mailjet.com/v3/REST/statcounters"""
+    return mailjet30.statcounters.get(
+        filters={
+            "CounterSource": "APIKey",
+            "CounterTiming": "Message",
+            "CounterResolution": "Lifetime",
+        }
+    )
 
 
 def list_message_states() -> Any:
@@ -69,7 +80,7 @@ if __name__ == "__main__":
             (get_message, {"message_id": msg_id}),
             (get_message_history, {"message_id": msg_id}),
             (get_message_information, {"message_id": msg_id}),
-            (list_message_sent_statistics, {}),
+            (get_api_key_statcounters, {}),
             (list_message_states, {}),
             (list_bounce_statistics, {}),
             (list_click_statistics, {}),

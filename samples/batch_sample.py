@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 from mailjet_rest import Client
+from mailjet_rest.errors import DoesNotExistError
 
 mailjet30 = Client(
     auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
@@ -57,6 +58,11 @@ if __name__ == "__main__":
                 try:
                     res = func(job_id=job_id)
                     print(f"{func.__name__}: {res.status_code}")
+                except DoesNotExistError:
+                    if func is get_batch_job_csv_error:
+                        print("get_batch_job_csv_error: 404 (no CSV errors recorded for this job)")
+                    else:
+                        print(f"{func.__name__}: 404 (not found)")
                 except Exception as exc:
                     print(f"{func.__name__} failed: {exc}")
         # Mutating call kept optional for safety:

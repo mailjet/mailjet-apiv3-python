@@ -1,24 +1,16 @@
 import json
 import os
 
-from mailjet_rest import Client
-
-
-mailjet30 = Client(
-    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
-)
-
-mailjet31 = Client(
-    auth=(os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", "")),
-    version="v3.1",
-)
 
 if __name__ == "__main__":
     if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
         print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
         raise SystemExit(0)
 
-    from samples.contacts_sample import edit_contact_data
+    try:
+        from samples.contacts_sample import edit_contact_data
+    except ModuleNotFoundError:
+        from contacts_sample import edit_contact_data  # type: ignore[import-not-found]
 
     result = edit_contact_data()
     print(result.status_code)

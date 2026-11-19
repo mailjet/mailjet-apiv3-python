@@ -77,6 +77,8 @@ jobs:
             "mailjet_rest/client.pyi" \
             "mailjet_rest/endpoint.pyi" \
             "mailjet_rest/errors.py" \
+            "mailjet_rest/testing.py" \
+            "mailjet_rest/webhooks.py" \
             "mailjet_rest/utils/retry.py" \
             "mailjet_rest/utils/routing.py" \
             "mailjet_rest/utils/telemetry.py" \
@@ -155,6 +157,13 @@ jobs:
         with:
           attestations: true
           verbose: true
+
+      - name: Generate SLSA v1.2 build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*
+            sbom/*.cdx.json
 
       - name: Attach SBOM to GitHub Release
         env:

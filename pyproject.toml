@@ -20,6 +20,7 @@ exclude = ["tests*"]
 
 [tool.setuptools.package-data]
 mailjet_rest = ["py.typed", "*.pyi"]
+"mailjet_rest.utils" = ["py.typed", "*.pyi"]
 
 [project]
 name = "mailjet-rest"
@@ -425,7 +426,7 @@ omit = [
 tests = ["tests"]
 
 [tool.coverage.report]
-fail_under = 80
+fail_under = 93
 show_missing = true
 exclude_lines = [
     "no cov",
@@ -445,11 +446,15 @@ markers = [
 source_paths = ["mailjet_rest"]
 only_mutate = [
     "mailjet_rest/builders.py",
+    "mailjet_rest/config.py",
     "mailjet_rest/endpoint.py",
+    "mailjet_rest/errors.py",
+    "mailjet_rest/testing.py",
     "mailjet_rest/utils/retry.py",
     "mailjet_rest/utils/routing.py",
     "mailjet_rest/utils/transport_security.py",
     "mailjet_rest/utils/version.py",
+    "mailjet_rest/webhooks.py",
 ]
 do_not_mutate = [
     "mailjet_rest/_version.py",
@@ -460,3 +465,6 @@ do_not_mutate = [
 also_copy = ["scripts/", ".clusterfuzzlite/"]
 pytest_add_cli_args = ["-o", "addopts=", "-p", "no:benchmark", "-p", "no:xdist", "--ignore=tests/unit/test_stubs.py"]
 pytest_add_cli_args_test_selection = ["tests/unit", "tests/regression"]
+
+[tool.typos.default.extend-words]
+Treshold = "Treshold"

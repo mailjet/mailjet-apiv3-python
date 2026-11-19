@@ -10,7 +10,15 @@ import uuid
 import logging
 import time
 
-from mailjet_rest import Client, MailjetAuthError, ValidationError, ApiError, DoesNotExistError
+from mailjet_rest import (
+    ApiError,
+    Client,
+    DoesNotExistError,
+    MailjetAuthError,
+    MockMailjetClient,
+    ValidationError,
+    verify_webhook_signature,
+)
 from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder
 
 
@@ -289,6 +297,18 @@ def run_readme_tests():
         asyncio.run(_async_ping())
     except ImportError:
         print("⚠️ AsyncClient skipped (httpx2 extra not installed).")
+
+    # 8. ECOSYSTEM DX (MockMailjetClient & Webhook Signature Verification)
+    section("Ecosystem DX (MOD-03: MockMailjetClient & Webhook Verifier)")
+    with MockMailjetClient() as mock_client:
+        mock_res = mock_client.send_v31.create(data={"Messages": [{"Subject": "Offline Smoke"}]})
+        if mock_res.status_code != 200 or len(mock_client.sent_requests) != 1:
+            msg = "MockMailjetClient failed offline smoke check."
+            raise RuntimeError(msg)
+    if verify_webhook_signature(b"{}", "0" * 64, "signing_key"):
+        msg = "verify_webhook_signature accepted an invalid digest."
+        raise RuntimeError(msg)
+    print("✅ MockMailjetClient & verify_webhook_signature passed.")
 
     print(f"\n{'=' * 60}\n🎉 ALL TESTS AND HEALTH CHECKS COMPLETED SUCCESSFULLY!\n{'=' * 60}")
 
