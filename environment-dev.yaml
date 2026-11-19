@@ -12,9 +12,9 @@ dependencies:
   # runtime deps
   - httpx2 >=2.0.0
   - requests >=2.33.0
-  - typing-extensions>=4.7.1  # [py<312]
+  - typing-extensions >=4.7.1
   # tests
-  - coverage >=4.5.4
+  - coverage >=7.16.2
   - hypothesis
   - pyfakefs
   - pytest >=9.0.3
@@ -37,9 +37,10 @@ dependencies:
       # Optional: requires Clang/libFuzzer; install via: pip install -e ".[fuzzing]"
       # - atheris
       - bandit
+      - orjson >=3.10.0
       - pip-audit
       - pyright
-      - scalene >=1.3.16
+      - scalene >=2.4.0
       - slotscheck
       - snakeviz
       - typos

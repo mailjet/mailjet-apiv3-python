@@ -19,10 +19,6 @@ WORKDIR "$SRC/mailjet-apiv3-python"
 # Copy the build script into the $SRC root
 COPY .clusterfuzzlite/build.sh "$SRC/"
 
-# Drop root privileges for fuzzer build execution
-RUN useradd --create-home --uid 10001 fuzzer \
-    && mkdir -p "$SRC" "$OUT" "$WORK" \
-    && chown -R fuzzer:fuzzer /usr/local "$SRC" "$OUT" "$WORK"
 # hadolint ignore=DL3002
 # checkov:skip=CKV_DOCKER_3:ClusterFuzzLite compile requires root to write /usr/lib/libFuzzingEngine.a
 # nosemgrep: dockerfile.security.last-user-is-root.last-user-is-root

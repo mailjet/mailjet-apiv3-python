@@ -207,11 +207,22 @@ fuzz_all() {
     fi
 
     local -a pids=()
+    local -a all_pids=()
+    local -a active_pids=()
     local max_jobs="${FUZZ_JOBS:-3}"
-    local fuzzer
+    local fuzzer pid
     for fuzzer in "${fuzzers[@]}"; do
-        while [[ "$(jobs -rp | wc -l)" -ge "${max_jobs}" ]]; do
-            sleep 0.2
+        while [[ "${#pids[@]}" -ge "${max_jobs}" ]]; do
+            active_pids=()
+            for pid in "${pids[@]}"; do
+                if kill -0 "${pid}" 2>/dev/null; then
+                    active_pids+=("${pid}")
+                fi
+            done
+            pids=("${active_pids[@]+"${active_pids[@]}"}")
+            if [[ "${#pids[@]}" -ge "${max_jobs}" ]]; then
+                sleep 0.2
+            fi
         done
 
         local fuzzer_name
@@ -238,13 +249,14 @@ fuzz_all() {
                 "${fuzzer_corpus}" \
                 "$@" > "fuzz_output.log" 2>&1
         ) &
-        pids+=("$!")
+        pid="$!"
+        pids+=("${pid}")
+        all_pids+=("${pid}")
     done
 
     info "All fuzzers launched in isolation. Waiting for completion..."
     local status=0
-    local pid
-    for pid in "${pids[@]}"; do
+    for pid in "${all_pids[@]}"; do
         if ! wait "${pid}"; then
             status=1
         fi
@@ -333,15 +345,15 @@ release() {
 clean() {
     info "Cleaning up workspace (caches, builds, coverage)..."
 
-    find . -type d -name '__pycache__' -exec rm -rf {} +
-    find . -type f -name '*.py[co]' -exec rm -f {} +
-    find . -type f -name '*~' -exec rm -f {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type d -name '__pycache__' -exec rm -rf {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type f -name '*.py[co]' -exec rm -f {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type f -name '*~' -exec rm -f {} +
 
     rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/ .tox/
     rm -rf .coverage htmlcov/ coverage.xml reports/
     rm -rf build/ dist/ .eggs/
-    find . -type d -name '*.egg-info' -exec rm -rf {} +
-    find . -type f -name '*.egg' -exec rm -f {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type d -name '*.egg-info' -exec rm -rf {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type f -name '*.egg' -exec rm -f {} +
 
     rm -rf logs/
     rm -rf mutants/ .mutmut-cache

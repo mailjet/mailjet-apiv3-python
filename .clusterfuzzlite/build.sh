@@ -13,9 +13,10 @@ build_fuzzer() {
   work_dir="${WORK}/pyi-${fuzzer_basename}"
   mkdir -p -- "${work_dir}"
 
-  # Bundle standalone executable using isolated work/spec paths for parallel safety
-  pyinstaller --distpath "${OUT}" --workpath "${work_dir}" --specpath "${work_dir}" \
-    --onefile --name "${fuzzer_package}" "${fuzzer}"
+  # Bundle standalone executable using isolated work/spec/cache paths for parallel safety
+  PYINSTALLER_CONFIG_DIR="${work_dir}/pyi-cache" \
+    pyinstaller --distpath "${OUT}" --workpath "${work_dir}" --specpath "${work_dir}" \
+      --onefile --name "${fuzzer_package}" "${fuzzer}"
 
   # 3. Create execution wrapper script
   cat > "${OUT}/${fuzzer_basename}" <<EOF
@@ -29,23 +30,40 @@ EOF
 
   chmod +x "${OUT}/${fuzzer_basename}"
 
-  if [ -f "${SRC}/tests/fuzz/fuzzer.dict" ]; then
-    cp "${SRC}/tests/fuzz/fuzzer.dict" "${OUT}/${fuzzer_basename}.dict"
+  local dict_path
+  dict_path="$(dirname -- "${fuzzer}")/fuzzer.dict"
+  if [ ! -f "${dict_path}" ]; then
+    echo "ERROR: Missing fuzzer dictionary '${dict_path}' (expected tests/fuzz/fuzzer.dict)" >&2
+    return 1
   fi
+  cp -- "${dict_path}" "${OUT}/${fuzzer_basename}.dict"
 }
 
 max_jobs="$(nproc 2>/dev/null || echo 4)"
 declare -a pids=()
+declare -a all_pids=()
+declare -a active_pids=()
 while IFS= read -r -d '' fuzzer; do
-  build_fuzzer "${fuzzer}" &
-  pids+=("$!")
-  while [ "$(jobs -rp | wc -l)" -ge "${max_jobs}" ]; do
-    sleep 0.2
+  while [ "${#pids[@]}" -ge "${max_jobs}" ]; do
+    active_pids=()
+    for pid in "${pids[@]}"; do
+      if kill -0 "${pid}" 2>/dev/null; then
+        active_pids+=("${pid}")
+      fi
+    done
+    pids=("${active_pids[@]+"${active_pids[@]}"}")
+    if [ "${#pids[@]}" -ge "${max_jobs}" ]; then
+      sleep 0.2
+    fi
   done
-done < <(find "${SRC}" \( -name 'fuzz_*.py' -o -name '*_fuzzer.py' \) -print0)
+  build_fuzzer "${fuzzer}" &
+  pid="$!"
+  pids+=("${pid}")
+  all_pids+=("${pid}")
+done < <(find "${SRC}/mailjet-apiv3-python/tests/fuzz" \( -name 'fuzz_*.py' -o -name '*_fuzzer.py' \) -print0)
 
 build_rc=0
-for pid in "${pids[@]}"; do
+for pid in "${all_pids[@]}"; do
   if ! wait "${pid}"; then
     build_rc=1
   fi

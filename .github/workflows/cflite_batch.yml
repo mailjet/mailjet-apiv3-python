@@ -2,10 +2,14 @@ name: ClusterFuzzLite batch fuzzing
 on:
   schedule:
     - cron: '0 0 1 * *'  # 00:00 UTC on the 1st of every month
-permissions: read-all
+permissions:
+  contents: read
 jobs:
   BatchFuzzing:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -36,3 +40,13 @@ jobs:
           parallel-fuzzing: true
           sanitizer: ${{ matrix.sanitizer }}
           output-sarif: true
+
+      - name: Upload SARIF
+        if: >-
+          !cancelled() &&
+          steps.build.outcome == 'success' &&
+          hashFiles('cifuzz-sarif/results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # 4.39.3
+        with:
+          sarif_file: cifuzz-sarif/results.sarif
+          category: "cflite-batch-${{ matrix.sanitizer }}"

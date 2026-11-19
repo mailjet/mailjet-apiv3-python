@@ -28,3 +28,10 @@ updates:
       codeql-action:
         patterns:
           - "github/codeql-action*"
+
+  - package-ecosystem: "docker"
+    directory: "/.clusterfuzzlite"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7

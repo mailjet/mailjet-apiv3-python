@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       is_stable: ${{ steps.get_version.outputs.is_stable }}
@@ -40,14 +42,21 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
           REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF: ${{ github.ref }}
         run: |
-          if [[ "$EVENT_NAME" == "release" ]]; then
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            VERSION="${TAG_NAME#v}"
+            PRETEND_VERSION="$VERSION"
+          elif [[ "$EVENT_NAME" == "release" && "$RELEASE_TAG" == v* ]]; then
             TAG_NAME="$RELEASE_TAG"
+            VERSION="${TAG_NAME#v}"
+            PRETEND_VERSION="$VERSION"
           else
             TAG_NAME="$REF_NAME"
+            VERSION="$(python -m setuptools_scm)"
+            PRETEND_VERSION=""
           fi
-
-          VERSION="${TAG_NAME#v}"
 
           if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             IS_STABLE="true"
@@ -57,11 +66,18 @@ jobs:
 
           echo "is_stable=$IS_STABLE" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "pretend_version=$PRETEND_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build package
         env:
-          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.get_version.outputs.version }}
-        run: python -m build
+          PRETEND_VERSION: ${{ steps.get_version.outputs.pretend_version }}
+          GITHUB_REF: ${{ github.ref }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* || -n "$PRETEND_VERSION" ]]; then
+            SETUPTOOLS_SCM_PRETEND_VERSION="$PRETEND_VERSION" python -m build
+          else
+            python -m build
+          fi
 
       - name: Verify package (check dist)
         run: |
@@ -71,22 +87,33 @@ jobs:
       - name: Verify wheel contents
         run: |
           set -o pipefail
-          wheel_listing="$(unzip -l dist/*.whl)"
+          wheel_listing="$(unzip -Z1 dist/*.whl)"
           for required_file in \
-            "mailjet_rest/py.typed" \
+            "mailjet_rest/__init__.py" \
+            "mailjet_rest/_version.py" \
+            "mailjet_rest/builders.py" \
+            "mailjet_rest/client.py" \
             "mailjet_rest/client.pyi" \
+            "mailjet_rest/config.py" \
+            "mailjet_rest/endpoint.py" \
             "mailjet_rest/endpoint.pyi" \
             "mailjet_rest/errors.py" \
+            "mailjet_rest/py.typed" \
+            "mailjet_rest/routes.py" \
             "mailjet_rest/testing.py" \
+            "mailjet_rest/types.py" \
             "mailjet_rest/webhooks.py" \
+            "mailjet_rest/utils/__init__.py" \
+            "mailjet_rest/utils/filesystem_security.py" \
+            "mailjet_rest/utils/guardrails.py" \
+            "mailjet_rest/utils/html_guard.py" \
             "mailjet_rest/utils/retry.py" \
             "mailjet_rest/utils/routing.py" \
             "mailjet_rest/utils/telemetry.py" \
-            "mailjet_rest/utils/html_guard.py" \
-            "mailjet_rest/utils/filesystem_security.py" \
-            "mailjet_rest/utils/transport_security.py"
+            "mailjet_rest/utils/transport_security.py" \
+            "mailjet_rest/utils/version.py"
           do
-            echo "$wheel_listing" | grep -q "$required_file" || {
+            echo "$wheel_listing" | grep -Fxq "$required_file" || {
               echo "Missing expected file in wheel: $required_file" >&2
               exit 1
             }
@@ -106,9 +133,9 @@ jobs:
         run: |
           mkdir -p sbom
           python -m venv .sbom-tool-venv
-          python -m venv .sbom-target-venv
-          .sbom-tool-venv/bin/pip install --no-cache-dir cyclonedx-bom
-          .sbom-target-venv/bin/pip install --no-cache-dir dist/*.whl
+          python -m venv --without-pip .sbom-target-venv
+          .sbom-tool-venv/bin/pip install --no-cache-dir cyclonedx-bom pip
+          .sbom-tool-venv/bin/pip --python .sbom-target-venv/bin/python install --no-cache-dir dist/*.whl
           .sbom-tool-venv/bin/cyclonedx-py environment .sbom-target-venv/bin/python \
             --pyproject pyproject.toml \
             --mc-type library \
@@ -125,6 +152,13 @@ jobs:
           path: sbom/*.cdx.json
           if-no-files-found: error
           retention-days: 90
+
+      - name: Generate SLSA v1.2 build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/*
+            sbom/*.cdx.json
 
   publish:
     name: Publish to PyPI
@@ -157,13 +191,6 @@ jobs:
         with:
           attestations: true
           verbose: true
-
-      - name: Generate SLSA v1.2 build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: |
-            dist/*
-            sbom/*.cdx.json
 
       - name: Attach SBOM to GitHub Release
         env:

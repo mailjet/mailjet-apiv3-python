@@ -42,6 +42,9 @@ dist
 dist/
 sdist
 sdist/
+sbom/
+.sbom-*-venv/
+.audit-venv/
 wheels/
 wheels
 out/
