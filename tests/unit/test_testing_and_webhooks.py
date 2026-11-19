@@ -105,7 +105,7 @@ def test_mock_mailjet_client_endpoints_and_context_managers() -> None:
 
 def test_verify_webhook_signature_valid_replay_and_edge_cases() -> None:
     """verify_webhook_signature enforces constant-time HMAC-SHA256 digests and replay windows."""
-    secret = "whsec_test_secret_123"
+    secret = "whsec_test_secret_123"  # pragma: allowlist secret
     payload = b'{"event":"sent","MessageID":42}'
     digest = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
 

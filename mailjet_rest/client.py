@@ -716,7 +716,11 @@ class AsyncClient(BaseClient):
             if self._closed:
                 if self._session is None:
                     httpx2_mod = _require_httpx2()
-                    closed_session: httpx2.AsyncClient = httpx2_mod.AsyncClient(follow_redirects=False)
+                    closed_session: httpx2.AsyncClient = httpx2_mod.AsyncClient(
+                        follow_redirects=False,
+                        trust_env=False,
+                        transport=httpx2_mod.AsyncBaseTransport(),
+                    )
                     closed_session.auth = None
                     closed_session.headers.clear()
                     client_state = getattr(getattr(httpx2_mod, "_client", None), "ClientState", None)

@@ -13,7 +13,7 @@ import threading
 import warnings
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -34,7 +34,9 @@ from mailjet_rest.client import _httpx2
 class _RecordingMailjetHandler(http.server.BaseHTTPRequestHandler):
     """Thread-safe local HTTPS Mailjet stub validating wire headers, payloads, retries, and redirects."""
 
-    server: _RecordingHTTPSServer
+    @property
+    def _tls_server(self) -> _RecordingHTTPSServer:
+        return cast("_RecordingHTTPSServer", self.server)
 
     def log_message(self, format: str, *args: Any) -> None:
         """Silence stdlib HTTPServer stderr noise during pytest runs."""
@@ -57,7 +59,7 @@ class _RecordingMailjetHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(encoded)
 
     def _record(self, method: str, body: bytes) -> None:
-        self.server.recorded_requests.append(
+        self._tls_server.recorded_requests.append(
             {
                 "method": method,
                 "path": self.path,
@@ -128,8 +130,8 @@ class _RecordingMailjetHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path.startswith("/v3/REST/flaky"):
-            attempt = self.server.flaky_calls
-            self.server.flaky_calls += 1
+            attempt = self._tls_server.flaky_calls
+            self._tls_server.flaky_calls += 1
             if attempt < 2:
                 self._write_json(429, {"ErrorMessage": "Rate limit"}, extra_headers={"Retry-After": "0"})
                 return
@@ -170,6 +172,7 @@ def _generate_self_signed_cert(cert_dir: Path, name: str) -> tuple[Path, Path]:
     openssl = shutil.which("openssl")
     if openssl is None:
         pytest.skip("openssl binary not available for loopback TLS integration test")
+    assert openssl is not None
     cert_path = cert_dir / f"{name}.pem"
     key_path = cert_dir / f"{name}.key"
     subprocess.run(
@@ -330,7 +333,7 @@ def test_async_client_real_tls_loopback_retries_and_lifecycle(local_tls_server: 
 
             # Real socket 429 retry recovery with BytesIO rewind
             buf = io.BytesIO(b"hello-async-tls")
-            flaky_resp = await ac.api_call("POST", f"{url}v3/REST/flaky", data=buf)
+            flaky_resp = await ac.api_call("POST", f"{url}v3/REST/flaky", data=buf)  # type: ignore[arg-type]
             assert flaky_resp.status_code == 201
             assert flaky_resp.json()["echo_len"] == len(b"hello-async-tls")
 
