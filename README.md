@@ -4,7 +4,7 @@
 
 [![PyPI Version](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
 [![GitHub Release](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
-[![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/mailjet/mailjet-apiv3-python)
+[![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](https://github.com/mailjet/mailjet-apiv3-python)
 [![License](https://img.shields.io/github/license/mailjet/mailjet-apiv3-python)](https://github.com/mailjet/mailjet-apiv3-python/blob/master/LICENSE)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/mailjet-rest)](https://img.shields.io/pypi/dm/mailjet-rest)
 [![GitHub Stars](https://img.shields.io/github/stars/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/stars/mailjet/mailjet-apiv3-python)
@@ -71,7 +71,7 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 This library `mailjet-rest` officially supports the following Python versions:
 
-- Python >= 3.10
+- Python >= 3.10 (3.10 - 3.15)
 
 ## Requirements
 
@@ -214,15 +214,26 @@ from mailjet_rest import AsyncClient
 
 
 async def main() -> None:
-    auth = (os.environ.get("MJ_APIKEY_PUBLIC", ""), os.environ.get("MJ_APIKEY_PRIVATE", ""))
+    auth = (
+        os.environ.get("MJ_APIKEY_PUBLIC", ""),
+        os.environ.get("MJ_APIKEY_PRIVATE", ""),
+    )
     async with AsyncClient(auth=auth) as mailjet:
         if await mailjet.ping():
             resp = await mailjet.send_v31.create(
                 data={
                     "Messages": [
                         {
-                            "From": {"Email": "pilot@mailjet.com", "Name": "Mailjet Pilot"},
-                            "To": [{"Email": "passenger1@mailjet.com", "Name": "Passenger 1"}],
+                            "From": {
+                                "Email": "pilot@mailjet.com",
+                                "Name": "Mailjet Pilot",
+                            },
+                            "To": [
+                                {
+                                    "Email": "passenger1@mailjet.com",
+                                    "Name": "Passenger 1",
+                                }
+                            ],
                             "Subject": "Async email flight plan!",
                             "TextPart": "Hello from AsyncClient!",
                         }
@@ -304,7 +315,13 @@ If your account has been moved to Mailjet's **US architecture**, the URL value y
 The client raises typed exceptions inheriting from `ApiError` for both network failures and HTTP `4xx`/`5xx` error responses (`ValidationError` on `400`, `MailjetAuthError` on `401`/`403`, `DoesNotExistError` on `404`, `ApiRateLimitError` on `429`, `MailjetApiError` on other HTTP errors, and `TimeoutError` / `CriticalApiError` on transport failures).
 
 ```python
-from mailjet_rest import ApiError, CriticalApiError, MailjetAuthError, TimeoutError, ValidationError
+from mailjet_rest import (
+    ApiError,
+    CriticalApiError,
+    MailjetAuthError,
+    TimeoutError,
+    ValidationError,
+)
 
 try:
     result = mailjet.contact.get()

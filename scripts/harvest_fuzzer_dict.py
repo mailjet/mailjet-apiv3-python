@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import io
 import json
 import os
@@ -292,6 +293,14 @@ def _collect_route_call_tokens(val_node: ast.Call, tokens: set[bytes]) -> None:
                 tokens.add(seg.encode("utf-8"))
 
 
+def _resolve_routes_file(repo_root: Path) -> Path:
+    routes_file = repo_root / "mailjet_rest" / "routes.py"
+    if routes_file.is_file():
+        return routes_file
+    spec = importlib.util.find_spec("mailjet_rest.routes")
+    return Path(spec.origin).resolve() if spec and spec.origin else routes_file
+
+
 def harvest_sdk_route_tokens(repo_root: Path) -> set[bytes]:
     """Extract static route names, path segments, and Wave 6 protocol tokens from AST.
 
@@ -301,7 +310,7 @@ def harvest_sdk_route_tokens(repo_root: Path) -> set[bytes]:
     Returns:
         set[bytes]: Validated 1..128 byte SDK protocol and routing tokens.
     """
-    routes_file = repo_root / "mailjet_rest" / "routes.py"
+    routes_file = _resolve_routes_file(repo_root)
     tokens: set[bytes] = set(_WAVE6_PROTOCOL_TOKENS)
     tree = ast.parse(routes_file.read_text(encoding="utf-8"), filename=str(routes_file))
 

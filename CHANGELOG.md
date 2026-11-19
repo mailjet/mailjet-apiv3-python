@@ -21,6 +21,7 @@ ______________________________________________________________________
 - **Moved Seed Harvester to `scripts/`:** Relocated `tests/fuzz/seed_harvester.py` to `scripts/seed_harvester.py` and expanded its targets/seeds for `v4` GDPR `contacts`, `v1` Content API routes, `PATCH`, and RFC 8058 headers.
 - **Release SBOM Artifacts:** Added automated CycloneDX 1.5 JSON SBOM generation (`cyclonedx-py`), CI artifact upload, and GitHub Release asset attachment in `.github/workflows/publish.yml`.
 - **Builder Deliverability, Tracking & Config Controls:** Added RFC 8058 `MessageBuilder.set_list_unsubscribe()`, `set_tracking()`, Gmail `102 KB` clip and missing inline `ContentID` warnings, opt-in `Config.warn_unclosed` (`ResourceWarning`), `Config.max_retries` (`<= 20`), and optional `mailjet-rest[speedups]` (`orjson>=3.10.0`) canonical JSON fingerprinting.
+- **Python 3.15 Support:** Added official support for Python 3.15 across PyPI classifiers, CI test matrix (via isolated `mailjet` Conda runtime environment), `environment.yaml`, and documentation.
 
 ### Changed
 
@@ -35,6 +36,7 @@ ______________________________________________________________________
 - **Closure Reference-Cycle Leak:** Hoisted recursive `_deep_strip` out of `SecurityGuard.generate_payload_fingerprint()` into module-level `_deep_strip_volatile()` to eliminate per-call CPython closure cycles.
 - **Builder & Credential Validation:** Enforced strictly positive non-boolean `int` `template_id` and `bool` `language_active` in `MessageBuilder.set_template()`, and wrapped non-Latin-1 `SecretAuth` encoding errors in explicit `ValueError`.
 - **Code Scanning Alerts:** Resolved cyclic `client`/`endpoint` `TYPE_CHECKING` imports, unused imports/variables, and empty `except` blocks across tests/samples/fuzzers.
+- **Conda Build & Environment Config:** Fixed isolated `conda-build` unit-test imports and installed-package stub/route path resolution (`conda.recipe/meta.yaml`, `scripts/check_stubs.py`, `scripts/harvest_fuzzer_dict.py`), and removed `conda-forge` from `environment-dev.yaml` (moving `pyright` to `pip` and bounding dev Python to `<3.15` until `conda` in `defaults` supports `py315`).
 
 ### Security
 

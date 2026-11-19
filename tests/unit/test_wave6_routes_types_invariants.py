@@ -17,14 +17,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import mailjet_rest
 from mailjet_rest import types as mj_types
 from mailjet_rest.client import AsyncClient, BaseClient, Client, Config, JitterRetry, _httpx2
 from mailjet_rest.errors import MailjetApiError
 from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.utils.guardrails import SecurityGuard
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ==========================================
@@ -80,7 +78,8 @@ def test_wave6_new_openapi_and_v4_routes_build_urls_and_preserve_legacy() -> Non
 
 def test_wave6_routes_declared_in_client_pyi_stubs() -> None:
     """Confirm every new route is declared on both Client and AsyncClient in client.pyi."""
-    stub_text = (REPO_ROOT / "mailjet_rest" / "client.pyi").read_text(encoding="utf-8")
+    assert mailjet_rest.__file__ is not None
+    stub_text = (Path(mailjet_rest.__file__).resolve().parent / "client.pyi").read_text(encoding="utf-8")
     new_routes = (
         "send_v31",
         "contacts",

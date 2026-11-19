@@ -30,6 +30,7 @@ requirements:
     {% endfor %}
   run:
     - python
+    - httpx2 >=2.0.0
     - requests >=2.33.0
     - typing-extensions >=4.7.1  # [py<312]
 
@@ -38,6 +39,11 @@ test:
     - mailjet_rest
     - mailjet_rest.utils
   source_files:
+    - .clusterfuzzlite/build.sh
+    - scripts/
+    - tests/__init__.py
+    - tests/fuzz/fuzz_*.py
+    - tests/fuzz/fuzzer.dict
     - tests/unit/
   requires:
     - hypothesis
@@ -46,7 +52,7 @@ test:
     - responses
   commands:
     - pip check
-    - pytest tests/unit/ -v
+    - python -m pytest tests/unit/ -v
 
 about:
   home: {{ project['urls']['Homepage'] }}

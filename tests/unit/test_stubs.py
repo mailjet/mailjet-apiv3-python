@@ -6,8 +6,14 @@ import ast
 from pathlib import Path
 import shutil
 
+import mailjet_rest
 import scripts.check_stubs as check_stubs
 from mailjet_rest.routes import ROUTE_MAP
+
+
+def _package_dir() -> Path:
+    assert mailjet_rest.__file__ is not None
+    return Path(mailjet_rest.__file__).resolve().parent
 
 
 def test_tracked_stubs_are_synchronized() -> None:
@@ -20,7 +26,7 @@ def test_stub_drift_detected_in_temp_copy(tmp_path: Path) -> None:
     pkg_copy = tmp_path / "mailjet_rest"
     pkg_copy.mkdir()
     for name in ("client.py", "endpoint.py", "routes.py", "client.pyi", "endpoint.pyi"):
-        shutil.copy2(Path("mailjet_rest") / name, pkg_copy / name)
+        shutil.copy2(_package_dir() / name, pkg_copy / name)
 
     assert check_stubs.main(["--check", "--package-dir", str(pkg_copy)]) == 0
 
@@ -48,7 +54,8 @@ def _collect_route_properties(tree: ast.Module, class_name: str, expected_return
 
 def test_client_stub_exposes_every_route_map_property() -> None:
     """Every static route in ROUTE_MAP is declared on Client and AsyncClient in client.pyi."""
-    stub_source = Path("mailjet_rest/client.pyi").read_text(encoding="utf-8")
+    pkg_dir = _package_dir()
+    stub_source = (pkg_dir / "client.pyi").read_text(encoding="utf-8")
     tree = ast.parse(stub_source)
     expected_routes = {route for route in ROUTE_MAP if route.isidentifier()}
 
@@ -57,7 +64,7 @@ def test_client_stub_exposes_every_route_map_property() -> None:
         missing = expected_routes - client_props
         assert not missing, f"Routes missing from {class_name} in client.pyi: {sorted(missing)}"
 
-    ep_stub = Path("mailjet_rest/endpoint.pyi").read_text(encoding="utf-8")
+    ep_stub = (pkg_dir / "endpoint.pyi").read_text(encoding="utf-8")
     ep_tree = ast.parse(ep_stub)
     ep_classes = {node.name for node in ep_tree.body if isinstance(node, ast.ClassDef)}
     assert {"BaseEndpoint", "Endpoint", "AsyncEndpoint"} <= ep_classes
