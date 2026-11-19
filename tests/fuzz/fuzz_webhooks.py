@@ -47,7 +47,16 @@ def TestOneInput(data: bytes) -> None:
 
         if mode == 1:
             payload = fdp.ConsumeBytes(96)
-            secret = fdp.ConsumeUnicodeNoSurrogates(24) or "fuzz_secret"
+            raw_secret = fdp.ConsumeUnicodeNoSurrogates(24)
+            if not raw_secret.strip():
+                try:
+                    verify_webhook_signature(payload, "0" * 64, raw_secret)
+                except ValueError:
+                    pass
+                else:
+                    msg = "Empty or whitespace webhook_secret must raise ValueError"
+                    raise AssertionError(msg)
+            secret = raw_secret if raw_secret.strip() else "fuzz_secret"
             digest = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
             header = f"sha256={digest.upper()}" if fdp.ConsumeBool() else f"  {digest}  "
             now_ts = int(time.time())
@@ -62,6 +71,9 @@ def TestOneInput(data: bytes) -> None:
             )
             if abs(delta) > max_age + 2 and matched:
                 msg = "Replay window check accepted expired webhook signature"
+                raise AssertionError(msg)
+            if abs(delta) + 2 <= max_age and not matched:
+                msg = "Valid HMAC-SHA256 webhook signature within replay window was falsely rejected"
                 raise AssertionError(msg)
             return
 

@@ -18,11 +18,17 @@ execution_counter = 0
 # Initialize a dummy client globally ONCE to save execution time across millions of runs
 _mock_client = Client(auth=("mock_key", "mock_secret"), config=None)
 
+
 class DummyResponse:
     status_code = 200
     text = "fuzzed"
-    def json(self): return {}
-    def raise_for_status(self): pass
+
+    def json(self):
+        return {}
+
+    def raise_for_status(self):
+        pass
+
 
 _mock_client.session.request = lambda *args, **kwargs: DummyResponse()  # type: ignore[method-assign, assignment]
 
@@ -62,7 +68,7 @@ def fuzz_routing(fdp: atheris.FuzzedDataProvider) -> int:
             url=url,
             data=fuzzed_payload,
             headers=fuzzed_headers,
-            timeout=fdp.ConsumeFloat() # Feed fuzzed floats into the timeout validator
+            timeout=fdp.ConsumeFloat(),  # Feed fuzzed floats into the timeout validator
         )
 
     except (ValueError, TypeError, ValidationError, AttributeError, MailjetApiError, MailjetAuthError):

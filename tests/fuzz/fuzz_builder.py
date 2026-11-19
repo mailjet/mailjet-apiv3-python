@@ -35,7 +35,7 @@ def TestOneInput(data: bytes) -> None:
     try:
         builder = MessageBuilder()
         builder.set_sender(
-            email=fdp.ConsumeUnicodeNoSurrogates(32),
+            email=fdp.PickValueInList(["sender@example.com", "pilot@example.com", fdp.ConsumeUnicodeNoSurrogates(32)]),
             name=fdp.ConsumeUnicodeNoSurrogates(32) if fdp.ConsumeBool() else None,
         )
 
@@ -44,7 +44,7 @@ def TestOneInput(data: bytes) -> None:
             op = fdp.ConsumeIntInRange(0, 8)
             if op == 0:
                 builder.add_recipient(
-                    email=fdp.ConsumeUnicodeNoSurrogates(20),
+                    email=fdp.PickValueInList(["recipient@example.com", fdp.ConsumeUnicodeNoSurrogates(20)]),
                     name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 )
             elif op == 1:
@@ -60,7 +60,6 @@ def TestOneInput(data: bytes) -> None:
                     name=fdp.ConsumeUnicodeNoSurrogates(20) if fdp.ConsumeBool() else None,
                 )
             elif op == 4:
-                # Fuzz sizes specifically around the 5MB cutoff limits
                 content = fdp.ConsumeUnicodeNoSurrogates(1024)
                 if fdp.ConsumeBool():
                     builder.set_content(html=content)
@@ -96,16 +95,16 @@ def TestOneInput(data: bytes) -> None:
 
         msg = builder.build()
         SendPayloadBuilder().add_message(msg).set_sandbox_mode(fdp.ConsumeBool()).build()
-    except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
+    except (ValueError, TypeError, ValidationError, KeyError, OSError):
         pass
 
-        # ==========================================
-        # BLOCK 2: Template Content Builder
-        # ==========================================
+    # ==========================================
+    # BLOCK 3: Template Content Builder
+    # ==========================================
     try:
         t_builder = TemplateContentBuilder()
         t_builder.set_meta(author=fdp.ConsumeUnicodeNoSurrogates(20), name=fdp.ConsumeUnicodeNoSurrogates(20))
-        t_builder.set_content(  # type: ignore[call-arg]
+        t_builder.set_content(
             text=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
             html=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
             mjml=fdp.ConsumeUnicodeNoSurrogates(50) if fdp.ConsumeBool() else None,
@@ -118,7 +117,7 @@ def TestOneInput(data: bytes) -> None:
 
         t_builder.build()
 
-    except (ValueError, TypeError, ValidationError, AttributeError, KeyError, OSError):
+    except (ValueError, TypeError, ValidationError, KeyError, OSError):
         # Expected validation/fuzzing error; ignore so the fuzzer can continue.  # noqa: S110
         pass
     except RecursionError:

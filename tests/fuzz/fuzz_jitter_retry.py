@@ -4,7 +4,9 @@ Hunts for floating-point OverflowErrors or division-by-zero crashes.
 """
 
 import logging
+import math
 import sys
+from typing import Any
 
 import atheris
 from urllib3.exceptions import MaxRetryError
@@ -28,7 +30,7 @@ def TestOneInput(data: bytes) -> None:
         total_retries = fdp.ConsumeIntInRange(-1, 1000)
         backoff_factor = fdp.ConsumeFloat()
 
-        retry = JitterRetry(total=total_retries, backoff_factor=backoff_factor)
+        retry: Any = JitterRetry(total=total_retries, backoff_factor=backoff_factor)
 
         # Simulate a massive cascade of fuzzed network failures to bloat the retry history
         num_errors = fdp.ConsumeIntInRange(0, 100)
@@ -38,18 +40,18 @@ def TestOneInput(data: bytes) -> None:
         # Trigger the math calculation
         jitter_time = retry.get_backoff_time()
 
-        if not isinstance(jitter_time, (int, float)):
-            raise RuntimeError("CRASH: JitterRetry returned non-numeric backoff time.")
+        if not isinstance(jitter_time, (int, float)) or not math.isfinite(jitter_time):
+            raise RuntimeError(f"CRASH: JitterRetry returned non-finite/non-numeric backoff time: {jitter_time!r}")
 
         retry_after_hdr = fdp.ConsumeUnicodeNoSurrogates(48)
         parsed_delay = parse_retry_after_http_date(retry_after_hdr)
-        if parsed_delay is not None and (parsed_delay < 0 or parsed_delay > 60.0):
-            raise RuntimeError(f"CRASH: parse_retry_after_http_date out of bounds: {parsed_delay}")
+        if parsed_delay is not None and (not math.isfinite(parsed_delay) or parsed_delay < 0 or parsed_delay > 60.0):
+            raise RuntimeError(f"CRASH: parse_retry_after_http_date non-finite or out of bounds: {parsed_delay}")
 
         attempt = fdp.ConsumeIntInRange(0, 20)
         delay = compute_retry_delay(attempt, retry_after_header=retry_after_hdr if fdp.ConsumeBool() else None)
-        if delay < 0 or delay > 60.0:
-            raise RuntimeError(f"CRASH: retry delay out of bounds: {delay}")
+        if not math.isfinite(delay) or delay < 0 or delay > 60.0:
+            raise RuntimeError(f"CRASH: retry delay non-finite or out of bounds: {delay}")
 
     except (ValueError, TypeError, ZeroDivisionError, OverflowError, MaxRetryError):
         # We expect some extreme floats (like infinity) to trigger native math exceptions

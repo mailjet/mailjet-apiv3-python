@@ -362,7 +362,7 @@
 "<!ATA[\x0a\x0a\x0a"
 "<!C"
 "<!D"
-"<!DCD?+>""
+"<!DCD?+>\""
 "<!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>"
 "<!DOCTYPE html>"
 "<!DOCTYPE"

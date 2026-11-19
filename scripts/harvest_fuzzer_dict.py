@@ -22,10 +22,14 @@ import sys
 import zipfile
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlparse, urlunparse
 
 import requests
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +38,10 @@ DEFAULT_LOGS_DIR = REPO_ROOT / "logs"
 DEFAULT_DICT_PATH = DEFAULT_FUZZ_DIR / "fuzzer.dict"
 DEFAULT_STATE_PATH = DEFAULT_FUZZ_DIR / ".harvest_state.json"
 MAX_DICT_ENTRY_BYTES = 128
+MAX_ZIP_MEMBERS = 512
+MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+MAX_DOWNLOAD_BYTES = 128 * 1024 * 1024
+_DOWNLOAD_CHUNK_SIZE = 65536
 
 _START_MARKER = "###### Recommended dictionary. ######"
 _END_MARKER = "###### End of recommended dictionary. ######"
@@ -101,13 +109,12 @@ def _decode_octal_escape(inner: str, index: int) -> tuple[bytes, int]:
     return bytes((oct_val,)), j
 
 
-def _decode_escape(inner: str, index: int, *, allow_octal: bool) -> tuple[bytes, int]:
-    """Decode one escape sequence starting at backslash `index`.
+def _decode_escape(inner: str, index: int) -> tuple[bytes, int]:
+    """Decode one Recommended dictionary escape sequence starting at backslash `index`.
 
     Args:
         inner (str): Quoted string interior without surrounding quotes.
         index (int): Current backslash character index.
-        allow_octal (bool): Whether octal and control escapes are enabled.
 
     Returns:
         tuple[bytes, int]: Decoded byte sequence and next character index.
@@ -119,23 +126,22 @@ def _decode_escape(inner: str, index: int, *, allow_octal: bool) -> tuple[bytes,
     nxt = inner[index + 1]
     if escaped := _SIMPLE_ESCAPES.get(nxt):
         return escaped, index + 2
-    if allow_octal and (ctrl := _OCTAL_CONTROL_ESCAPES.get(nxt)):
+    if ctrl := _OCTAL_CONTROL_ESCAPES.get(nxt):
         return ctrl, index + 2
     if nxt == "x" and index + 3 < n:
         hex_part = inner[index + 2 : index + 4]
         if all(c in string.hexdigits for c in hex_part):
             return bytes((int(hex_part, 16),)), index + 4
-    if allow_octal and nxt in string.octdigits:
+    if nxt in string.octdigits:
         return _decode_octal_escape(inner, index)
     return inner[index].encode("utf-8"), index + 1
 
 
-def _decode_token(raw_inner: str, *, allow_octal: bool) -> bytes:
-    """Decode a quoted dictionary string inner body into raw bytes.
+def _decode_token(raw_inner: str) -> bytes:
+    """Decode a Recommended dictionary string inner body into raw bytes.
 
     Args:
         raw_inner (str): Quoted dictionary entry interior.
-        allow_octal (bool): Whether to parse libFuzzer octal escapes.
 
     Returns:
         bytes: Unescaped raw token bytes.
@@ -146,7 +152,7 @@ def _decode_token(raw_inner: str, *, allow_octal: bool) -> bytes:
     while i < n:
         ch = raw_inner[i]
         if ch == "\\":
-            decoded, i = _decode_escape(raw_inner, i, allow_octal=allow_octal)
+            decoded, i = _decode_escape(raw_inner, i)
             out.extend(decoded)
         else:
             out.extend(ch.encode("utf-8"))
@@ -154,21 +160,68 @@ def _decode_token(raw_inner: str, *, allow_octal: bool) -> bytes:
     return bytes(out)
 
 
+def _strip_optional_dict_prefix(stripped: str) -> str | None:
+    first_quote = stripped.find('"')
+    last_quote = stripped.rfind('"')
+    if first_quote == -1 or last_quote <= first_quote or last_quote != len(stripped) - 1:
+        return None
+    if first_quote == 0:
+        return stripped[1:-1]
+    prefix = stripped[:first_quote]
+    if not prefix.endswith("=") or len(prefix) < 2:
+        return None
+    key = prefix[:-1]
+    if any(ch.isspace() or ch in {'"', "\\"} for ch in key):
+        return None
+    return stripped[first_quote + 1 : last_quote]
+
+
+def _decode_dict_escape(inner: str, index: int) -> tuple[bytes, int] | None:
+    n = len(inner)
+    if index + 1 >= n:
+        return None
+    nxt = inner[index + 1]
+    if escaped := _SIMPLE_ESCAPES.get(nxt):
+        return escaped, index + 2
+    if nxt == "x" and index + 3 < n:
+        hex_part = inner[index + 2 : index + 4]
+        if all(c in string.hexdigits for c in hex_part):
+            return bytes((int(hex_part, 16),)), index + 4
+    return None
+
+
 def parse_dict_line(line: str) -> bytes | None:
-    """Parse an existing libFuzzer `.dict` line into raw bytes.
+    """Parse an existing libFuzzer `.dict` line into raw bytes using strict ParseOneDictionaryEntry grammar.
 
     Args:
         line (str): Single line from an existing `.dict` file.
 
     Returns:
-        bytes | None: Decoded entry bytes, or None for blank/comment/unquoted lines.
+        bytes | None: Decoded entry bytes, or None for blank/comment/invalid lines.
     """
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None
-    if not (stripped.startswith('"') and stripped.endswith('"')) or len(stripped) < 2:
+    inner = _strip_optional_dict_prefix(stripped)
+    if inner is None:
         return None
-    return _decode_token(stripped[1:-1], allow_octal=False)
+
+    out = bytearray()
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        if ch == '"':
+            return None
+        if ch == "\\":
+            decoded = _decode_dict_escape(inner, i)
+            if decoded is None:
+                return None
+            chunk, i = decoded
+            out.extend(chunk)
+        else:
+            out.extend(ch.encode("utf-8"))
+            i += 1
+    return bytes(out) if out else None
 
 
 def parse_recommended_token(raw_inner: str) -> bytes:
@@ -180,7 +233,7 @@ def parse_recommended_token(raw_inner: str) -> bytes:
     Returns:
         bytes: Raw byte token corresponding to the Recommended dictionary entry.
     """
-    return _decode_token(raw_inner, allow_octal=True)
+    return _decode_token(raw_inner)
 
 
 def extract_recommended_from_text(log_text: str) -> dict[bytes, int]:
@@ -220,6 +273,10 @@ def extract_recommended_from_text(log_text: str) -> dict[bytes, int]:
     return dict(counts)
 
 
+def _has_mixed_alnum_run(text: str) -> bool:
+    return any(any(c.isalpha() for c in run) and any(c.isdigit() for c in run) for run in _ALNUM_RUN_RE.findall(text))
+
+
 def _needs_hex_shield(raw: bytes, hex_words: frozenset[str] = frozenset()) -> bool:
     r"""Detect substrings that should be hex-encoded to avoid secret/typo false positives.
 
@@ -234,18 +291,11 @@ def _needs_hex_shield(raw: bytes, hex_words: frozenset[str] = frozenset()) -> bo
         return True
     text = raw.decode("latin-1")
     lower = text.lower()
-    if "://" in text and "@" in text:
+    if ("://" in text and "@" in text) or any(word in lower for word in hex_words):
         return True
-    if any(lower.startswith(prefix) or prefix in lower for prefix in _SECRET_PREFIXES):
+    if any(prefix in lower for prefix in _SECRET_PREFIXES):
         return True
-    if any(word in lower for word in hex_words):
-        return True
-    for run in _ALNUM_RUN_RE.findall(text):
-        has_alpha = any(c.isalpha() for c in run)
-        has_digit = any(c.isdigit() for c in run)
-        if has_alpha and has_digit:
-            return True
-    return False
+    return _has_mixed_alnum_run(text)
 
 
 def format_dict_entry(raw: bytes, *, force_hex: bool = False, hex_words: frozenset[str] = frozenset()) -> str:
@@ -331,6 +381,19 @@ def harvest_sdk_route_tokens(repo_root: Path) -> set[bytes]:
     return {tok for tok in tokens if 1 <= len(tok) <= MAX_DICT_ENTRY_BYTES}
 
 
+def _find_target_log(target_dir: Path, fuzzer_name: str) -> Path | None:
+    if target_dir.is_symlink():
+        return None
+    for candidate in (
+        target_dir / "fuzz_output.log",
+        target_dir / "fuzzer_output.log",
+        target_dir / f"{fuzzer_name}.log",
+    ):
+        if not candidate.is_symlink() and candidate.is_file():
+            return candidate
+    return None
+
+
 def discover_fuzzer_logs(
     fuzz_dir: Path = DEFAULT_FUZZ_DIR,
     logs_dir: Path = DEFAULT_LOGS_DIR,
@@ -344,30 +407,49 @@ def discover_fuzzer_logs(
     Returns:
         list[Path]: Sorted list of existing log file paths matching discovered fuzz targets.
     """
-    discovered: list[Path] = []
     if not fuzz_dir.is_dir() or not logs_dir.is_dir():
-        return discovered
+        return []
 
+    discovered: list[Path] = []
     for fuzz_script in sorted(fuzz_dir.glob("*.py")):
-        if fuzz_script.name.startswith("_"):
+        if fuzz_script.is_symlink() or fuzz_script.name.startswith("_"):
             continue
         fuzzer_name = fuzz_script.stem
-        target_dir = logs_dir / fuzzer_name
-        for candidate in (target_dir / "fuzz_output.log", target_dir / f"{fuzzer_name}.log"):
-            if candidate.is_file():
-                discovered.append(candidate)
-                break
+        if found := _find_target_log(logs_dir / fuzzer_name, fuzzer_name):
+            discovered.append(found)
     return discovered
+
+
+def _read_zip_member_bounded(archive: zipfile.ZipFile, info: zipfile.ZipInfo, remaining: int) -> bytes:
+    if info.file_size > remaining:
+        msg = f"Zip archive exceeds maximum uncompressed size ({MAX_UNCOMPRESSED_BYTES} bytes)."
+        raise ValueError(msg)
+    chunks: list[bytes] = []
+    read_total = 0
+    with archive.open(info, "r") as member:
+        while chunk := member.read(_DOWNLOAD_CHUNK_SIZE):
+            read_total += len(chunk)
+            if read_total > remaining:
+                msg = f"Zip archive exceeds maximum uncompressed size ({MAX_UNCOMPRESSED_BYTES} bytes)."
+                raise ValueError(msg)
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _collect_from_zip(zip_bytes: bytes) -> Counter[bytes]:
     totals: Counter[bytes] = Counter()
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
-        for info in archive.infolist():
+        infos = archive.infolist()
+        if len(infos) > MAX_ZIP_MEMBERS:
+            msg = f"Zip archive exceeds maximum member count ({MAX_ZIP_MEMBERS})."
+            raise ValueError(msg)
+        total_uncompressed = 0
+        for info in infos:
             if info.is_dir():
                 continue
-            raw_text = archive.read(info.filename).decode("utf-8", errors="replace")
-            totals.update(extract_recommended_from_text(raw_text))
+            member_bytes = _read_zip_member_bounded(archive, info, MAX_UNCOMPRESSED_BYTES - total_uncompressed)
+            total_uncompressed += len(member_bytes)
+            totals.update(extract_recommended_from_text(member_bytes.decode("utf-8", errors="replace")))
     return totals
 
 
@@ -381,9 +463,12 @@ def collect_from_path(target: Path) -> Counter[bytes]:
         Counter[bytes]: Aggregated counts of discovered dictionary entries.
     """
     totals: Counter[bytes] = Counter()
+    if target.is_symlink():
+        return totals
     if target.is_dir():
         for child in sorted(target.rglob("*")):
-            if child.is_file() and child.suffix.lower() in {".txt", ".log", ".zip"}:
+            is_log_or_zip = child.suffix.lower() in {".txt", ".log", ".zip"} or child.name == "fuzzer_output.log"
+            if not child.is_symlink() and child.is_file() and is_log_or_zip:
                 totals.update(collect_from_path(child))
         return totals
 
@@ -396,21 +481,81 @@ def collect_from_path(target: Path) -> Counter[bytes]:
     return totals
 
 
+def _is_allowed_github_host(host: str) -> bool:
+    return host == "api.github.com" or (host.endswith(".blob.core.windows.net") and host != ".blob.core.windows.net")
+
+
 def _build_validated_github_url(url: str) -> tuple[str, str]:
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
-    is_allowed_host = host == "api.github.com" or (
-        host.endswith(".blob.core.windows.net") and host != ".blob.core.windows.net"
-    )
     has_userinfo = bool(parsed.username or parsed.password)
-    if parsed.scheme != "https" or not is_allowed_host or has_userinfo or parsed.port not in {None, 443}:
+    if parsed.scheme != "https" or not _is_allowed_github_host(host) or has_userinfo or parsed.port not in {None, 443}:
         msg = f"Disallowed GitHub log URL: {url!r}"
         raise ValueError(msg)
     safe_url = urlunparse(("https", host, parsed.path or "/", "", parsed.query, ""))
     return host, safe_url
 
 
-def _github_https_get(url: str, token: str | None) -> tuple[int, bytes, dict[str, str]]:
+def _check_content_length_cap(resp_headers: dict[str, str], max_bytes: int) -> None:
+    raw_len = resp_headers.get("content-length")
+    if raw_len is None:
+        return
+    try:
+        parsed_len = int(raw_len)
+    except ValueError:
+        return
+    if parsed_len > max_bytes:
+        msg = f"HTTP response Content-Length ({raw_len}) exceeds maximum download limit ({max_bytes} bytes)."
+        raise ValueError(msg)
+
+
+def _read_bounded_response_bytes(resp: Any, resp_headers: dict[str, str], max_bytes: int) -> bytes:
+    _check_content_length_cap(resp_headers, max_bytes)
+    iter_content: Any = getattr(resp, "iter_content", None)
+    if not callable(iter_content):
+        content = bytes(resp.content)
+        if len(content) > max_bytes:
+            msg = f"HTTP response exceeds maximum download limit ({max_bytes} bytes)."
+            raise ValueError(msg)
+        return content
+
+    chunks: list[bytes] = []
+    total = 0
+    chunk_stream = cast("Callable[..., Iterable[bytes]]", iter_content)(chunk_size=_DOWNLOAD_CHUNK_SIZE)
+    for chunk in chunk_stream:
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > max_bytes:
+            msg = f"HTTP response exceeds maximum download limit ({max_bytes} bytes)."
+            raise ValueError(msg)
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _issue_github_get(safe_url: str, headers: dict[str, str]) -> Any:
+    try:
+        return requests.get(
+            safe_url,
+            headers=headers,
+            timeout=30.0,
+            verify=True,
+            allow_redirects=False,
+            stream=True,
+        )
+    except TypeError as exc:
+        if "stream" not in str(exc):
+            raise
+        return requests.get(safe_url, headers=headers, timeout=30.0, verify=True, allow_redirects=False)
+
+
+def _github_https_get(
+    url: str,
+    token: str | None,
+    *,
+    max_bytes: int | None = None,
+) -> tuple[int, bytes, dict[str, str]]:
+    limit = MAX_DOWNLOAD_BYTES if max_bytes is None else max_bytes
     current_url = url
     current_token = token
     for _ in range(4):
@@ -421,13 +566,19 @@ def _github_https_get(url: str, token: str | None) -> tuple[int, bytes, dict[str
             if current_token:
                 headers["Authorization"] = f"Bearer {current_token}"
 
-        resp = requests.get(safe_url, headers=headers, timeout=30.0, verify=True, allow_redirects=False)
-        resp_headers = {k.lower(): v for k, v in resp.headers.items()}
-        if resp.status_code in {301, 302, 303, 307, 308} and (loc := resp_headers.get("location")):
-            current_url = loc
-            current_token = None
-            continue
-        return resp.status_code, resp.content, resp_headers
+        resp = _issue_github_get(safe_url, headers)
+        try:
+            resp_headers = {k.lower(): v for k, v in resp.headers.items()}
+            if resp.status_code in {301, 302, 303, 307, 308} and (loc := resp_headers.get("location")):
+                current_url = loc
+                current_token = None
+                continue
+            body = _read_bounded_response_bytes(resp, resp_headers, limit)
+            return resp.status_code, body, resp_headers
+        finally:
+            close_fn = getattr(resp, "close", None)
+            if callable(close_fn):
+                close_fn()
 
     msg = "Exceeded maximum redirect hops while fetching GitHub Actions logs."
     raise ValueError(msg)
@@ -482,23 +633,35 @@ def _discover_completed_runs(repo: str, workflows: list[str], cutoff: str, token
     return discovered
 
 
+def _fetch_unprocessed_logs(
+    repo: str,
+    resource_kind: str,
+    item_ids: Iterable[int],
+    processed_ids: set[int] | None,
+    token: str | None,
+    parser: Callable[[bytes], Counter[bytes] | dict[bytes, int]],
+) -> Counter[bytes]:
+    totals: Counter[bytes] = Counter()
+    skip = processed_ids if processed_ids is not None else set()
+    for item_id in item_ids:
+        if item_id in skip:
+            continue
+        url = f"https://api.github.com/repos/{repo}/actions/{resource_kind}/{item_id}/logs"
+        status, body, _ = _github_https_get(url, token)
+        if status == 200 and body:
+            totals.update(parser(body))
+        if status in {200, 410} and processed_ids is not None:
+            processed_ids.add(item_id)
+    return totals
+
+
 def _fetch_unprocessed_runs(
     repo: str,
     run_ids: set[int],
     processed_run_ids: set[int] | None,
     token: str | None,
 ) -> Counter[bytes]:
-    totals: Counter[bytes] = Counter()
-    skip = processed_run_ids if processed_run_ids is not None else set()
-    for rid in sorted(run_ids):
-        if rid in skip:
-            continue
-        status, body, _ = _github_https_get(f"https://api.github.com/repos/{repo}/actions/runs/{rid}/logs", token)
-        if status == 200 and body:
-            totals.update(_collect_from_zip(body))
-        if status in {200, 410} and processed_run_ids is not None:
-            processed_run_ids.add(rid)
-    return totals
+    return _fetch_unprocessed_logs(repo, "runs", sorted(run_ids), processed_run_ids, token, _collect_from_zip)
 
 
 def _fetch_unprocessed_jobs(
@@ -507,17 +670,14 @@ def _fetch_unprocessed_jobs(
     processed_job_ids: set[int] | None,
     token: str | None,
 ) -> Counter[bytes]:
-    totals: Counter[bytes] = Counter()
-    skip = processed_job_ids if processed_job_ids is not None else set()
-    for jid in job_ids:
-        if jid in skip:
-            continue
-        status, body, _ = _github_https_get(f"https://api.github.com/repos/{repo}/actions/jobs/{jid}/logs", token)
-        if status == 200 and body:
-            totals.update(extract_recommended_from_text(body.decode("utf-8", errors="replace")))
-        if status in {200, 410} and processed_job_ids is not None:
-            processed_job_ids.add(jid)
-    return totals
+    return _fetch_unprocessed_logs(
+        repo,
+        "jobs",
+        job_ids,
+        processed_job_ids,
+        token,
+        lambda body: extract_recommended_from_text(body.decode("utf-8", errors="replace")),
+    )
 
 
 def collect_from_github(
@@ -556,6 +716,22 @@ def collect_from_github(
     return totals
 
 
+def _canonicalize_existing_lines(
+    existing_lines: list[str],
+    *,
+    hex_words: frozenset[str],
+) -> tuple[set[bytes], list[str]]:
+    existing_bytes: set[bytes] = set()
+    canonical_existing: list[str] = []
+    for line in existing_lines:
+        parsed = parse_dict_line(line)
+        if parsed is None or not (1 <= len(parsed) <= MAX_DICT_ENTRY_BYTES) or parsed in existing_bytes:
+            continue
+        existing_bytes.add(parsed)
+        canonical_existing.append(format_dict_entry(parsed, hex_words=hex_words))
+    return existing_bytes, canonical_existing
+
+
 def merge_dictionary(
     dict_path: Path,
     candidate_counts: Counter[bytes],
@@ -577,26 +753,36 @@ def merge_dictionary(
         tuple[int, int, list[str]]: `(existing_line_count, added_count, sorted_merged_lines)`.
     """
     existing_lines = dict_path.read_text(encoding="utf-8").splitlines() if dict_path.exists() else []
-    existing_bytes: set[bytes] = set()
-    for line in existing_lines:
-        parsed = parse_dict_line(line)
-        if parsed is not None:
-            existing_bytes.add(parsed)
+    existing_bytes, canonical_existing = _canonicalize_existing_lines(existing_lines, hex_words=hex_words)
 
     new_lines: list[str] = []
     for raw_token, uses in candidate_counts.items():
-        if uses < min_uses or not (1 <= len(raw_token) <= MAX_DICT_ENTRY_BYTES):
-            continue
-        if raw_token in existing_bytes:
+        if uses < min_uses or not (1 <= len(raw_token) <= MAX_DICT_ENTRY_BYTES) or raw_token in existing_bytes:
             continue
         existing_bytes.add(raw_token)
         new_lines.append(format_dict_entry(raw_token, hex_words=hex_words))
 
-    merged_lines = sorted(set(existing_lines) | set(new_lines))
+    merged_lines = sorted(set(canonical_existing) | set(new_lines))
     if write and (new_lines or merged_lines != existing_lines):
         dict_path.write_text("\n".join(merged_lines) + "\n", encoding="utf-8")
 
     return len(existing_lines), len(new_lines), merged_lines
+
+
+def _collect_github_candidates(args: argparse.Namespace) -> Counter[bytes]:
+    processed_runs, processed_jobs = (set(), set()) if args.force_refetch else load_harvest_state(args.state_path)
+    totals = collect_from_github(
+        args.repo,
+        args.workflows,
+        args.days,
+        args.job_id,
+        args.run_id,
+        processed_run_ids=processed_runs,
+        processed_job_ids=processed_jobs,
+    )
+    if args.write:
+        save_harvest_state(args.state_path, processed_runs, processed_jobs)
+    return totals
 
 
 def _collect_candidates(args: argparse.Namespace) -> Counter[bytes]:
@@ -610,20 +796,7 @@ def _collect_candidates(args: argparse.Namespace) -> Counter[bytes]:
         totals.update(collect_from_path(path_item))
 
     if args.repo:
-        processed_runs, processed_jobs = (set(), set()) if args.force_refetch else load_harvest_state(args.state_path)
-        totals.update(
-            collect_from_github(
-                args.repo,
-                args.workflows,
-                args.days,
-                args.job_id,
-                args.run_id,
-                processed_run_ids=processed_runs,
-                processed_job_ids=processed_jobs,
-            )
-        )
-        if args.write:
-            save_harvest_state(args.state_path, processed_runs, processed_jobs)
+        totals.update(_collect_github_candidates(args))
 
     if args.sync_routes:
         for tok in harvest_sdk_route_tokens(REPO_ROOT):

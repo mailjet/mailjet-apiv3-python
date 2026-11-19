@@ -8,6 +8,7 @@ and malformed JSON bodies during async mutations and stream() pagination.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gc
 import json
 import logging
@@ -65,10 +66,11 @@ async def _run_evil_async_iteration(fdp: atheris.FuzzedDataProvider) -> None:
         await aclient.send.create(data={"dummy": fdp.ConsumeUnicodeNoSurrogates(32)})
     else:
         count = 0
-        async for _ in aclient.contact.stream(chunk_size=fdp.ConsumeIntInRange(1, 10)):
-            count += 1
-            if count > 3:
-                break
+        async with contextlib.aclosing(aclient.contact.stream(chunk_size=fdp.ConsumeIntInRange(1, 10))) as stream_gen:
+            async for _ in stream_gen:
+                count += 1
+                if count > 3:
+                    break
 
 
 def TestOneInput(data: bytes) -> None:
@@ -83,8 +85,11 @@ def TestOneInput(data: bytes) -> None:
     fdp = atheris.FuzzedDataProvider(data)
     try:
         _loop.run_until_complete(_run_evil_async_iteration(fdp))
-    except (ApiError, MailjetApiError, httpx2.HTTPError, json.JSONDecodeError, ValueError, TypeError):
-        return  # Expected transport, JSON, and validation rejections from fuzzed upstream responses.
+    except (httpx2.HTTPError, json.JSONDecodeError) as e:
+        msg = f"CRITICAL: AsyncClient leaked raw {type(e).__name__} instead of wrapping in ApiError: {e}"
+        raise RuntimeError(msg) from e
+    except (ApiError, MailjetApiError, ValueError, TypeError):
+        return  # Expected SDK-wrapped ApiError and validation rejections from fuzzed upstream responses.
     except Exception as e:
         msg = f"CRITICAL: AsyncClient crashed handling Evil Server response: {type(e).__name__} - {e}"
         raise RuntimeError(msg) from e

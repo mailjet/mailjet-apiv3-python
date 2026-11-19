@@ -186,7 +186,12 @@ async def _fuzz_async_client_iteration(fdp: atheris.FuzzedDataProvider) -> None:
             base_client.contact.patch(id=1, data={"Name": fdp.ConsumeUnicodeNoSurrogates(16)}),
             base_client.ping(),
         ]
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for item in results:
+            if isinstance(item, BaseException) and not isinstance(
+                item, (ApiError, ValueError, TypeError, TimeoutError)
+            ):
+                raise item
     except (ValueError, TypeError, ApiError):
         return
 
