@@ -89,6 +89,12 @@ _TYPO_EXACT_HEX_TOKENS: frozenset[bytes] = frozenset(
         b"\x65\x6e\x63\x6f\x64\x69\x6e",
         b"\x75\x2d\x69\x6d\x6f\x72\x74\x2d\x6f\x71\x74\x69\x6f\x6e\x73\xef\xbf\xbd\x62\x25",
         b"\x65\x72\x72\x74\x72\x65\x73\x68\x6f\x6c\x64",
+        b"\x6c\x6f\x6e\x64",
+        (
+            b"\x31\x0b\x30\x09\x06\x03\x75\x04\x06\x0c\x02\x65\x73\x31\x62\x30\x40\x06\x03\x75\x04\x03\x0c\x39"
+            b"\x61\x75\x74\x6f\x72\x69\x64\x61\x64\x20\x64\x65\x20\x63\x65\x72\x74\x69\x66\x69\x63\x61\x63\x69"
+            b"\x6f\x6e\x20\x66\x69\x72\x6d\x61\x70\x72\x6f\x66\x65\x73\x69\x6f"
+        ),
     }
 )
 
@@ -482,7 +488,11 @@ def collect_from_path(target: Path) -> Counter[bytes]:
 
 
 def _is_allowed_github_host(host: str) -> bool:
-    return host == "api.github.com" or (host.endswith(".blob.core.windows.net") and host != ".blob.core.windows.net")
+    return (
+        host == "api.github.com"
+        or (host.endswith(".blob.core.windows.net") and host != ".blob.core.windows.net")
+        or (host.endswith(".actions.githubusercontent.com") and host != ".actions.githubusercontent.com")
+    )
 
 
 def _build_validated_github_url(url: str) -> tuple[str, str]:
