@@ -404,10 +404,10 @@ def discover_fuzzer_logs(
     fuzz_dir: Path = DEFAULT_FUZZ_DIR,
     logs_dir: Path = DEFAULT_LOGS_DIR,
 ) -> list[Path]:
-    """Map `tests/fuzz/<fuzzer_file_name>.py` targets to `logs/<fuzzer_file_name>/fuzz_output.log`.
+    """Map `tests/fuzz/**/<fuzzer_file_name>.py` targets to `logs/<fuzzer_file_name>/fuzz_output.log`.
 
     Args:
-        fuzz_dir (Path): Directory containing fuzz target scripts (`*.py`).
+        fuzz_dir (Path): Directory containing fuzz target scripts (`*.py` or `<scope>/*.py`).
         logs_dir (Path): Root directory containing per-fuzzer log subdirectories.
 
     Returns:
@@ -417,10 +417,15 @@ def discover_fuzzer_logs(
         return []
 
     discovered: list[Path] = []
-    for fuzz_script in sorted(fuzz_dir.glob("*.py")):
-        if fuzz_script.is_symlink() or fuzz_script.name.startswith("_"):
+    seen_names: set[str] = set()
+    candidates = sorted({*fuzz_dir.glob("*.py"), *fuzz_dir.glob("*/*.py")}, key=lambda p: (p.name, str(p)))
+    for fuzz_script in candidates:
+        if fuzz_script.is_symlink() or fuzz_script.name.startswith("_") or fuzz_script.parent.name == "corpus":
             continue
         fuzzer_name = fuzz_script.stem
+        if fuzzer_name in seen_names:
+            continue
+        seen_names.add(fuzzer_name)
         if found := _find_target_log(logs_dir / fuzzer_name, fuzzer_name):
             discovered.append(found)
     return discovered

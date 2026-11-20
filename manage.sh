@@ -188,7 +188,7 @@ fuzz_all() {
     fi
 
     shopt -s nullglob
-    local fuzzers=("${fuzzer_dir}"/fuzz_*.py)
+    local fuzzers=("${fuzzer_dir}"/fuzz_*.py "${fuzzer_dir}"/*/fuzz_*.py)
     shopt -u nullglob
 
     if [[ ${#fuzzers[@]} -eq 0 ]]; then

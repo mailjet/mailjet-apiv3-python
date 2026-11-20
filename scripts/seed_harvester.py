@@ -322,6 +322,23 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "clickstatistics_get",
         "openinformation_get",
     ),
+    "fuzz_async_pagination_and_retry": (
+        "contact_get",
+        "contactslist_get",
+        "message_get",
+        "campaign_get",
+        "bouncestatistics_get",
+    ),
+    "fuzz_openapi_routes_and_mock_parity": (
+        "send_v31_sandbox_post",
+        "contact_get",
+        "contact_notfound_get",
+        "statcounters_get",
+        "labels_get",
+        "v1_templates_get",
+        "contacts_v4_notfound_delete",
+        "contact_patch_notfound",
+    ),
     "fuzz_evil_server": (
         "send_v31_sandbox_post",
         "send_v31_error_post",
@@ -677,7 +694,10 @@ def generate_synthetic_seeds(writer: CorpusWriter) -> None:
         "fuzz_differential_v3",
         "fuzz_error_parser",
         "fuzz_pagination_stream",
+        "fuzz_async_pagination_and_retry",
+        "fuzz_openapi_routes_and_mock_parity",
         "fuzz_idempotency_fingerprint",
+        "fuzz_telemetry",
     ):
         for seed_name, seed_bytes in json_seeds.items():
             writer.write_seed(target_fuzzer, f"synth_{seed_name}", seed_bytes)
@@ -723,6 +743,12 @@ def generate_synthetic_seeds(writer: CorpusWriter) -> None:
         "fuzz_state_sequence",
         "fuzz_router",
         "fuzz_webhooks",
+        "fuzz_version_and_exports",
+        "fuzz_telemetry",
+        "fuzz_transport_security",
+        "fuzz_multipart_and_filesystem",
+        "fuzz_async_pagination_and_retry",
+        "fuzz_openapi_routes_and_mock_parity",
     )
 
     for fuzzer_name in all_fdp_fuzzers:
