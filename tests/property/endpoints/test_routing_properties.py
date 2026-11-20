@@ -1,17 +1,23 @@
-"""Property-based tests for Mailjet SDK URL Routing and Sanitization.
+"""Property-based tests for Mailjet SDK URL Routing, Traversal Guards, and Sanitization.
+
 Powered by Hypothesis.
 """
 
+from __future__ import annotations
+
 import contextlib
-import warnings
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
+import warnings
 
 from hypothesis import given, settings, strategies as st
 
 from mailjet_rest.client import Client
 from mailjet_rest.endpoint import Endpoint
 from mailjet_rest.utils.guardrails import SecurityGuard
+
+
+_SURROGATE_BLACKLIST: tuple[Literal["Cs"]] = ("Cs",)
 
 
 @settings(max_examples=500)
@@ -30,9 +36,13 @@ def test_property_segment_sanitization(segment: Any) -> None:
 
 @settings(max_examples=400)
 @given(
-    endpoint_name=st.text(min_size=1, alphabet=st.characters(blacklist_categories=("Cs",))),
-    id_val=st.one_of(st.integers(), st.text(alphabet=st.characters(blacklist_categories=("Cs",))), st.none()),
-    action_id=st.one_of(st.integers(), st.text(alphabet=st.characters(blacklist_categories=("Cs",))), st.none()),
+    endpoint_name=st.text(min_size=1, alphabet=st.characters(blacklist_categories=_SURROGATE_BLACKLIST)),
+    id_val=st.one_of(
+        st.integers(), st.text(alphabet=st.characters(blacklist_categories=_SURROGATE_BLACKLIST)), st.none()
+    ),
+    action_id=st.one_of(
+        st.integers(), st.text(alphabet=st.characters(blacklist_categories=_SURROGATE_BLACKLIST)), st.none()
+    ),
 )
 def test_property_endpoint_build_url_resilience(endpoint_name: str, id_val: Any, action_id: Any) -> None:
     """INVARIANT: _build_url must securely map any random inputs to a safe URL without internal exceptions."""
@@ -78,3 +88,26 @@ def test_property_difflib_dynamic_routing_resilience(route_name: str) -> None:
             assert "object has no attribute" in str(e)
         else:
             assert "has no endpoint or attribute" in str(e)
+
+
+@settings(max_examples=500)
+@given(
+    id_val=st.text(),
+    action_id=st.text(alphabet=st.characters(blacklist_categories=_SURROGATE_BLACKLIST)),
+)
+def test_property_url_traversal_prevention(id_val: Any, action_id: Any) -> None:
+    r"""INVARIANT: No matter what malicious string is passed as an ID or Action,
+    the resulting URL must never contain unencoded directory traversals.
+    """
+    with contextlib.suppress(ValueError):
+        client = Client(auth=("test", "test"), version="v3")
+        endpoint = Endpoint(name="contact", client=client)
+
+        url = endpoint._build_url(id_val=id_val, action_id=action_id)
+
+        base_len = len("https://api.mailjet.com/v3/REST/contact")
+        suffix = url[base_len:]
+
+        assert "../" not in suffix
+        assert "..\\" not in suffix
+        assert "\x00" not in suffix

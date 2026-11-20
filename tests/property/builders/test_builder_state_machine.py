@@ -1,6 +1,9 @@
 """Stateful property tests for MessageBuilder and SendPayloadBuilder.
+
 Hypothesis exercises arbitrary rule sequences and enforces structural and isolation invariants.
 """
+
+from __future__ import annotations
 
 import contextlib
 import warnings
@@ -14,6 +17,8 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 class MessageBuilderMachine(RuleBasedStateMachine):
+    """Stateful model verifying MessageBuilder and SendPayloadBuilder structural invariants."""
+
     @initialize()
     def init_builder(self) -> None:
         self.builder = MessageBuilder()

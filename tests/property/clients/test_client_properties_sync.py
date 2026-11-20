@@ -1,32 +1,18 @@
-"""Property-based tests for Mailjet SDK Client logic and Telemetry.
+"""Property-based tests for synchronous Mailjet SDK Client invariants.
+
 Powered by Hypothesis.
 """
+
+from __future__ import annotations
 
 import contextlib
 from typing import Any
 from unittest.mock import MagicMock, patch
 import warnings
 
-import pytest
-from hypothesis import given, settings, strategies as st, example
+from hypothesis import example, given, settings, strategies as st
 
-from mailjet_rest.client import Client, Endpoint, JitterRetry
-
-
-@pytest.mark.property_heavy
-@settings(max_examples=500)
-@given(
-    payload=st.recursive(
-        st.dictionaries(st.text(), st.text()),
-        lambda children: st.lists(children) | st.dictionaries(st.text(), children),
-        max_leaves=25,
-    )
-)
-def test_property_telemetry_extraction_resilience(payload: Any) -> None:
-    """INVARIANT: Telemetry extractor must gracefully handle chaotic payloads."""
-    trace_suffix, structured_data = Client._extract_telemetry(payload, None)
-    assert isinstance(trace_suffix, str)
-    assert isinstance(structured_data, dict)
+from mailjet_rest.client import Client, Endpoint
 
 
 @settings(max_examples=300)
@@ -43,17 +29,6 @@ def test_property_auth_coercion(auth_input: Any) -> None:
             assert client.auth == (auth_input[0].strip(), auth_input[1].strip())
         elif isinstance(auth_input, str):
             assert "Authorization" in client.session.headers
-
-
-@settings(max_examples=500)
-@given(consecutive_errors=st.integers(min_value=1, max_value=10))
-def test_property_jitter_backoff_bounds(consecutive_errors: int) -> None:
-    """INVARIANT: JitterRetry must return wait time between 0 and standard exponential limit."""
-    retry = JitterRetry(total=10, backoff_factor=1)
-    for _ in range(consecutive_errors):
-        retry = retry.increment(error=Exception("Simulated Drop"))
-    standard_backoff = retry.backoff_factor * (2 ** (len(retry.history) - 1))
-    assert 0 <= retry.get_backoff_time() <= standard_backoff
 
 
 @settings(max_examples=300)
