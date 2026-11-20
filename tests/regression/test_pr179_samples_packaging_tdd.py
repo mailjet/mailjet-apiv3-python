@@ -9,12 +9,20 @@ import os
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:  # pragma: no cover - Python 3.10 fallback
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        tomllib = None  # type: ignore[assignment]
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -366,6 +374,8 @@ def test_commit_checks_runs_local_https_speedups_and_sync_only_leg() -> None:
 
 def test_pyproject_ruff_includes_tests_and_mutmut_covers_security_modules() -> None:
     """pyproject.toml lints tests/ with Ruff and mutmut covers client + security utilities."""
+    if tomllib is None:
+        pytest.skip("tomllib/tomli unavailable on Python 3.10")
     data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     extend_exclude = data["tool"]["ruff"]["extend-exclude"]
@@ -429,3 +439,21 @@ def test_changelog_and_performance_metrics_consistent_with_codebase() -> None:
     # Stale pre-Issue-#10 slowdown metrics must be updated
     assert "`635.2 ns`" not in performance
     assert "`10.08 µs`" not in performance
+
+
+def test_smoke_readme_runner_executes_under_cp1252_encoding(tmp_path: Path) -> None:
+    """samples/smoke_readme_runner.py must run under Windows cp1252 stdout encoding without UnicodeEncodeError."""
+    env = _clean_credential_env(PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.run(
+        [sys.executable, str(SAMPLES_DIR / "smoke_readme_runner.py")],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="cp1252",
+        timeout=20,
+        check=False,
+    )
+    assert proc.returncode == 0, f"smoke_readme_runner failed under cp1252:\nSTDERR:\n{proc.stderr}"
+    assert "UnicodeEncodeError" not in proc.stderr

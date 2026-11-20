@@ -405,6 +405,12 @@ def test_seed_harvester_scrubs_sensitive_fields_from_live_responses(tmp_path: Pa
     seed_harvester = _load_script("seed_harvester.py", "seed_harvester_scrub")
     writer = seed_harvester.CorpusWriter(tmp_path)
 
+    pub_marker = "mj_live_pub_marker"
+    priv_marker = "mj_live_priv_marker"
+    token_marker = "atk_live_marker"
+    tok_marker = "tok_live_marker"
+    bearer_marker = "Bearer sampleHeader.sampleBody.sampleSig"
+
     sensitive_payload = {
         "Count": 1,
         "Data": [
@@ -412,11 +418,11 @@ def test_seed_harvester_scrubs_sensitive_fields_from_live_responses(tmp_path: Pa
                 "ID": 77,
                 "Email": "subscriber.real@company.org",
                 "Name": "Alice RealName",
-                "APIKey": "mj_live_pub_secret123",
-                "SecretKey": "mj_live_priv_secret456",
-                "AccessToken": "atk_live_999888",
-                "Token": "tok_live_777666",
-                "Bearer": "Bearer eyJhbGciOiJIUzI1NiJ9.live_jwt",
+                "APIKey": pub_marker,
+                "SecretKey": priv_marker,
+                "AccessToken": token_marker,
+                "Token": tok_marker,
+                "Bearer": bearer_marker,
             }
         ],
     }
@@ -434,11 +440,11 @@ def test_seed_harvester_scrubs_sensitive_fields_from_live_responses(tmp_path: Pa
     leaked_markers = (
         "subscriber.real@company.org",
         "Alice RealName",
-        "mj_live_pub_secret123",
-        "mj_live_priv_secret456",
-        "atk_live_999888",
-        "tok_live_777666",
-        "eyJhbGciOiJIUzI1NiJ9.live_jwt",
+        pub_marker,
+        priv_marker,
+        token_marker,
+        tok_marker,
+        bearer_marker,
     )
     for seed_file in seed_files:
         text = seed_file.read_text(encoding="utf-8", errors="replace")
@@ -650,16 +656,18 @@ def test_fuzz_async_client_reraises_unexpected_gather_exceptions() -> None:
     mod: Any = None
     try:
         mod = _load_fuzz_module("fuzz_async_client.py", alias)
-        if mod._base_async_client is None:
+        base_client: Any = mod._base_async_client
+        if base_client is None:
             pytest.skip("httpx2 not installed")
+        assert base_client is not None
 
         async def _boom(*_args: Any, **_kwargs: Any) -> Any:
             raise KeyError("unexpected gather crash")
 
         # Mode 3 triggers asyncio.gather when ConsumeIntInRange(0, 3) == 3 (byte 0 % 4 == 3).
-        with patch.object(type(mod._base_async_client.contact), "get", side_effect=_boom):
+        with patch.object(type(base_client.contact), "get", side_effect=_boom):
             with pytest.raises(RuntimeError, match="UNHANDLED CRASH"):
-                mod.TestOneInput(bytes([3]) + b"fuzz_async_gather_payload_1234567890")
+                mod.TestOneInput(bytes([3]) + b"gather_mode_case")
     finally:
         if mod is not None:
             _cleanup_async_fuzz_module(mod, alias)

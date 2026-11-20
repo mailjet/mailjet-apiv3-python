@@ -140,4 +140,4 @@ if __name__ == "__main__":
                 except (ValueError, AttributeError):
                     print(getattr(result, "text", str(result)))
             except Exception as e:
-                print(f"❌ Failed: {e}")
+                print(f"[FAIL] Failed: {e}")
