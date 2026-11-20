@@ -209,14 +209,12 @@ fuzz_all() {
     local -a pids=()
     local -a all_pids=()
     local -a active_pids=()
-    local default_jobs
-    default_jobs="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
-    local max_jobs="${FUZZ_JOBS:-${default_jobs}}"
+    local total_fuzzers="${#fuzzers[@]}"
+    local max_jobs="${FUZZ_JOBS:-${total_fuzzers}}"
     if [[ ! "${max_jobs}" =~ ^[1-9][0-9]*$ ]]; then
         error "FUZZ_JOBS must be a positive integer (got '${max_jobs}')."
         return 1
     fi
-    local total_fuzzers="${#fuzzers[@]}"
     info "Launching ${total_fuzzers} fuzzers (max parallel jobs: ${max_jobs}; set FUZZ_JOBS=<n> to override)..."
 
     local fuzzer pid
