@@ -1,19 +1,28 @@
 # pyright: reportOperatorIssue=false
 # pyright: reportReturnType=false
-"""Unit tests for the Mailjet API client routing, internal logic, and security."""
+"""Unit tests for the synchronous Mailjet API client (Client), lifecycle, telemetry, and guardrails."""
 
 from __future__ import annotations
 
+import copy
+import gc
+import importlib
+import io
 import logging
+import socket
+import sys
+import warnings
 from contextlib import suppress
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
+import requests  # pyright: ignore[reportMissingModuleSource]
 from requests.exceptions import ConnectionError as RequestsConnectionError, RequestException, Timeout as RequestsTimeout
 
-from mailjet_rest.client import Client, Config
+from mailjet_rest import types as mj_types
+from mailjet_rest.client import BaseClient, Client, Config
 from mailjet_rest.errors import (
     ApiError,
     CriticalApiError,
@@ -22,19 +31,12 @@ from mailjet_rest.errors import (
     TimeoutError,
     ValidationError,
 )
-from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS
-from mailjet_rest.utils.guardrails import SecurityGuard
+from mailjet_rest.routes import ROUTE_MAP
+from mailjet_rest.utils.guardrails import SecretAuth, SecureHTTPAdapter, SecurityGuard
 
 
 if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
-
-
-@pytest.fixture
-def client_offline() -> Client:
-    """Return a client with fake credentials for pure offline unit testing."""
-    conf = Config(version="v3")
-    return Client(auth=("fake_public_key", "fake_private_key"), config=conf)
 
 
 # ==========================================
@@ -74,55 +76,6 @@ def test_client_init_enables_audit_hook_when_configured(monkeypatch: pytest.Monk
     mock_audit.assert_called_once()
 
 
-def test_config_api_url_validation_scheme() -> None:
-    """Verify that insecure URLs are immediately rejected (CWE-319)."""
-    # Changed from http:// to ftp:// because http:// is now legally allowed for localhost CI/CD
-    with pytest.raises(ValueError, match="Security Alert \\(CWE-918\\): Invalid scheme 'ftp'"):
-        Config(api_url="ftp://api.mailjet.com")
-
-
-def test_config_api_url_validation_hostname() -> None:
-    """Verify that malicious hosts are rejected (CWE-918)."""
-    with pytest.raises(ValueError, match="Security Alert \\(CWE-918\\): Hostname 'evil.com' is not permitted"):
-        Config(api_url="https://evil.com")
-
-
-def test_config_timeout_invalid_values() -> None:
-    """Verify that extreme or invalid timeout values are rejected to prevent resource exhaustion (CWE-400)."""
-    with pytest.raises(ValueError, match="strictly positive"):
-        Config(timeout=0)
-
-    with pytest.raises(ValueError, match="strictly positive"):
-        Config(timeout=-1)
-
-    with pytest.raises(TypeError, match="numeric"):
-        Config(timeout="not-a-number")  # type: ignore[arg-type]
-
-
-def test_config_timeout_valid_values() -> None:
-    """Verify valid complex float and tuple timeout constraints pass."""
-    c1 = Config(timeout=10.5)
-    assert c1.timeout == 10.5
-
-    c2 = Config(timeout=(3.0, 15.5))
-    assert c2.timeout == (3.0, 15.5)
-
-
-def test_config_validation_logic() -> None:
-    """Verify standard configuration parsing guarantees."""
-    conf = Config(version="v1", timeout=30)
-    assert conf.version == "v1"
-    assert conf.timeout == 30
-    assert conf.api_url == "https://api.mailjet.com/"
-
-
-def test_url_sanitization_path_traversal() -> None:
-    """Verify path variables are strictly sanitized (CWE-22)."""
-    # Expect the ValueError we now actively throw against CWE-22 tokens
-    with pytest.raises(ValueError, match="Path traversal attempt"):
-        SecurityGuard.sanitize_segment("../etc/passwd")
-
-
 def test_client_repr_and_str_redact_secrets() -> None:
     """Verify that string representations do not leak the private keys (CWE-316)."""
     client = Client(auth=("my_super_secret_public", "my_super_secret_private"))
@@ -152,18 +105,6 @@ def test_ambiguity_warnings_logged(client_offline: Client, monkeypatch: pytest.M
             client_offline.templates.get()
 
 
-def test_infinite_timeout_resource_exhaustion() -> None:
-    """Coverage: Checks the float validation logic directly on the Config object (CWE-400)."""
-    with pytest.raises(ValueError, match="Timeout cannot be Infinity or NaN"):
-        Config(timeout=float("inf"))
-
-
-def test_zero_timeout_resource_exhaustion() -> None:
-    """Coverage: Checks that 0 or negative timeouts are blocked."""
-    with pytest.raises(ValueError, match="strictly positive"):
-        Config(timeout=0)
-
-
 def test_client_invalid_auth_type() -> None:
     """Coverage: Test invalid auth type initialization."""
     with pytest.raises(TypeError, match="Invalid auth type"):
@@ -188,12 +129,6 @@ def test_handle_api_error_branches(client_offline: Client, monkeypatch: pytest.M
         with patch.object(client_offline.session, "request", side_effect=RequestException(response=mock_response)):
             with pytest.raises(exc_class):
                 client_offline.contact.get()
-
-
-def test_config_api_url_missing_slash() -> None:
-    """Coverage: Ensure Config adds trailing slash to api_url."""
-    c = Config(api_url="https://api.mailjet.com")
-    assert c.api_url == "https://api.mailjet.com/"
 
 
 def test_client_empty_bearer_token() -> None:
@@ -245,88 +180,8 @@ def test_client_endpoint_caching(client_offline: Client) -> None:
 
 
 # ==========================================
-# 2. Advanced Endpoint Routing Constraints
+# 2. HTTP Execution, Lifecycle & Exceptions
 # ==========================================
-
-
-@pytest.mark.parametrize(
-    ("version", "resource", "expected_path"),
-    [
-        ("v1", "templates", "v1/REST/templates"),
-        ("v3", "contact", "v3/REST/contact"),
-        ("v3.1", "message", "v3.1/REST/message"),
-        ("v99_future", "newresource", "v99_future/REST/newresource"),
-    ],
-)
-def test_dynamic_versions_standard_rest(
-    version: str, resource: str, expected_path: str, client_offline: Client
-) -> None:
-    """Verify REST URL construction dynamically respects the configured API version."""
-    client_offline.config.version = version
-    endpoint = getattr(client_offline, resource)
-    url = endpoint._build_url()
-    assert url == f"https://api.mailjet.com/{expected_path}"
-
-
-def test_dynamic_versions_content_api_v1_routing(client_offline: Client) -> None:
-    """Verify Content API (v1) specific routes construct correctly."""
-    client_offline.config.version = "v1"
-    with pytest.warns(DeprecationWarning, match="templates_contents"):
-        url = client_offline.templates_contents._build_url(id_val=123)
-    assert url == "https://api.mailjet.com/v1/REST/templates/123/contents"
-
-
-def test_dynamic_versions_content_api_v1_complex_routing(client_offline: Client) -> None:
-    """Verify deeply nested Content API routes construct correctly using split action."""
-    client_offline.config.version = "v1"
-    url = client_offline.templates_contents_types._build_url(id_val=123, action_id="P")
-    assert url == "https://api.mailjet.com/v1/REST/templates/123/contents/types/P"
-
-
-@pytest.mark.filterwarnings("ignore:Mailjet API Ambiguity:DeprecationWarning")
-@pytest.mark.parametrize(
-    "version",
-    ["v1", "v3", "v3.1", "v99_future"],
-)
-def test_dynamic_versions_send_api(version: str, client_offline: Client) -> None:
-    """Verify the Send API explicitly bypasses the /REST/ prefix across all versions."""
-    client_offline.config.version = version
-    url = client_offline.send._build_url()
-    assert url == f"https://api.mailjet.com/{version}/send"
-
-
-def test_send_api_v3_bad_path_routing(client_offline: Client) -> None:
-    """Verify that unexpected operations on the Send API still attempt to route consistently."""
-    client_offline.config.version = "v3"
-    url = client_offline.send._build_url()
-    assert url == "https://api.mailjet.com/v3/send"
-
-
-def test_content_api_bad_path_routing(client_offline: Client) -> None:
-    """Verify that deeply nested paths format correctly via dynamic fallback logic."""
-    client_offline.config.version = "v1"
-    url = client_offline.templates_contents_fakeaction._build_url(id_val=123)
-    assert url == "https://api.mailjet.com/v1/REST/templates/123/contents/fakeaction"
-
-
-def test_route_strategy_legacy_parity(client_offline: Client) -> None:
-    """Verify declarative routes maintain exact legacy URL formatting."""
-    client_offline.config.version = "v1"
-    url = client_offline.templates_contents_types._build_url(id_val=123, action_id="P")
-    assert url == "https://api.mailjet.com/v1/REST/templates/123/contents/types/P"
-
-
-def test_statcounters_endpoint_routing(client_offline: Client) -> None:
-    """Verify statistical routing bypasses standard logic."""
-    client_offline.config.version = "v3"
-    url = client_offline.statcounters._build_url()
-    assert url == "https://api.mailjet.com/v3/REST/statcounters"
-
-
-def test_camel_case_to_dash_routing(client_offline: Client) -> None:
-    """Verify that CamelCase endpoints correctly translate to dashed paths (e.g., linkClick -> link-click)."""
-    url = client_offline.statistics_linkClick._build_url()
-    assert url == "https://api.mailjet.com/v3/REST/statistics/link-click"
 
 
 def test_api_call_exception_contract(client_offline: Client, monkeypatch: Any, caplog: Any) -> None:
@@ -391,24 +246,6 @@ def test_client_custom_version() -> None:
     assert client.config.version == "v4"
 
 
-def test_user_agent() -> None:
-    client = Client(auth=("test", "test"))
-    assert "mailjet-apiv3-python" in client.session.headers["User-Agent"]
-
-
-def test_legacy_action_id_fallback(client_offline: Client, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify that if 'id' is omitted but 'action_id' is passed, it shifts to the primary ID correctly."""
-
-    def mock_request(method: str, url: str, **kwargs: Any) -> requests.Response:
-        assert "/REST/contact/123" in url
-        resp = requests.Response()
-        resp.status_code = 200
-        return resp
-
-    monkeypatch.setattr(client_offline.session, "request", mock_request)
-    client_offline.contact.get(action_id=123)
-
-
 def test_secure_http_adapter_mounted() -> None:
     client = Client(auth=("test", "test"))
     assert "https://" in client.session.adapters
@@ -434,42 +271,12 @@ def test_client_context_manager_exception_safety() -> None:
     assert client.session.auth is None  # type: ignore[unreachable]
 
 
-def test_endpoint_and_config_use_slots() -> None:
-    config = Config()
-    assert not hasattr(config, "__dict__")
-
-
-def test_endpoint_precomputes_routing_strings(client_offline: Client) -> None:
-    """Verify that Endpoint pre-computes routing strings to save CPU cycles."""
-    endpoint = getattr(client_offline, "Contact_Data")
-    assert endpoint._name_lower == "contact_data"
-    assert endpoint._action_parts == ["contact", "data"]
-    assert endpoint._resource_lower == "contact"
-
-
 def test_client_dir_includes_dynamic_endpoints(client_offline: Client) -> None:
     """Verify that dir(client) includes all keys from ROUTE_MAP for IDE completion."""
     attributes = dir(client_offline)
     assert "send" in attributes
     assert "contact" in attributes
     assert "templates" in attributes
-
-
-def test_header_constants_immutability(client_offline: Client) -> None:
-    """Verify that global header mappings are strictly immutable."""
-    with pytest.raises(TypeError):
-        _JSON_HEADERS["Content-Type"] = "hacked"  # type: ignore[index]
-
-    with pytest.raises(TypeError):
-        _TEXT_HEADERS["Content-Type"] = "hacked"  # type: ignore[index]
-
-
-def test_endpoint_headers_merge_safely(client_offline: Client) -> None:
-    """Verify that endpoint header building unpacks safely without mutating the base proxies."""
-    endpoint = client_offline.contact
-    merged_headers = endpoint._build_headers({"X-Custom-Header": "SafeValue"})
-    assert merged_headers["Content-Type"] == "application/json"
-    assert merged_headers["X-Custom-Header"] == "SafeValue"
 
 
 def test_dry_run_intercepts_mutations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -487,38 +294,6 @@ def test_dry_run_intercepts_mutations(monkeypatch: pytest.MonkeyPatch) -> None:
     assert response.status_code == 200
 
 
-def test_stream_lazy_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify that .stream() automatically paginates and yields individual records."""
-    client = Client(auth=("a", "b"))
-
-    call_count = 0
-
-    def mock_paginated_response(**kwargs: Any) -> requests.Response:
-        nonlocal call_count
-        resp = requests.Response()
-        resp.status_code = 200
-
-        if call_count == 0:
-            resp._content = b'{"Total": 3, "Data": [{"id": 1}, {"id": 2}]}'
-        elif call_count == 1:
-            resp._content = b'{"Total": 3, "Data": [{"id": 3}]}'
-        else:
-            resp._content = b'{"Total": 3, "Data": []}'
-
-        call_count += 1
-        return resp
-
-    monkeypatch.setattr(client.session, "request", mock_paginated_response)
-
-    items = list(client.contact.stream(chunk_size=2))
-
-    assert len(items) == 3
-    assert items[0]["id"] == 1
-    assert items[2]["id"] == 3
-    # With early break optimization, it stops at the exact chunk boundary
-    assert call_count == 2
-
-
 @patch("sys.audit")
 def test_pep578_audit_hooks_emitted(
     mock_audit: MagicMock, client_offline: Client, monkeypatch: pytest.MonkeyPatch
@@ -534,20 +309,6 @@ def test_pep578_audit_hooks_emitted(
 
     # 1. Standard request
     client_offline.contact.get()
-
-
-def test_infinite_timeout_deprecation_warning(monkeypatch: Any) -> None:
-    """Verify passing a null timeout issues a warning and sets it locally."""
-    with pytest.warns(DeprecationWarning, match="allows infinite socket blocking"):
-        client = Client(auth=("test", "test"), timeout=None)
-
-        def mock_resp(**kwargs: Any) -> requests.Response:
-            r = requests.Response()
-            r.status_code = 200
-            return r
-
-        monkeypatch.setattr(client.session, "request", mock_resp)
-        client.contact.get(timeout=None)
 
 
 def test_extract_telemetry_v3_root_level(client_offline: Client) -> None:
@@ -624,42 +385,6 @@ def test_client_timeout_error(client_offline: Client, monkeypatch: pytest.Monkey
         client_offline.contact.get()
 
 
-@pytest.mark.parametrize(
-    ("endpoint_name", "kwargs", "expected_url"),
-    [
-        ("send", {}, "https://api.mailjet.com/v3/send"),
-        ("contact", {}, "https://api.mailjet.com/v3/REST/contact"),
-        ("contact", {"id_val": 123}, "https://api.mailjet.com/v3/REST/contact/123"),
-        ("campaign", {}, "https://api.mailjet.com/v3/REST/campaign"),
-        ("tokens", {}, "https://api.mailjet.com/v1/REST/tokens"),
-        (
-            "template_content_by_type",
-            {"id_val": 100, "action_id": "html"},
-            "https://api.mailjet.com/v1/REST/templates/100/contents/types/html",
-        ),
-    ],
-)
-def test_all_registry_routes(
-    client_offline: Client, endpoint_name: str, kwargs: dict[str, Any], expected_url: str
-) -> None:
-    """Verify that every endpoint in the registry constructs the correct URL and handles URI templating."""
-    endpoint = getattr(client_offline, endpoint_name)
-    url = endpoint._build_url(**kwargs)
-    assert url == expected_url
-
-
-def test_registry_uri_interpolation_path_traversal_cwe22(client_offline: Client) -> None:
-    """Verify that malicious dynamic values injected into URI templates are safely URL-encoded (CWE-22)."""
-    malicious_id = "../delete"
-    endpoint = client_offline.template_update
-    # Expect the ValueError we now actively throw against CWE-22 tokens
-    with (
-        pytest.warns(DeprecationWarning, match="template_update"),
-        pytest.raises(ValueError, match="Path traversal attempt"),
-    ):
-        endpoint._build_url(id_val=malicious_id)
-
-
 def test_client_invalid_attribute(client_offline: Client) -> None:
     # Test the explicit guardrail protection against private methods
     with pytest.raises(AttributeError):
@@ -686,3 +411,271 @@ def test_extract_telemetry_edge_cases(client_offline: Client) -> None:
     # Coverage for when the payload is a string, not a dict
     suffix, d = client_offline._extract_telemetry("string data", None)
     assert suffix == ""
+
+
+# ==========================================
+# 3. Pool, Lifecycle Warnings, Copy & DX Parity
+# ==========================================
+
+
+def test_lazy_session_and_pool_configuration() -> None:
+    """Client defers session creation until first use and applies Config pool sizes."""
+    cfg = Config(pool_connections=12, pool_maxsize=24)
+    with Client(auth=("api_key_value", "api_secret_value"), config=cfg) as client:
+        assert client._session is None
+        _ = client.contact
+        assert client._session is None
+
+        session = client.session
+        cached_session: object = client._session
+        assert cached_session is session
+        adapter = session.adapters["https://"]
+        assert isinstance(adapter, SecureHTTPAdapter)
+        pool_kw = adapter.poolmanager.connection_pool_kw
+        sock_opts = pool_kw.get("socket_options", ())
+        assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in sock_opts
+
+        proxy_mgr = adapter.proxy_manager_for("http://127.0.0.1:8080")
+        assert (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1) in proxy_mgr.connection_pool_kw.get("socket_options", ())
+
+
+def test_warn_unclosed_opt_in_lifecycle() -> None:
+    """ResourceWarning is emitted on GC only when Config.warn_unclosed=True and session was opened."""
+    with warnings.catch_warnings(record=True) as quiet_warnings:
+        warnings.simplefilter("always", ResourceWarning)
+        c_default = Client(auth=("api_key_value", "api_secret_value"))
+        _ = c_default.session
+        del c_default
+        gc.collect()
+    assert not [w for w in quiet_warnings if issubclass(w.category, ResourceWarning)]
+
+    with pytest.warns(ResourceWarning, match="Unclosed Mailjet Client session"):
+        c_warn = Client(auth=("api_key_value", "api_secret_value"), warn_unclosed=True)
+        _ = c_warn.session
+        del c_warn
+        gc.collect()
+
+    with warnings.catch_warnings(record=True) as partial_warnings:
+        warnings.simplefilter("always", ResourceWarning)
+        raw_client = Client.__new__(Client)
+        del raw_client
+        with pytest.raises(ValueError, match="pool_connections"):
+            Client(auth=("api_key_value", "api_secret_value"), pool_connections=0)
+        gc.collect()
+    assert not [w for w in partial_warnings if issubclass(w.category, ResourceWarning)]
+
+
+def test_client_getattr_shutdown_guard_for_del(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify __del__/__getattr__ raises AttributeError instead of ImportError when sys.meta_path is None."""
+    client_mod = importlib.import_module("mailjet_rest.client")
+    async_client_cls = client_mod.AsyncClient
+
+    partial_sync = Client.__new__(Client)
+    partial_async = async_client_cls.__new__(async_client_cls)
+    monkeypatch.setattr(sys, "meta_path", None)
+
+    # _warn_if_unclosed must swallow AttributeError cleanly rather than leaking ImportError
+    partial_sync._warn_if_unclosed()  # ruff: ignore[private-member-access]
+    partial_async._warn_if_unclosed()  # ruff: ignore[private-member-access]
+
+
+def test_client_lazy_httpx2_failures_auth_warnings_and_timeout_recovery() -> None:
+    """Cover _get_httpx2 ImportError, __getattr__, auth=None warning, timeout mutation recovery, and stream reset."""
+    client_mod = importlib.import_module("mailjet_rest.client")
+    orig_cache = list(client_mod._httpx2_cache)
+    try:
+        client_mod._httpx2_cache.clear()
+        orig_import = importlib.import_module
+
+        def _fail_httpx2(name: str, package: str | None = None) -> Any:
+            if name == "httpx2":
+                raise ImportError("missing httpx2")
+            return orig_import(name, package)
+
+        with patch("mailjet_rest.client.importlib.import_module", side_effect=_fail_httpx2):
+            assert client_mod._get_httpx2() is None
+    finally:
+        client_mod._httpx2_cache[:] = orig_cache
+
+    assert getattr(client_mod, "Endpoint").__name__ == "Endpoint"
+    assert getattr(client_mod, "AsyncEndpoint").__name__ == "AsyncEndpoint"
+    assert getattr(client_mod, "BaseEndpoint").__name__ == "BaseEndpoint"
+    with pytest.raises(AttributeError, match="has no attribute 'NoSuchThing'"):
+        _ = getattr(client_mod, "NoSuchThing")
+
+    with pytest.warns(UserWarning, match="without 'auth' credentials"):
+        no_auth_client = Client()
+    no_auth_client.close()
+
+    with pytest.raises(ValueError, match="Invalid auto_idempotency_mode"):
+        Config(auto_idempotency_mode="broken")  # type: ignore[arg-type]
+
+    with Client(auth=("pub_key", "priv_key")) as client:
+        with pytest.raises(AttributeError, match="no attribute '_hidden'"):
+            client._validate_endpoint_name("_hidden")
+
+        stream_buf = io.BytesIO(b"payload")
+        stream_buf.read()
+        assert stream_buf.tell() == 7
+        BaseClient._reset_stream_pointers(stream_buf, None)
+        assert stream_buf.tell() == 0
+
+        # Mutating config.timeout post-init resets to default on invalid call before any transport
+        client.config.timeout = -5
+        with patch.object(requests.Session, "request", side_effect=AssertionError("unexpected real network call")):
+            with pytest.raises(ValueError, match="strictly positive"):
+                client.api_call("GET", "https://api.mailjet.com/v3/REST/contact")
+        assert client.config.timeout == 60
+
+
+def test_sync_client_copy_deepcopy_isolation_and_dunder_rejection() -> None:
+    """Verify __copy__ and __deepcopy__ isolate locks/sessions/caches and reject private/dunder attrs on Client."""
+    sync_orig = Client(auth=("k_sync", "s_sync"), config=Config(version="v3.1", max_retries=2))
+    _ = sync_orig.session
+    _ = sync_orig.send
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        sync_shallow = copy.copy(sync_orig)
+        sync_deep = copy.deepcopy(sync_orig)
+    assert not [w for w in captured if issubclass(w.category, UserWarning)]
+
+    assert sync_shallow is not sync_orig
+    assert sync_deep is not sync_orig
+    assert sync_shallow._session is None  # ruff: ignore[private-member-access]
+    assert sync_deep._session is None  # ruff: ignore[private-member-access]
+    assert sync_shallow._lock is not sync_orig._lock  # ruff: ignore[private-member-access]
+    assert sync_deep._lock is not sync_orig._lock  # ruff: ignore[private-member-access]
+    assert sync_shallow._endpoint_cache == {}  # ruff: ignore[private-member-access]
+    assert sync_deep._endpoint_cache == {}  # ruff: ignore[private-member-access]
+    assert sync_shallow.config is not sync_orig.config
+    assert sync_deep.config is not sync_orig.config
+    sync_shallow.config.max_retries = 0
+    assert sync_orig.config.max_retries == 2
+    assert sync_deep.auth is not sync_orig.auth
+    assert isinstance(sync_deep.auth, SecretAuth)
+    assert isinstance(sync_orig.auth, SecretAuth)
+    assert sync_deep.auth.auth_header == sync_orig.auth.auth_header
+
+    for bad_attr in ("_private_attr", "__nonexistent_dunder__"):
+        with pytest.raises(AttributeError):
+            _ = getattr(sync_orig, bad_attr)
+
+    sync_orig.close()
+
+
+def test_auto_idempotency_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify fingerprint, uuid4, off, and case-insensitive header preservation."""
+    captured_headers: list[dict[str, Any]] = []
+
+    def mock_exec(
+        self: Any, method: str, url: str, headers: dict[str, Any], *args: Any, **kwargs: Any
+    ) -> requests.Response:
+        captured_headers.append(dict(headers))
+        r = requests.Response()
+        r.status_code = 200
+        return r
+
+    monkeypatch.setattr(Client, "_execute_request", mock_exec)
+
+    client_uuid = Client(auth=("pub", "priv"), auto_idempotency_mode="uuid4")
+    client_uuid.api_call("POST", "https://api.mailjet.com/v3/REST/contact", data={"a": 1})
+    assert len(captured_headers[-1]["Idempotency-Key"]) == 36
+
+    client_off = Client(auth=("pub", "priv"), auto_idempotency_mode="off")
+    client_off.api_call("POST", "https://api.mailjet.com/v3/REST/contact", data={"a": 1})
+    assert "Idempotency-Key" not in captured_headers[-1]
+    client_fp = Client(auth=("pub", "priv"), auto_idempotency_mode="fingerprint")
+    client_fp.api_call(
+        "POST",
+        "https://api.mailjet.com/v3/REST/contact",
+        headers={"idempotency-key": "caller-supplied"},
+        data={"a": 1},
+    )
+    assert captured_headers[-1]["idempotency-key"] == "caller-supplied"
+    assert "Idempotency-Key" not in captured_headers[-1]
+
+
+def test_sync_client_executes_new_routes_with_mapping_payloads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify sync Client executes new routes and serializes read-only MappingProxyType payloads."""
+    seen: list[tuple[str, str, Any]] = []
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> MagicMock:
+        seen.append((method, url, kwargs.get("json")))
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status.return_value = None
+        return resp
+
+    with Client(auth=("pub_key", "priv_key")) as client:
+        monkeypatch.setattr(client.session, "request", fake_request)
+
+        v31_msg: mj_types.SendV31Message = {
+            "From": {"Email": "sender@example.com", "Name": "Sender"},
+            "To": [{"Email": "to@example.com"}],
+            "Subject": "Hello v3.1",
+            "TextPart": "Body",
+            "CustomID": "cid-v31",
+            "TrackOpens": "enabled",
+        }
+        v31_payload = MappingProxyType({"Messages": [v31_msg], "AdvanceErrorHandling": True})
+        client.send_v31.create(data=v31_payload)
+        client.contacts.delete(id=99)
+        client.template_contents_publish.create(id=12, data={"Name": "Published"})
+        client.data_images_by_type.update(id="abc-123", action_id="thumbnail", data=b"raw-bytes")
+
+        # Verify legacy ensure_ascii=False handles MappingProxyType safely without TypeError
+        with pytest.warns(DeprecationWarning, match="ensure_ascii"):
+            legacy_url, _headers, encoded = client.send_v31._prepare_call_args(
+                id=None,
+                data=v31_payload,
+                action_id=None,
+                headers=None,
+                kwargs={"ensure_ascii": False},
+            )
+        assert legacy_url == "https://api.mailjet.com/v3.1/send"
+        assert isinstance(encoded, str)
+
+    assert seen[0][0] == "POST"
+    assert seen[0][1] == "https://api.mailjet.com/v3.1/send"
+    assert isinstance(seen[0][2], dict)
+    assert seen[1][:2] == ("DELETE", "https://api.mailjet.com/v4/contacts/99")
+    assert seen[2][:2] == ("POST", "https://api.mailjet.com/v1/REST/templates/12/contents/publish")
+    assert seen[3][:2] == ("PUT", "https://api.mailjet.com/v1/data/images/abc-123/thumbnail")
+
+
+def test_sync_client_available_endpoints_and_did_you_mean() -> None:
+    """Verify Client.available_endpoints and AttributeError 'Did you mean' suggestion."""
+    with Client(auth=("pub_key", "priv_key")) as client:
+        assert client.available_endpoints == tuple(sorted(ROUTE_MAP))
+        assert "send_v31" in client.available_endpoints
+        assert "contacts" in client.available_endpoints
+        with pytest.raises(AttributeError, match=r"has no endpoint or attribute 'snd'\. Did you mean 'send'\?"):
+            _ = client.snd
+
+
+def test_client_ping_and_closed_context_reentry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify Client.ping() outcomes, SSRF fail-closed, and re-entering a closed Client context."""
+    with Client(auth=("pub_key", "priv_key"), max_retries=0) as sync_client:
+        fake_ok = type(
+            "Resp",
+            (),
+            {"status_code": 200, "headers": {}, "text": "{}", "raise_for_status": lambda _s=None: None},
+        )()
+        monkeypatch.setattr(sync_client.session, "request", lambda **_kw: fake_ok)
+        assert sync_client.ping(timeout=1.0) is True
+
+        def fail_conn(**_kw: Any) -> Any:
+            raise RequestsConnectionError("down")
+
+        monkeypatch.setattr(sync_client.session, "request", fail_conn)
+        assert sync_client.ping() is False
+
+    assert sync_client._closed is True
+    with sync_client as reentered:
+        assert reentered is sync_client
+        assert reentered._closed is False
+        assert reentered._session is None
+        reentered.config.api_url = "https://evil.example.com/"
+        with pytest.raises(ValueError, match=r"Security Alert \(CWE-918\)"):
+            reentered.ping()

@@ -472,7 +472,7 @@ do_not_mutate = [
     "mailjet_rest/types.py",
 ]
 also_copy = ["scripts/", ".clusterfuzzlite/"]
-pytest_add_cli_args = ["-o", "addopts=", "-p", "no:benchmark", "-p", "no:xdist", "--ignore=tests/unit/test_stubs.py"]
+pytest_add_cli_args = ["-o", "addopts=", "-p", "no:benchmark", "-p", "no:xdist", "--ignore=tests/unit/packaging_and_fuzz/test_stubs.py"]
 pytest_add_cli_args_test_selection = ["tests/unit", "tests/regression"]
 
 [tool.typos.default.extend-words]

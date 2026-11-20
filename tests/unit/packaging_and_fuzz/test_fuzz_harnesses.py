@@ -5,10 +5,11 @@ from __future__ import annotations
 import ast
 import contextlib
 import importlib
-from pathlib import Path
+import logging
 import sys
 import types
 import warnings
+from pathlib import Path
 from typing import Any
 
 
@@ -71,9 +72,11 @@ def _ensure_atheris_stub() -> tuple[Any, bool]:
 def test_fuzz_guardrails_dispatches_all_eight_targets() -> None:
     """CRIT-05: Ensure all 8 fuzz targets (indices 0..7) are registered and runnable."""
     _, injected = _ensure_atheris_stub()
+    prev_disable = logging.root.manager.disable
+    mod_name = "tests.fuzz.security_and_guardrails.fuzz_guardrails"
     try:
-        sys.modules.pop("tests.fuzz.fuzz_guardrails", None)
-        fuzz_mod = importlib.import_module("tests.fuzz.fuzz_guardrails")
+        sys.modules.pop(mod_name, None)
+        fuzz_mod = importlib.import_module("tests.fuzz.security_and_guardrails.fuzz_guardrails")
 
         assert len(fuzz_mod._TARGETS) == 8
 
@@ -96,9 +99,11 @@ def test_fuzz_guardrails_dispatches_all_eight_targets() -> None:
             for idx, body in enumerate(sample_bodies):
                 fuzz_mod.TestOneInput(bytes([idx]) + body + b"_pad_bytes")
     finally:
-        sys.modules.pop("tests.fuzz.fuzz_guardrails", None)
+        logging.disable(prev_disable)
+        sys.modules.pop(mod_name, None)
         if injected:
             sys.modules.pop("atheris", None)
+    assert logging.root.manager.disable == prev_disable
 
 
 def _is_atheris_call(node: ast.AST, attr: str) -> bool:
@@ -137,10 +142,45 @@ def _imports_mailjet_rest(node: ast.AST) -> bool:
     return False
 
 
+def test_fuzz_suite_scope_organization_and_unique_basenames_gate() -> None:
+    """Enforce scope-driven tests/fuzz package layout, dict/corpus root placement, and unique fuzzer basenames."""
+    fuzz_root = Path("tests/fuzz")
+    assert (fuzz_root / "__init__.py").is_file()
+    assert (fuzz_root / "fuzzer.dict").is_file()
+
+    root_fuzzers = sorted(fuzz_root.glob("fuzz_*.py"))
+    assert not root_fuzzers, f"Flat fuzz_*.py files must live in scope subdirectories, found: {root_fuzzers}"
+
+    expected_scopes = {
+        "clients",
+        "endpoints_and_routing",
+        "builders_and_payloads",
+        "security_and_guardrails",
+        "transport_and_chaos",
+        "webhooks_and_telemetry",
+    }
+    actual_scopes = {
+        entry.name for entry in fuzz_root.iterdir() if entry.is_dir() and entry.name not in {"corpus", "__pycache__"}
+    }
+    assert actual_scopes == expected_scopes
+
+    all_fuzzers: list[Path] = []
+    for scope in sorted(expected_scopes):
+        scope_dir = fuzz_root / scope
+        assert (scope_dir / "__init__.py").is_file(), f"Missing __init__.py in {scope_dir}"
+        scope_fuzzers = sorted(scope_dir.glob("fuzz_*.py"))
+        assert len(scope_fuzzers) >= 3, f"Expected >= 3 fuzzers in {scope_dir}, got {len(scope_fuzzers)}"
+        all_fuzzers.extend(scope_fuzzers)
+
+    assert len(all_fuzzers) == 36
+    basenames = [p.name for p in all_fuzzers]
+    assert len(basenames) == len(set(basenames)), f"Duplicate fuzzer basenames collide in build.sh/logs: {basenames}"
+
+
 def test_all_fuzz_targets_scope_instrumentation_to_mailjet_rest() -> None:
     """Ensure every Atheris target scopes import instrumentation to mailjet_rest and avoids instrument_all()."""
-    fuzz_files = sorted(Path("tests/fuzz").glob("fuzz_*.py"))
-    assert len(fuzz_files) == 30
+    fuzz_files = sorted(Path("tests/fuzz").rglob("fuzz_*.py"))
+    assert len(fuzz_files) == 36
 
     for fuzz_file in fuzz_files:
         tree = ast.parse(fuzz_file.read_text(encoding="utf-8"), filename=str(fuzz_file))
@@ -173,40 +213,59 @@ def test_all_fuzz_targets_scope_instrumentation_to_mailjet_rest() -> None:
             assert not unscoped, f"{fuzz_file} imports mailjet_rest outside scoped instrument_imports block"
 
 
-def _import_async_fuzz_target(mod_name: str) -> Any:
-    """Import an allowlisted async fuzz target using literal module strings."""
-    if mod_name == "tests.fuzz.fuzz_async_client":
-        return importlib.import_module("tests.fuzz.fuzz_async_client")
-    if mod_name == "tests.fuzz.fuzz_async_endpoint":
-        return importlib.import_module("tests.fuzz.fuzz_async_endpoint")
-    if mod_name == "tests.fuzz.fuzz_async_evil_server":
-        return importlib.import_module("tests.fuzz.fuzz_async_evil_server")
-    msg = f"Unexpected async fuzz module: {mod_name!r}"
+def _import_fuzz_target(mod_name: str) -> Any:
+    """Import an allowlisted Atheris fuzz target using literal module strings."""
+    if mod_name == "tests.fuzz.clients.fuzz_async_client":
+        return importlib.import_module("tests.fuzz.clients.fuzz_async_client")
+    if mod_name == "tests.fuzz.endpoints_and_routing.fuzz_async_endpoint":
+        return importlib.import_module("tests.fuzz.endpoints_and_routing.fuzz_async_endpoint")
+    if mod_name == "tests.fuzz.transport_and_chaos.fuzz_async_evil_server":
+        return importlib.import_module("tests.fuzz.transport_and_chaos.fuzz_async_evil_server")
+    if mod_name == "tests.fuzz.endpoints_and_routing.fuzz_async_pagination_and_retry":
+        return importlib.import_module("tests.fuzz.endpoints_and_routing.fuzz_async_pagination_and_retry")
+    if mod_name == "tests.fuzz.endpoints_and_routing.fuzz_openapi_routes_and_mock_parity":
+        return importlib.import_module("tests.fuzz.endpoints_and_routing.fuzz_openapi_routes_and_mock_parity")
+    if mod_name == "tests.fuzz.webhooks_and_telemetry.fuzz_version_and_exports":
+        return importlib.import_module("tests.fuzz.webhooks_and_telemetry.fuzz_version_and_exports")
+    if mod_name == "tests.fuzz.webhooks_and_telemetry.fuzz_telemetry":
+        return importlib.import_module("tests.fuzz.webhooks_and_telemetry.fuzz_telemetry")
+    if mod_name == "tests.fuzz.security_and_guardrails.fuzz_transport_security":
+        return importlib.import_module("tests.fuzz.security_and_guardrails.fuzz_transport_security")
+    if mod_name == "tests.fuzz.security_and_guardrails.fuzz_multipart_and_filesystem":
+        return importlib.import_module("tests.fuzz.security_and_guardrails.fuzz_multipart_and_filesystem")
+    msg = f"Unexpected fuzz module: {mod_name!r}"
     raise ImportError(msg)
 
 
 def test_async_fuzz_targets_smoke() -> None:
-    """Verify the three async Atheris fuzz targets import and process sample inputs cleanly."""
+    """Verify the async Atheris fuzz targets import and process sample inputs cleanly."""
     _, injected = _ensure_atheris_stub()
+    prev_disable = logging.root.manager.disable
     async_modules = (
-        "tests.fuzz.fuzz_async_client",
-        "tests.fuzz.fuzz_async_endpoint",
-        "tests.fuzz.fuzz_async_evil_server",
+        "tests.fuzz.clients.fuzz_async_client",
+        "tests.fuzz.endpoints_and_routing.fuzz_async_endpoint",
+        "tests.fuzz.transport_and_chaos.fuzz_async_evil_server",
+        "tests.fuzz.endpoints_and_routing.fuzz_async_pagination_and_retry",
+        "tests.fuzz.endpoints_and_routing.fuzz_openapi_routes_and_mock_parity",
     )
     loaded_mods: list[Any] = []
     try:
         for mod_name in async_modules:
             sys.modules.pop(mod_name, None)
-            fuzz_mod = _import_async_fuzz_target(mod_name)
+            fuzz_mod = _import_fuzz_target(mod_name)
             loaded_mods.append(fuzz_mod)
 
             fuzz_mod.TestOneInput(b"short")
             for mode_byte in (0, 1, 2):
                 fuzz_mod.TestOneInput(bytes([mode_byte]) + b"fuzz_payload_padding_0123456789")
     finally:
+        logging.disable(prev_disable)
         for fuzz_mod in loaded_mods:
+            sync_obj = getattr(fuzz_mod, "_sync_client", None)
+            if sync_obj is not None:
+                sync_obj.close()
             loop = getattr(fuzz_mod, "_loop", None)
-            for client_attr in ("_base_async_client", "_aclient"):
+            for client_attr in ("_base_async_client", "_aclient", "_async_client"):
                 client_obj = getattr(fuzz_mod, client_attr, None)
                 if client_obj is not None and loop is not None and not loop.is_closed():
                     loop.run_until_complete(client_obj.aclose())
@@ -216,6 +275,7 @@ def test_async_fuzz_targets_smoke() -> None:
             sys.modules.pop(mod_name, None)
         if injected:
             sys.modules.pop("atheris", None)
+    assert logging.root.manager.disable == prev_disable
 
 
 def test_fuzzer_dict_format_and_build_sh_wiring() -> None:
@@ -250,7 +310,7 @@ def test_harvest_fuzzer_dict_octal_to_hex_and_non_destructive_merge(tmp_path: Pa
             '2026-11-17T11:00:12.5918636Z "__parameters__" # Uses: 1276',
             '2026-11-17T11:00:12.5918841Z "\\011\\000\\000\\000\\000\\000\\000\\000" # Uses: 1064',
             '2026-11-17T11:00:12.5919061Z "\\377\\377\\377\\377\\377\\377\\377\\374" # Uses: 933',
-            '2026-11-17T11:00:12.5919245Z "https://u:p@api.mailjet.com/v3" # Uses: 50',
+            '2026-11-17T11:00:12.5919245Z "https://u:p@api.mailjet.com/v3" # Uses: 50',  # pragma: allowlist secret
             f'2026-11-17T11:00:12.5919400Z "{"A" * 130}" # Uses: 10',
             "2026-11-17T11:00:12.5919895Z ###### End of recommended dictionary. ######",
         ]
@@ -386,13 +446,63 @@ def test_harvest_fuzzer_dict_skips_processed_ci_runs_and_jobs(tmp_path: Path) ->
 def test_fuzz_webhooks_target_smoke() -> None:
     """Verify fuzz_webhooks target imports cleanly and handles mode 0, 1, 2 inputs."""
     _, injected = _ensure_atheris_stub()
+    prev_disable = logging.root.manager.disable
+    mod_name = "tests.fuzz.webhooks_and_telemetry.fuzz_webhooks"
     try:
-        sys.modules.pop("tests.fuzz.fuzz_webhooks", None)
-        fuzz_mod = importlib.import_module("tests.fuzz.fuzz_webhooks")
+        sys.modules.pop(mod_name, None)
+        fuzz_mod = importlib.import_module("tests.fuzz.webhooks_and_telemetry.fuzz_webhooks")
         fuzz_mod.TestOneInput(b"short")
         for mode_byte in (0, 1, 2):
             fuzz_mod.TestOneInput(bytes([mode_byte]) + b"webhook_payload_fuzz_seed_bytes_12345678")
     finally:
-        sys.modules.pop("tests.fuzz.fuzz_webhooks", None)
+        logging.disable(prev_disable)
+        sys.modules.pop(mod_name, None)
         if injected:
             sys.modules.pop("atheris", None)
+    assert logging.root.manager.disable == prev_disable
+
+
+def test_new_core_business_logic_fuzz_targets_smoke() -> None:
+    """Verify newly added version, telemetry, transport-security, and filesystem fuzz targets run cleanly."""
+    _, injected = _ensure_atheris_stub()
+    prev_disable = logging.root.manager.disable
+    sync_modules = (
+        "tests.fuzz.webhooks_and_telemetry.fuzz_version_and_exports",
+        "tests.fuzz.webhooks_and_telemetry.fuzz_telemetry",
+        "tests.fuzz.security_and_guardrails.fuzz_transport_security",
+        "tests.fuzz.security_and_guardrails.fuzz_multipart_and_filesystem",
+    )
+    try:
+        for mod_name in sync_modules:
+            sys.modules.pop(mod_name, None)
+            fuzz_mod = _import_fuzz_target(mod_name)
+            fuzz_mod.TestOneInput(b"short")
+            for mode_byte in (0, 1, 2):
+                fuzz_mod.TestOneInput(bytes([mode_byte]) + b"core_business_logic_fuzz_seed_bytes_012345")
+    finally:
+        logging.disable(prev_disable)
+        for mod_name in sync_modules:
+            sys.modules.pop(mod_name, None)
+        if injected:
+            sys.modules.pop("atheris", None)
+    assert logging.root.manager.disable == prev_disable
+
+
+def test_discover_fuzzer_logs_supports_nested_scope_subdirectories(tmp_path: Path) -> None:
+    """Harvester discover_fuzzer_logs locates logs for both flat and scope-nested fuzz_*.py scripts."""
+    import scripts.harvest_fuzzer_dict as harvester  # ruff: ignore[import-outside-top-level]
+
+    fuzz_dir = tmp_path / "fuzz"
+    scope_dir = fuzz_dir / "clients"
+    scope_dir.mkdir(parents=True)
+    (fuzz_dir / "fuzz_flat.py").write_text("def TestOneInput(d): pass\n", encoding="utf-8")
+    (scope_dir / "fuzz_scoped.py").write_text("def TestOneInput(d): pass\n", encoding="utf-8")
+
+    logs_dir = tmp_path / "logs"
+    for name in ("fuzz_flat", "fuzz_scoped"):
+        target_log_dir = logs_dir / name
+        target_log_dir.mkdir(parents=True)
+        (target_log_dir / "fuzz_output.log").write_text("", encoding="utf-8")
+
+    discovered = harvester.discover_fuzzer_logs(fuzz_dir=fuzz_dir, logs_dir=logs_dir)
+    assert {p.parent.name for p in discovered} == {"fuzz_flat", "fuzz_scoped"}
