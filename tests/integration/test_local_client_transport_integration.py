@@ -477,7 +477,7 @@ def test_config_validation_and_customization(loopback_servers: dict[str, Any]) -
         "https://localhost/v3?foo=bar",
         "https://localhost/v3#frag",
         "ftp://localhost/",
-        "https://user:pass@localhost/",
+        "https://user:pass@localhost/",  # pragma: allowlist secret
         "https://evil.example/",
     ):
         with pytest.raises(ValueError):
@@ -1135,8 +1135,8 @@ def test_sync_client_and_endpoint_real_https_and_http_integration(
             _ = client._private_attr
         with pytest.raises(AttributeError):
             client._validate_endpoint_name("_private_attr")
-        with pytest.raises(AttributeError, match="Did you mean 'contact'"):
-            _ = client.contac
+        with pytest.raises(AttributeError, match="Did you mean 'send'"):
+            _ = client.snd
         assert client._resolve_endpoint("contact", Endpoint) is client.contact
 
         # BaseClient._log_request

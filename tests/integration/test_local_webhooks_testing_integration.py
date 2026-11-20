@@ -27,7 +27,7 @@ from mailjet_rest.client import _httpx2
 from mailjet_rest.testing import MockEndpoint, MockResponse, _MockPingResult, _MockStreamIterator
 
 
-_WEBHOOK_SECRET = "whsec_local_integration_test_key_0123456789"
+_WEBHOOK_SECRET = "whsec_local_integration_test_key_0123456789"  # pragma: allowlist secret
 
 
 def _sign_webhook_payload(

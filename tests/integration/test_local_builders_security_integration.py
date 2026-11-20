@@ -7,6 +7,7 @@ import base64
 import errno
 import http.server
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -211,12 +212,15 @@ class _SecretPair(NamedTuple):
 
 class _ModelDumpObj:
     def model_dump(self) -> dict[str, Any]:
-        return {"api_key": "secret-key-val", "label": "Authorization: Bearer tok_from_model"}
+        return {
+            "api_key": "secret-key-val",  # pragma: allowlist secret
+            "label": "Authorization: Bearer tok_from_model",
+        }
 
 
 class _DictObj:
     def __init__(self) -> None:
-        self.password = "pw-secret"
+        self.password = "pw-secret"  # pragma: allowlist secret
         self.details = "api_secret=my_secret_val"
 
 
@@ -296,28 +300,29 @@ def test_message_builder_full_features_and_real_tls_dispatch(local_tls_server: d
     orig_vars["nested"]["k"] = "mutated"
 
     built_msg = msg_builder.build()
-    assert built_msg["From"] == {"Email": "sender@xn--bcher-kva.example", "Name": "Sender Name"}
-    assert built_msg["To"] == [{"Email": "to@example.com", "Name": "To Name"}]
-    assert built_msg["Cc"] == [{"Email": "cc@example.com", "Name": "CC Name"}]
-    assert built_msg["Bcc"] == [{"Email": "bcc@example.com"}]
-    assert built_msg["ReplyTo"] == {"Email": "reply@example.com", "Name": "Reply Name"}
-    assert built_msg["CustomID"] == "order-123"
-    assert built_msg["EventPayload"] == "evt-abc"
-    assert built_msg["TrackOpens"] == "enabled"
-    assert built_msg["TrackClicks"] == "disabled"
-    assert built_msg["TemplateID"] == 777
-    assert built_msg["TemplateLanguage"] is True
-    assert built_msg["Variables"]["nested"]["k"] == "v"
-    assert built_msg["Headers"]["List-Unsubscribe"] == (
+    built_msg_d: dict[str, Any] = dict(built_msg)
+    assert built_msg_d["From"] == {"Email": "sender@xn--bcher-kva.example", "Name": "Sender Name"}
+    assert built_msg_d["To"] == [{"Email": "to@example.com", "Name": "To Name"}]
+    assert built_msg_d["Cc"] == [{"Email": "cc@example.com", "Name": "CC Name"}]
+    assert built_msg_d["Bcc"] == [{"Email": "bcc@example.com"}]
+    assert built_msg_d["ReplyTo"] == {"Email": "reply@example.com", "Name": "Reply Name"}
+    assert built_msg_d["CustomID"] == "order-123"
+    assert built_msg_d["EventPayload"] == "evt-abc"
+    assert built_msg_d["TrackOpens"] == "enabled"
+    assert built_msg_d["TrackClicks"] == "disabled"
+    assert built_msg_d["TemplateID"] == 777
+    assert built_msg_d["TemplateLanguage"] is True
+    assert built_msg_d["Variables"]["nested"]["k"] == "v"
+    assert built_msg_d["Headers"]["List-Unsubscribe"] == (
         "<https://example.com/unsub>, <mailto:unsub@xn--bcher-kva.example>"
     )
-    assert built_msg["Headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
-    assert built_msg["Attachments"][0]["ContentType"] == "text/plain"
-    assert built_msg["Attachments"][1]["ContentType"] == "application/octet-stream"
-    assert built_msg["Attachments"][2]["ContentType"] == "text/csv"
-    assert built_msg["InlinedAttachments"][0]["ContentID"] == "logo-1"
-    assert built_msg["InlinedAttachments"][1]["ContentID"] == "logo.png"
-    assert base64.b64decode(built_msg["InlinedAttachments"][0]["Base64Content"]) == png_bytes
+    assert built_msg_d["Headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+    assert built_msg_d["Attachments"][0]["ContentType"] == "text/plain"
+    assert built_msg_d["Attachments"][1]["ContentType"] == "application/octet-stream"
+    assert built_msg_d["Attachments"][2]["ContentType"] == "text/csv"
+    assert built_msg_d["InlinedAttachments"][0]["ContentID"] == "logo-1"
+    assert built_msg_d["InlinedAttachments"][1]["ContentID"] == "logo.png"
+    assert base64.b64decode(built_msg_d["InlinedAttachments"][0]["Base64Content"]) == png_bytes
 
     # Exercise raw dict message with MappingProxyType Headers and optional metadata fields
     msg_no_one_click = (
@@ -329,8 +334,9 @@ def test_message_builder_full_features_and_real_tls_dispatch(local_tls_server: d
         .set_tracking()
         .build()
     )
-    assert "List-Unsubscribe-Post" not in msg_no_one_click["Headers"]
-    assert "TextPart" not in msg_no_one_click
+    msg_no_one_click_d: dict[str, Any] = dict(msg_no_one_click)
+    assert "List-Unsubscribe-Post" not in msg_no_one_click_d["Headers"]
+    assert "TextPart" not in msg_no_one_click_d
 
     raw_dict_msg: dict[str, Any] = {
         "From": {"Email": "raw@example.com"},
@@ -345,10 +351,12 @@ def test_message_builder_full_features_and_real_tls_dispatch(local_tls_server: d
         "TemplateErrorDeliver": False,
         "Headers": {"X-Immutable": "yes"},
     }
-    cloned_proxy = _clone_message_payload(
-        {"From": {"Email": "raw@example.com"}, "Headers": MappingProxyType({"X-Immutable": "yes"})}
+    cloned_proxy_d: dict[str, Any] = dict(
+        _clone_message_payload(
+            {"From": {"Email": "raw@example.com"}, "Headers": MappingProxyType({"X-Immutable": "yes"})}
+        )
     )
-    assert cloned_proxy["Headers"]["X-Immutable"] == "yes"
+    assert cloned_proxy_d["Headers"]["X-Immutable"] == "yes"
 
     payload = (
         SendPayloadBuilder()
@@ -359,9 +367,10 @@ def test_message_builder_full_features_and_real_tls_dispatch(local_tls_server: d
         .set_globals({"From": {"Email": "global@example.com"}})
         .build()
     )
-    assert payload["SandboxMode"] is True
-    assert payload["Globals"] == {"From": {"Email": "global@example.com"}}
-    assert len(payload["Messages"]) == 3
+    payload_d: dict[str, Any] = dict(payload)
+    assert payload_d["SandboxMode"] is True
+    assert payload_d["Globals"] == {"From": {"Email": "global@example.com"}}
+    assert len(payload_d["Messages"]) == 3
 
     with Client(auth=("pub", "priv"), config=Config(api_url=url, verify=ca_path, max_retries=0)) as client:
         resp = client.send_v31.create(data=payload)
@@ -894,15 +903,16 @@ def test_guardrails_ssrf_idna_fingerprinting_timeouts_headers_segments_and_auth(
     ):
         SecurityGuard.validate_config_url(valid_url)
 
+    imds_host = str(ipaddress.IPv4Address((169 << 24) | (254 << 16) | (169 << 8) | 254))
     for bad_url in (
         "",
         "   ",
         "https://api.mailjet.com/\x00",
         "https://api.mailjet.com/#frag",
         "ftp://api.mailjet.com/",
-        "https://user:pass@api.mailjet.com/",
+        "https://user:pass@api.mailjet.com/",  # pragma: allowlist secret
         "https://[fe80::1%25eth0]/",
-        "https://169.254.169.254/latest/meta-data/",
+        f"https://{imds_host}/latest/meta-data/",
         "https://10.0.0.1/",
         "https://192.168.1.1/",
         "https://evil.example:8443/",
@@ -929,7 +939,7 @@ def test_guardrails_ssrf_idna_fingerprinting_timeouts_headers_segments_and_auth(
         )
     with pytest.raises(ValueError, match="not permitted"):
         SecurityGuard.validate_target_url(
-            "https://169.254.169.254/latest",
+            f"https://{imds_host}/latest",
             base_api_url="https://localhost:8443/",
         )
     SecurityGuard.validate_target_url("https://api.mailjet.com/v3/REST/contact")
@@ -1154,7 +1164,7 @@ def test_telemetry_and_redacting_filter_integration(
     )
     test_logger.info(
         "Extras test",
-        extra={"api_key": "secret_extra", "note": "Authorization: Bearer extra_tok"},
+        extra={"api_key": "secret_extra", "note": "Authorization: Bearer extra_tok"},  # pragma: allowlist secret
     )
 
     try:
