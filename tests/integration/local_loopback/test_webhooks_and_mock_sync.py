@@ -1,17 +1,9 @@
-"""Offline integration tests for webhook HMAC verification and MockMailjetClient test doubles."""
+"""Offline loopback HTTP webhook verification and MockMailjetClient integration tests (sync)."""
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import hmac
-import http.server
-import json
-import threading
 import time
 import types
-from collections.abc import Generator
-from typing import Any, cast
 
 import pytest
 import requests
@@ -23,129 +15,18 @@ from mailjet_rest import (
     ValidationError,
     verify_webhook_signature,
 )
-from mailjet_rest.client import _httpx2
 from mailjet_rest.testing import MockEndpoint, MockResponse, _MockPingResult, _MockStreamIterator
-
-
-_WEBHOOK_SECRET = "whsec_local_integration_test_key_0123456789"  # pragma: allowlist secret
-
-
-def _sign_webhook_payload(
-    payload_bytes: bytes,
-    secret: str,
-    *,
-    timestamp_unix: int | None = None,
-    signed_timestamp: bool = False,
-) -> str:
-    mac_input = f"{timestamp_unix}.".encode("ascii") + payload_bytes if signed_timestamp else payload_bytes
-    return hmac.new(secret.encode("utf-8"), mac_input, hashlib.sha256).hexdigest()
-
-
-class _WebhookReceiverHandler(http.server.BaseHTTPRequestHandler):
-    """Loopback HTTP webhook receiver verifying X-Mailjet-Signature headers."""
-
-    @property
-    def _webhook_server(self) -> _WebhookHTTPServer:
-        return cast("_WebhookHTTPServer", self.server)
-
-    def log_message(self, format: str, *args: Any) -> None:
-        _ = (format, args)
-
-    def _write_json(self, status: int, body: dict[str, Any]) -> None:
-        encoded = json.dumps(body).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        self.wfile.write(encoded)
-
-    def do_POST(self) -> None:
-        raw_len = self.headers.get("Content-Length", "0") or "0"
-        try:
-            length = int(raw_len)
-        except ValueError:
-            self._write_json(400, {"verified": False, "error": "invalid Content-Length"})
-            return
-
-        payload_bytes = self.rfile.read(length) if length > 0 else b""
-        signature_header = self.headers.get("X-Mailjet-Signature", "")
-        raw_timestamp = self.headers.get("X-Mailjet-Timestamp")
-        raw_max_age = self.headers.get("X-Max-Age")
-        signed_timestamp = self.headers.get("X-Verify-Mode", "raw") == "signed-ts"
-
-        timestamp_unix: int | None = None
-        if raw_timestamp is not None:
-            try:
-                timestamp_unix = int(raw_timestamp)
-            except ValueError:
-                self._write_json(400, {"verified": False, "error": "invalid X-Mailjet-Timestamp"})
-                return
-
-        max_age_seconds = 300
-        if raw_max_age is not None:
-            try:
-                max_age_seconds = int(raw_max_age)
-            except ValueError:
-                self._write_json(400, {"verified": False, "error": "invalid X-Max-Age"})
-                return
-
-        try:
-            verified = verify_webhook_signature(
-                payload_bytes,
-                signature_header,
-                self._webhook_server.webhook_secret,
-                timestamp_unix=timestamp_unix,
-                max_age_seconds=max_age_seconds,
-                signed_timestamp=signed_timestamp,
-            )
-        except (TypeError, ValueError) as exc:
-            self._webhook_server.rejected_requests.append({"reason": str(exc), "status": 400})
-            self._write_json(400, {"verified": False, "error": str(exc)})
-            return
-
-        if verified:
-            self._webhook_server.verified_requests.append(
-                {
-                    "path": self.path,
-                    "payload": payload_bytes,
-                    "timestamp": timestamp_unix,
-                    "signed_timestamp": signed_timestamp,
-                }
-            )
-            self._write_json(200, {"verified": True})
-            return
-
-        self._webhook_server.rejected_requests.append({"path": self.path, "payload": payload_bytes, "status": 401})
-        self._write_json(401, {"verified": False})
-
-
-class _WebhookHTTPServer(http.server.ThreadingHTTPServer):
-    allow_reuse_address = True
-
-    def __init__(self, server_address: tuple[str, int], webhook_secret: str) -> None:
-        super().__init__(server_address, _WebhookReceiverHandler)
-        self.webhook_secret = webhook_secret
-        self.verified_requests: list[dict[str, Any]] = []
-        self.rejected_requests: list[dict[str, Any]] = []
-
-
-@pytest.fixture(scope="module")
-def webhook_server() -> Generator[tuple[str, _WebhookHTTPServer], None, None]:
-    """Start an isolated loopback HTTP webhook receiver for sync and async POST checks."""
-    server = _WebhookHTTPServer(("127.0.0.1", 0), _WEBHOOK_SECRET)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{port}/webhook", server
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+from tests.integration.local_loopback._servers import (
+    _WEBHOOK_SECRET,
+    _WebhookHTTPServer,
+    _sign_webhook_payload,
+)
 
 
 def test_webhook_loopback_http_sync_verification(webhook_server: tuple[str, _WebhookHTTPServer]) -> None:
     """Verify signed and tampered Mailjet webhook HTTP POST requests over real loopback sockets."""
+    import json
+
     url, server = webhook_server
     server.verified_requests.clear()
     server.rejected_requests.clear()
@@ -262,44 +143,6 @@ def test_webhook_loopback_http_sync_verification(webhook_server: tuple[str, _Web
     assert len(server.rejected_requests) == 5
 
 
-@pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed.")
-def test_webhook_loopback_http_async_httpx2_verification(webhook_server: tuple[str, _WebhookHTTPServer]) -> None:
-    """Verify loopback webhook HTTP POST behavior using async httpx2 client."""
-    url, _ = webhook_server
-    now = int(time.time())
-    payload = json.dumps({"event": "open", "time": now}).encode("utf-8")
-    sig_ts = _sign_webhook_payload(payload, _WEBHOOK_SECRET, timestamp_unix=now, signed_timestamp=True)
-
-    async def _run() -> None:
-        assert _httpx2 is not None
-        async with _httpx2.AsyncClient(trust_env=False, timeout=5.0) as client:
-            ok_resp = await client.post(
-                url,
-                content=payload,
-                headers={
-                    "X-Mailjet-Signature": f"SHA256={sig_ts.upper()}",
-                    "X-Mailjet-Timestamp": str(now),
-                    "X-Verify-Mode": "signed-ts",
-                },
-            )
-            assert ok_resp.status_code == 200
-            assert ok_resp.json() == {"verified": True}
-
-            bad_resp = await client.post(
-                url,
-                content=payload + b" ",
-                headers={
-                    "X-Mailjet-Signature": sig_ts,
-                    "X-Mailjet-Timestamp": str(now),
-                    "X-Verify-Mode": "signed-ts",
-                },
-            )
-            assert bad_resp.status_code == 401
-            assert bad_resp.json() == {"verified": False}
-
-    asyncio.run(_run())
-
-
 def test_webhook_signature_boundaries_and_validation_errors() -> None:
     """Exercise all verify_webhook_signature validation branches, max_age=0 boundary, and surrogate handling."""
     payload = b'{"event":"bounce","MessageID":42}'
@@ -369,8 +212,8 @@ def test_webhook_signature_boundaries_and_validation_errors() -> None:
         verify_webhook_signature(payload, raw_sig, _WEBHOOK_SECRET, timestamp_unix=None, signed_timestamp=True)
 
 
-def test_mock_mailjet_client_sync_and_async_workflow() -> None:
-    """Exercise full sync and async workflows on MockMailjetClient, MockEndpoint, and MockResponse."""
+def test_mock_mailjet_client_sync_workflow() -> None:
+    """Exercise full sync workflow on MockMailjetClient, MockEndpoint, and MockResponse."""
     with MockMailjetClient() as mock:
         direct_res = mock.create(data={"Email": "pilot@example.com"})
         assert direct_res == {"Status": "success", "StatusCode": 200}
@@ -429,26 +272,9 @@ def test_mock_mailjet_client_sync_and_async_workflow() -> None:
     assert mock.sent_requests[6]["method"] == "GET"
     assert mock.sent_requests[6]["filters"] == {"Limit": 5}
 
-    async def _run_async() -> None:
-        async with MockMailjetClient() as amock:
-            aresp = await amock.send_v31.create(data={"Messages": [{"Subject": "Async Test"}]})
-            assert isinstance(aresp, MockResponse)
-            assert aresp.status_code == 200
-            assert aresp.json()["Status"] == "success"
-            awaitable_iter = iter(aresp.__await__())
-            with pytest.raises(StopIteration) as stop_exc:
-                next(awaitable_iter)
-            assert stop_exc.value.value is aresp
-            assert await amock.ping() is True
-            streamed = [item async for item in amock.contact.stream()]
-            assert streamed == []
-            assert len(amock.sent_requests) == 2
 
-    asyncio.run(_run_async())
-
-
-def test_mock_mailjet_client_errors_streaming_ping_and_validation() -> None:
-    """Exercise MockMailjetClient error status mapping, stream iterators, ping operators, and ID guards."""
+def test_mock_mailjet_client_sync_errors_streaming_ping_and_validation() -> None:
+    """Exercise sync MockMailjetClient error status mapping, stream iterators, ping operators, and ID guards."""
     # Status >= 400 records Status="error" and raise_for_status maps SDK errors
     with MockMailjetClient(default_status=400) as bad_req:
         resp_400 = bad_req.contact.create(data={"Email": "bad"})
@@ -482,38 +308,26 @@ def test_mock_mailjet_client_errors_streaming_ping_and_validation() -> None:
         with pytest.raises(ValueError, match="GET requests only"):
             mock.contact.stream(method="POST")
 
-    # Direct _MockStreamIterator sync and async iteration over non-empty items
+    # Direct _MockStreamIterator sync iteration over non-empty items
     sync_iter = _MockStreamIterator(({"ID": 1}, {"ID": 2}))
     assert list(sync_iter) == [{"ID": 1}, {"ID": 2}]
 
-    async def _consume_async_stream() -> list[dict[str, Any]]:
-        async_iter = _MockStreamIterator(({"ID": 10}, {"ID": 20}))
-        return [item async for item in async_iter]
+    # _MockPingResult equality, bool, hash, repr across 200 vs 503
+    with MockMailjetClient(default_status=200) as ok_client, MockMailjetClient(default_status=503) as fail_client:
+        ping_ok = ok_client.ping(timeout=1.5)
+        ping_fail = fail_client.ping()
 
-    assert asyncio.run(_consume_async_stream()) == [{"ID": 10}, {"ID": 20}]
-
-    # _MockPingResult equality, bool, hash, repr, and await across 200 vs 503
-    async def _check_pings() -> None:
-        with MockMailjetClient(default_status=200) as ok_client, MockMailjetClient(default_status=503) as fail_client:
-            ping_ok = ok_client.ping(timeout=1.5)
-            ping_fail = fail_client.ping()
-
-            assert isinstance(ping_ok, _MockPingResult)
-            assert bool(ping_ok) is True
-            assert bool(ping_fail) is False
-            assert ping_ok == True
-            assert ping_ok != False
-            assert ping_fail == False
-            assert ping_ok == _MockPingResult(True)
-            assert ping_ok != _MockPingResult(False)
-            assert ping_ok.__eq__("other") is NotImplemented
-            assert ping_ok != "other"
-            assert hash(ping_ok) == hash(True)
-            assert hash(ping_fail) == hash(False)
-            assert repr(ping_ok) == "True"
-            assert repr(ping_fail) == "False"
-
-            assert await ok_client.ping() is True
-            assert await fail_client.ping() is False
-
-    asyncio.run(_check_pings())
+        assert isinstance(ping_ok, _MockPingResult)
+        assert bool(ping_ok) is True
+        assert bool(ping_fail) is False
+        assert ping_ok == True
+        assert ping_ok != False
+        assert ping_fail == False
+        assert ping_ok == _MockPingResult(True)
+        assert ping_ok != _MockPingResult(False)
+        assert ping_ok.__eq__("other") is NotImplemented
+        assert ping_ok != "other"
+        assert hash(ping_ok) == hash(True)
+        assert hash(ping_fail) == hash(False)
+        assert repr(ping_ok) == "True"
+        assert repr(ping_fail) == "False"

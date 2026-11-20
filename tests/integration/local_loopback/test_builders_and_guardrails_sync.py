@@ -1,28 +1,21 @@
-"""Offline loopback TLS 1.2+ and real-filesystem integration tests for builders and security modules."""
+"""Offline loopback TLS 1.2+ and real-filesystem integration tests for builders and security modules (sync)."""
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import errno
-import http.server
 import io
 import ipaddress
 import json
 import logging
 import os
-import shutil
-import ssl
-import subprocess
-import threading
-from collections.abc import Generator, Iterator, Mapping
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
-from typing import Any, NamedTuple, cast
+from typing import Any, cast
 
 import pytest
 
-from mailjet_rest import AsyncClient, Client, Config, ValidationError
+from mailjet_rest import Client, Config, ValidationError
 from mailjet_rest.builders import (
     ChunkedStreamer,
     MessageBuilder,
@@ -30,237 +23,29 @@ from mailjet_rest.builders import (
     TemplateContentBuilder,
     _clone_message_payload,
 )
-from mailjet_rest.client import _httpx2
 from mailjet_rest.utils import filesystem_security, guardrails as guardrails_mod, html_guard, telemetry
 from mailjet_rest.utils.guardrails import RedactingFilter, SecretAuth, SecurityGuard
+from tests.integration.local_loopback._servers import (
+    _BrokenMapping,
+    _BrokenStrSlotsObj,
+    _BytesPathLike,
+    _DictObj,
+    _IntegrationHTTPSServer,
+    _ListHandler,
+    _ModelDumpObj,
+    _SecretPair,
+    _SlotsObj,
+)
 
 
-class _IntegrationTLSHandler(http.server.BaseHTTPRequestHandler):
-    """Thread-safe local HTTPS stub verifying built payloads, headers, and multipart uploads."""
-
-    @property
-    def _tls_server(self) -> _IntegrationHTTPSServer:
-        return cast("_IntegrationHTTPSServer", self.server)
-
-    def log_message(self, format: str, *args: Any) -> None:
-        _ = (format, args)
-
-    def _read_body(self) -> bytes:
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        return self.rfile.read(length) if length > 0 else b""
-
-    def _write_json(self, status: int, payload: dict[str, Any]) -> None:
-        encoded = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        if encoded:
-            self.wfile.write(encoded)
-
-    def _record(self, method: str, body: bytes) -> None:
-        self._tls_server.recorded_requests.append(
-            {
-                "method": method,
-                "path": self.path,
-                "headers": {k.lower(): v for k, v in self.headers.items()},
-                "body": body,
-            }
-        )
-
-    def do_GET(self) -> None:
-        body = self._read_body()
-        self._record("GET", body)
-        self._write_json(200, {"Count": 1, "Total": 1, "Data": [{"ID": 1}]})
-
-    def do_POST(self) -> None:
-        body = self._read_body()
-        self._record("POST", body)
-
-        if self.path.startswith("/v3.1/send"):
-            parsed = json.loads(body.decode("utf-8"))
-            first_msg = parsed["Messages"][0] if parsed.get("Messages") else {}
-            custom_id = first_msg.get("CustomID", "")
-            if custom_id == "trigger-400":
-                self._write_json(
-                    400,
-                    {"Messages": [{"Errors": [{"ErrorMessage": "Simulated send failure"}]}]},
-                )
-                return
-            self._write_json(
-                200,
-                {
-                    "Messages": [
-                        {
-                            "Status": "success",
-                            "CustomID": custom_id,
-                            "To": [
-                                {
-                                    "Email": "to@example.com",
-                                    "MessageUUID": "uuid-loopback-1",
-                                    "MessageID": 1001,
-                                    "MessageHref": "https://api.mailjet.com/v3/REST/message/1001",
-                                }
-                            ],
-                        }
-                    ]
-                },
-            )
-            return
-
-        if self.path.startswith("/v3/REST/template/"):
-            parsed = json.loads(body.decode("utf-8"))
-            self._write_json(201, {"Count": 1, "Data": [parsed]})
-            return
-
-        if self.path.startswith("/v1/data/images"):
-            ctype = self.headers.get("Content-Type", "")
-            self._write_json(201, {"Count": 1, "Data": [{"ID": "img-1", "content_type": ctype}]})
-            return
-
-        self._write_json(201, {"Count": 1, "Data": [{"ID": 100}]})
-
-
-class _IntegrationHTTPSServer(http.server.ThreadingHTTPServer):
-    allow_reuse_address = True
-
-    def __init__(self, server_address: tuple[str, int], cert_path: Path, key_path: Path) -> None:
-        super().__init__(server_address, _IntegrationTLSHandler)
-        self.recorded_requests: list[dict[str, Any]] = []
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-        self.socket = ctx.wrap_socket(self.socket, server_side=True)
-
-
-def _generate_self_signed_cert(cert_dir: Path, name: str) -> tuple[Path, Path]:
-    openssl = shutil.which("openssl")
-    if openssl is None:
-        pytest.skip("openssl binary not available for loopback TLS integration test")
-    assert openssl is not None
-    cert_path = cert_dir / f"{name}.pem"
-    key_path = cert_dir / f"{name}.key"
-    subprocess.run(
-        [
-            openssl,
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-keyout",
-            str(key_path),
-            "-out",
-            str(cert_path),
-            "-days",
-            "1",
-            "-nodes",
-            "-subj",
-            "/CN=localhost",
-            "-addext",
-            "subjectAltName=DNS:localhost,IP:127.0.0.1",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    return cert_path, key_path
-
-
-@pytest.fixture(scope="module")
-def local_tls_server(tmp_path_factory: pytest.TempPathFactory) -> Generator[dict[str, Any], None, None]:
-    """Start an isolated loopback HTTPS TLS 1.2+ server for builders and security integration."""
-    cert_dir = tmp_path_factory.mktemp("tls_builders_security")
-    cert_path, key_path = _generate_self_signed_cert(cert_dir, "server")
-    server = _IntegrationHTTPSServer(("localhost", 0), cert_path, key_path)
-    port = server.server_address[1]
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield {
-            "url": f"https://localhost:{port}/",
-            "ca_path": cert_path,
-            "server": server,
-        }
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-
-
-class _BytesPathLike:
-    def __init__(self, path_bytes: bytes) -> None:
-        self._path_bytes = path_bytes
-
-    def __fspath__(self) -> bytes:
-        return self._path_bytes
-
-
-class _ListHandler(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.records: list[logging.LogRecord] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.records.append(record)
-
-
-class _SecretPair(NamedTuple):
-    token: str
-    note: str
-
-
-class _ModelDumpObj:
-    def model_dump(self) -> dict[str, Any]:
-        return {
-            "api_key": "secret-key-val",  # pragma: allowlist secret
-            "label": "Authorization: Bearer tok_from_model",
-        }
-
-
-class _DictObj:
-    def __init__(self) -> None:
-        self.password = "pw-secret"  # pragma: allowlist secret
-        self.details = "api_secret=my_secret_val"
-
-
-class _SlotsObj:
-    __slots__ = ("val",)
-
-    def __init__(self, val: str) -> None:
-        self.val = val
-
-    def __str__(self) -> str:
-        return self.val
-
-
-class _BrokenStrSlotsObj:
-    __slots__ = ()
-
-    def __str__(self) -> str:
-        raise RuntimeError("cannot stringify")
-
-
-class _BrokenMapping(Mapping[str, Any]):
-    def __getitem__(self, key: str) -> Any:
-        raise RuntimeError("broken mapping")
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(())
-
-    def __len__(self) -> int:
-        return 1
-
-    def get(self, key: str, default: Any = None) -> Any:
-        raise RuntimeError("broken mapping get")
-
-
-def test_message_builder_full_features_and_real_tls_dispatch(local_tls_server: dict[str, Any], tmp_path: Path) -> None:
+def test_message_builder_full_features_and_real_tls_dispatch(
+    builders_tls_server: dict[str, Any], tmp_path: Path
+) -> None:
     """Build rich Send v3.1 messages with attachments/CIDs/headers/tracking and dispatch over loopback TLS."""
-    server: _IntegrationHTTPSServer = local_tls_server["server"]
+    server: _IntegrationHTTPSServer = builders_tls_server["server"]
     server.recorded_requests.clear()
-    url: str = local_tls_server["url"]
-    ca_path: Path = local_tls_server["ca_path"]
+    url: str = builders_tls_server["url"]
+    ca_path: Path = builders_tls_server["ca_path"]
 
     txt_file = tmp_path / "summary.txt"
     txt_file.write_bytes(b"Summary attachment payload")
@@ -385,63 +170,10 @@ def test_message_builder_full_features_and_real_tls_dispatch(local_tls_server: d
     assert wire_json["Messages"][2]["URLTags"] == "utm_source=sdk"
 
 
-@pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
-def test_async_client_builders_telemetry_and_redacting_filter(local_tls_server: dict[str, Any]) -> None:
-    """Exercise AsyncClient sending builder payloads with DEBUG telemetry and RedactingFilter attached."""
-    url: str = local_tls_server["url"]
-    ca_path: Path = local_tls_server["ca_path"]
-
-    msg = (
-        MessageBuilder()
-        .set_sender("async@example.com")
-        .add_recipient("to@example.com")
-        .set_custom_id("async-cid 1")
-        .set_template(888, language_active=False)
-        .build()
-    )
-    payload = SendPayloadBuilder().add_message(msg).set_sandbox_mode(False).build()
-    assert "SandboxMode" not in payload
-
-    tpl_payload = (
-        TemplateContentBuilder()
-        .set_meta(author="Async Author", name="AsyncTpl", locale="en_US")
-        .set_headers({"X-Tpl": "async"})
-        .set_content(text="Async tpl text", html="<p>Async</p>", mjml="<mjml><mj-body/></mjml>")
-        .build()
-    )
-
-    client_logger = logging.getLogger("mailjet_rest.client")
-    old_level = client_logger.level
-    capture = _ListHandler()
-    client_logger.addHandler(capture)
-    client_logger.setLevel(logging.DEBUG)
-
-    async def _run() -> None:
-        async with AsyncClient(
-            auth="secret_bearer_token", config=Config(api_url=url, verify=ca_path, max_retries=0)
-        ) as ac:
-            r1 = await ac.send_v31.create(data=payload)
-            assert r1.status_code == 200
-            r2 = await ac.template_detailcontent.create(id=55, data=tpl_payload)
-            assert r2.status_code == 201
-            client_logger.debug("Header check Authorization: Bearer leaked_tok api_key=my_secret_key")
-
-    try:
-        asyncio.run(_run())
-    finally:
-        client_logger.removeHandler(capture)
-        client_logger.setLevel(old_level)
-
-    rendered = [rec.getMessage() for rec in capture.records]
-    assert any("CustomID=async-cid_1" in m and "TemplateID=888" in m for m in rendered)
-    assert any("Authorization: Bearer ********" in m and "api_key=********" in m for m in rendered)
-    assert not any("leaked_tok" in m or "my_secret_key" in m for m in rendered)
-
-
-def test_template_content_builder_and_real_tls_dispatch(local_tls_server: dict[str, Any]) -> None:
-    """Exercise TemplateContentBuilder metadata, content variants, deprecation warning, and TLS dispatch."""
-    url: str = local_tls_server["url"]
-    ca_path: Path = local_tls_server["ca_path"]
+def test_template_content_builder_and_real_tls_dispatch(builders_tls_server: dict[str, Any]) -> None:
+    """Exercise TemplateContentBuilder metadata, content variants, deprecation warning, and sync TLS dispatch."""
+    url: str = builders_tls_server["url"]
+    ca_path: Path = builders_tls_server["ca_path"]
 
     with pytest.warns(PendingDeprecationWarning, match="At least one of text, html, or mjml"):
         empty_tpl = TemplateContentBuilder().set_meta().set_content().build()
@@ -626,9 +358,9 @@ def test_builders_validation_warnings_spam_guard_and_limits(tmp_path: Path, monk
 
 
 def test_chunked_streamer_and_filesystem_security_real_files(
-    local_tls_server: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    builders_tls_server: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exercise ChunkedStreamer, zero-trust filesystem path validation, and multipart upload security."""
+    """Exercise ChunkedStreamer, zero-trust filesystem path validation, and sync multipart upload security."""
     # ChunkedStreamer invalid bounds
     for bad_cs in (True, 0, -1, 1.5):
         with pytest.raises(ValueError, match="chunk_size"):
@@ -800,8 +532,8 @@ def test_chunked_streamer_and_filesystem_security_real_files(
             filesystem_security.validate_multipart_files(bad_files, header_sanitizer=sanitizer)
 
     # Real loopback TLS multipart upload + pre-flight rejection of CRLF filename
-    url: str = local_tls_server["url"]
-    ca_path: Path = local_tls_server["ca_path"]
+    url: str = builders_tls_server["url"]
+    ca_path: Path = builders_tls_server["ca_path"]
     with Client(auth=("pub", "priv"), config=Config(api_url=url, verify=ca_path, max_retries=0)) as client:
         up = client.data_images.create(
             headers={"Content-Type": None},
@@ -1087,9 +819,9 @@ def test_guardrails_ssrf_idna_fingerprinting_timeouts_headers_segments_and_auth(
 
 
 def test_telemetry_and_redacting_filter_integration(
-    local_tls_server: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    builders_tls_server: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Exercise telemetry extraction/logging and RedactingFilter across real loopback Client calls and edge structures."""
+    """Exercise telemetry extraction/logging and RedactingFilter across real sync Client calls and edge structures."""
     # extract_telemetry variants
     assert telemetry.extract_telemetry(None) == ("", {})
     assert telemetry.extract_telemetry("plain") == ("", {})
@@ -1217,8 +949,8 @@ def test_telemetry_and_redacting_filter_integration(
         assert leaked not in all_text
 
     # Real sync Client loopback TLS telemetry verification
-    url: str = local_tls_server["url"]
-    ca_path: Path = local_tls_server["ca_path"]
+    url: str = builders_tls_server["url"]
+    ca_path: Path = builders_tls_server["ca_path"]
     client_logger = logging.getLogger("mailjet_rest.client")
     old_level = client_logger.level
     sync_capture = _ListHandler()
