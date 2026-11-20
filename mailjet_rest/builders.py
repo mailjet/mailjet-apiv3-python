@@ -26,6 +26,7 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
+    from typing import BinaryIO
 
     from mailjet_rest.types import SendV31Message, SendV31Payload, TrackingMode
 
@@ -114,34 +115,25 @@ class ChunkedStreamer:
             raise ValueError(msg)
 
     @staticmethod
-    def _open_verified_fd(validated: Path, max_bytes: int) -> int:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        try:
-            fd = os.open(os.fspath(validated), flags)
-        except OSError as e:
-            if e.errno == errno.ELOOP:
-                msg = "Security Violation (CWE-22): Symlinks are strictly forbidden for attachments."
-                raise ValueError(msg) from e
-            raise
-
-        try:
-            ChunkedStreamer._assert_regular_bounded_fd(fd, validated, max_bytes)
-        except BaseException:
-            os.close(fd)
-            raise
-        return fd
+    def _validate_encode_bounds(chunk_size: int, max_bytes: int) -> int:
+        if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+            msg = "chunk_size must be a strictly positive integer."
+            raise ValueError(msg)
+        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
+            msg = "max_bytes must be a strictly positive integer."
+            raise ValueError(msg)
+        return max(3, (chunk_size // 3) * 3)
 
     @staticmethod
-    def _read_base64_chunks(fd: int, filename: str, step: int, max_bytes: int) -> str:
+    def _read_stream_base64_chunks(stream: BinaryIO, filename: str, step: int, max_bytes: int) -> str:
         encoded_chunks: list[str] = []
         total_read = 0
-        with os.fdopen(fd, "rb") as f:
-            while chunk := f.read(step):
-                total_read += len(chunk)
-                if total_read > max_bytes:
-                    msg = f"Security Violation: File '{filename}' exceeds safe threshold."
-                    raise ValueError(msg)
-                encoded_chunks.append(base64.b64encode(chunk).decode("ascii"))
+        while chunk := stream.read(step):
+            total_read += len(chunk)
+            if total_read > max_bytes:
+                msg = f"Security Violation: File '{filename}' exceeds safe threshold."
+                raise ValueError(msg)
+            encoded_chunks.append(base64.b64encode(chunk).decode("ascii"))
         return "".join(encoded_chunks)
 
     @staticmethod
@@ -160,17 +152,26 @@ class ChunkedStreamer:
         Returns:
             str: The fully base64-encoded file representation.
         """
-        if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
-            msg = "chunk_size must be a strictly positive integer."
-            raise ValueError(msg)
-        if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
-            msg = "max_bytes must be a strictly positive integer."
-            raise ValueError(msg)
-
+        step = ChunkedStreamer._validate_encode_bounds(chunk_size, max_bytes)
         validated = SecurityGuard.validate_attachment_path(path, safe_base_dir=safe_base_dir)
-        step = max(3, (chunk_size // 3) * 3)
-        fd = ChunkedStreamer._open_verified_fd(validated, max_bytes)
-        return ChunkedStreamer._read_base64_chunks(fd, validated.name, step, max_bytes)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(os.fspath(validated), flags)
+        except OSError as e:
+            if e.errno == errno.ELOOP:
+                msg = "Security Violation (CWE-22): Symlinks are strictly forbidden for attachments."
+                raise ValueError(msg) from e
+            raise
+
+        fd_owned = True
+        try:
+            ChunkedStreamer._assert_regular_bounded_fd(fd, validated, max_bytes)
+            with os.fdopen(fd, "rb") as f:
+                fd_owned = False
+                return ChunkedStreamer._read_stream_base64_chunks(f, validated.name, step, max_bytes)
+        finally:
+            if fd_owned:
+                os.close(fd)
 
 
 class _BaseContentBuilder:
