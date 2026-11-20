@@ -7,6 +7,7 @@ import importlib
 import inspect
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -457,3 +458,96 @@ def test_smoke_readme_runner_executes_under_cp1252_encoding(tmp_path: Path) -> N
     )
     assert proc.returncode == 0, f"smoke_readme_runner failed under cp1252:\nSTDERR:\n{proc.stderr}"
     assert "UnicodeEncodeError" not in proc.stderr
+
+
+def test_manage_sh_fuzz_all_defaults_to_cpu_count_and_runs_all_waves(tmp_path: Path) -> None:
+    """manage.sh fuzz_all must default concurrency to nproc (not 3), validate FUZZ_JOBS, and log [i/N] progress."""
+    manage_src = (REPO_ROOT / "manage.sh").read_text(encoding="utf-8")
+    assert "FUZZ_JOBS:-3" not in manage_src
+
+    sandbox = tmp_path / "repo"
+    fuzz_dir = sandbox / "tests" / "fuzz"
+    fuzz_dir.mkdir(parents=True)
+    (fuzz_dir / "fuzzer.dict").write_text('token_a="abc"\n', encoding="utf-8")
+
+    manage_copy = sandbox / "manage.sh"
+    manage_copy.write_text(manage_src, encoding="utf-8")
+    manage_copy.chmod(0o755)
+
+    for idx in range(1, 6):
+        (fuzz_dir / f"fuzz_0{idx}.py").write_text(
+            "import pathlib, sys, time\n"
+            "time.sleep(0.12)\n"
+            "pathlib.Path('ran.ok').write_text(sys.argv[0], encoding='utf-8')\n",
+            encoding="utf-8",
+        )
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    nproc_bin = bin_dir / "nproc"
+    nproc_bin.write_text("#!/usr/bin/env bash\necho 5\n", encoding="utf-8")
+    nproc_bin.chmod(0o755)
+
+    py_bin = bin_dir / "python"
+    py_bin.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "${1:-}" == "-c" && "${2:-}" == *"import atheris"* ]]; then\n'
+        "    exit 0\n"
+        "fi\n"
+        f'exec {shlex.quote(sys.executable)} "$@"\n',
+        encoding="utf-8",
+    )
+    py_bin.chmod(0o755)
+
+    base_env = os.environ.copy()
+    base_env["PATH"] = f"{bin_dir}:{base_env.get('PATH', '')}"
+    base_env.pop("FUZZ_JOBS", None)
+
+    # Case A: FUZZ_JOBS unset -> defaults to nproc (5) and launches all 5 with [i/5] progress
+    proc_a = subprocess.run(
+        ["bash", str(manage_copy), "fuzz_all", "1"],
+        cwd=str(sandbox),
+        env=base_env,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert proc_a.returncode == 0, f"Case A failed:\nSTDOUT:\n{proc_a.stdout}\nSTDERR:\n{proc_a.stderr}"
+    assert "max parallel jobs: 5" in proc_a.stdout
+    for idx in range(1, 6):
+        assert f"[{idx}/5] Running fuzzer: fuzz_0{idx}" in proc_a.stdout
+        assert (sandbox / "logs" / f"fuzz_0{idx}" / "ran.ok").is_file()
+        (sandbox / "logs" / f"fuzz_0{idx}" / "ran.ok").unlink()
+
+    # Case B: FUZZ_JOBS=2 -> completes all 5 fuzzers across 3 waves
+    env_b = base_env.copy()
+    env_b["FUZZ_JOBS"] = "2"
+    proc_b = subprocess.run(
+        ["bash", str(manage_copy), "fuzz_all", "1"],
+        cwd=str(sandbox),
+        env=env_b,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert proc_b.returncode == 0, f"Case B failed:\nSTDOUT:\n{proc_b.stdout}\nSTDERR:\n{proc_b.stderr}"
+    assert "max parallel jobs: 2" in proc_b.stdout
+    for idx in range(1, 6):
+        assert (sandbox / "logs" / f"fuzz_0{idx}" / "ran.ok").is_file()
+
+    # Case C: FUZZ_JOBS=0 -> fails fast with validation message
+    env_c = base_env.copy()
+    env_c["FUZZ_JOBS"] = "0"
+    proc_c = subprocess.run(
+        ["bash", str(manage_copy), "fuzz_all", "1"],
+        cwd=str(sandbox),
+        env=env_c,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert proc_c.returncode != 0
+    assert "FUZZ_JOBS must be a positive integer" in (proc_c.stdout + proc_c.stderr)

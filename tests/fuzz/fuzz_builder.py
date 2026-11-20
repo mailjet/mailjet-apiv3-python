@@ -96,6 +96,7 @@ def TestOneInput(data: bytes) -> None:
         msg = builder.build()
         SendPayloadBuilder().add_message(msg).set_sandbox_mode(fdp.ConsumeBool()).build()
     except (ValueError, TypeError, ValidationError, KeyError, OSError):
+        # Expected validation/fuzzing error; ignore so the fuzzer can continue.
         pass
 
     # ==========================================

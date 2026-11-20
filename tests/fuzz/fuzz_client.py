@@ -82,6 +82,7 @@ def TestOneInput(data: bytes) -> None:
 
         builder.build()
     except (ValueError, TypeError, ValidationError, KeyError, OSError):
+        # Expected validation/fuzzing error; ignore so the fuzzer can continue.
         pass
 
     # ==========================================
