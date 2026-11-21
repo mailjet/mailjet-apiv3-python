@@ -79,6 +79,7 @@ class _TransportIntegrationHandler(http.server.BaseHTTPRequestHandler):
             if raw and status not in {204, 205, 304}:
                 self.wfile.write(raw)
         except OSError:
+            # Loopback client disconnected early before reading full response.
             pass
 
     def _write_json(self, status: int, payload: Any, extra_headers: dict[str, str] | None = None) -> None:

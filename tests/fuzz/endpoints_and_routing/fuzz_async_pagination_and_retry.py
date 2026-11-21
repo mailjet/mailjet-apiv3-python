@@ -35,9 +35,6 @@ with atheris.instrument_imports(include=["mailjet_rest"]):
 
 
 _loop = asyncio.new_event_loop()
-_base_async_client: AsyncClient | None = (
-    AsyncClient(auth=("fuzz_pub_key", "fuzz_priv_key"), max_retries=0) if httpx2 is not None else None
-)
 _SILENT_LOGGER = logging.getLogger("mailjet_rest.fuzz_retry_silent")
 _SILENT_LOGGER.propagate = False
 

@@ -165,6 +165,22 @@ SAFE_CAMPAIGNDRAFT_AND_DOMAIN_PROBES: tuple[tuple[str, str, dict[str, Any]], ...
 
 _TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
+__all__ = [
+    "COVERED_LIVE_ROUTES",
+    "LIVE_CREDENTIALS_REASON",
+    "SAFE_CAMPAIGNDRAFT_AND_DOMAIN_PROBES",
+    "STATCOUNTERS_FILTERS",
+    "_NO_LIMIT_SINGLETON_ROUTES",
+    "assert_expected_deprecation_warning",
+    "assert_json_collection_response",
+    "assert_no_deprecation_warnings",
+    "assert_not_retired_or_disabled",
+    "build_send_v31_sandbox_payload",
+    "build_v1_image_files_payload",
+    "build_v1_template_content_payload",
+    "extract_first_id",
+]
+
 
 def assert_not_retired_or_disabled(route_name: str, status_code: int, error_text: str) -> None:
     """Fail immediately when a live endpoint responds with 405/410/5xx or 'unknown resource' drift."""

@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import ast
 import base64
-import contextlib
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 import importlib.util
 import io
 import json
@@ -294,7 +293,7 @@ def _ensure_atheris_stub() -> tuple[Any, bool]:
             return seq[self._next_byte() % len(seq)]
 
     stub.FuzzedDataProvider = _StubFDP  # type: ignore[attr-defined]
-    stub.instrument_imports = lambda **_kwargs: contextlib.nullcontext()  # type: ignore[attr-defined]
+    stub.instrument_imports = lambda **_kwargs: nullcontext()  # type: ignore[attr-defined]
     stub.instrument_all = lambda: None  # type: ignore[attr-defined]
     stub.Setup = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
     stub.Fuzz = lambda: None  # type: ignore[attr-defined]

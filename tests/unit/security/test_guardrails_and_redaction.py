@@ -12,7 +12,6 @@ import types
 import warnings
 from html.parser import HTMLParser
 from pathlib import Path
-from types import MappingProxyType
 from typing import Any, NamedTuple
 from unittest.mock import MagicMock, patch
 
@@ -786,7 +785,9 @@ def test_header_control_chars_bearer_bidi_and_proxy_guards() -> None:
         SecurityGuard.check_request_security({"proxies": "http://proxy.internal:8080"})
     with warnings.catch_warnings(record=True) as https_warn:
         warnings.simplefilter("always", UserWarning)
-        SecurityGuard.check_request_security({"proxies": MappingProxyType({"https": "https://proxy.internal:8443"})})
+        SecurityGuard.check_request_security(
+            {"proxies": types.MappingProxyType({"https": "https://proxy.internal:8443"})}
+        )
     assert not https_warn
 
     for bad_proxy in ("file:///etc/passwd", "gopher://127.0.0.1:70/_1", "https://proxy.internal:8080\r\n"):
