@@ -47,11 +47,10 @@
     - [Send a basic email](#send-a-basic-email)
   - [Send an email using a Mailjet Template](#send-an-email-using-a-mailjet-template)
   - [Building Complex Payloads (MessageBuilder & SendPayloadBuilder)](#building-complex-payloads-messagebuilder--sendpayloadbuilder)
-  - [Standard REST Actions (GET, POST, PUT, PATCH, DELETE)](#standard-rest-actions-get-post-put-patch-delete)
+  - [Standard REST Actions (GET, POST, PUT, DELETE)](#standard-rest-actions-get-post-put-delete)
     - [POST (Create)](#post-create)
     - [GET Request](#get-request)
     - [PUT (Update / Patch specific fields)](#put-update--patch-specific-fields)
-    - [PATCH (Partial Update)](#patch-partial-update)
     - [DELETE (Returns 204 No Content)](#delete-returns-204-no-content)
   - [Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)](#email-api-ecosystem-webhooks-parse-api-segmentation-stats)
   - [Content API](#content-api)
@@ -621,7 +620,7 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
 
 <!-- mdformat on -->
 
-### Standard REST Actions (GET, POST, PUT, PATCH, DELETE)
+### Standard REST Actions (GET, POST, PUT, DELETE)
 
 > [!NOTE]\
 > All examples in this section assume that you have already opened a session using the context manager, for example: with Client(auth=(api_key, api_secret)) as mailjet:.
@@ -786,16 +785,6 @@ data = {
 }
 result = mailjet.contactdata.update(id=id_, data=data)
 print(result.json())
-```
-
-#### PATCH (Partial Update)
-
-Use `.patch()` (on both `Client` and `AsyncClient`) to send an HTTP `PATCH` request for partial resource updates (for example, updating Content API v1 template metadata):
-
-```python
-with Client(auth=(api_key, api_secret), version="v1") as content_client:
-    result = content_client.v1_templates.patch(id=template_id, data={"Name": "Updated Template"})
-    print(result.status_code)
 ```
 
 #### DELETE (Returns 204 No Content)

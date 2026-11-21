@@ -73,8 +73,11 @@ def test_sample_script_executes_directly_without_credentials(script_path: Path, 
     assert "Traceback" not in proc.stderr
 
 
-def test_content_api_sample_imports_with_token_only_and_avoids_name_error_and_secret_leak() -> None:
+def test_content_api_sample_imports_with_token_only_and_avoids_name_error_and_secret_leak(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """content_api_sample supports token-only imports, optional client injection, and never logs bearer_token[:10]."""
+    monkeypatch.syspath_prepend(str(REPO_ROOT))
     sample_path = SAMPLES_DIR / "content_api_sample.py"
     source = sample_path.read_text(encoding="utf-8")
 
@@ -130,8 +133,11 @@ def test_content_api_sample_imports_with_token_only_and_avoids_name_error_and_se
     assert mock_client.data_images_by_type.get.called
 
 
-def test_webhooks_sample_clean_of_harness_constant_and_runs_offline_demo() -> None:
+def test_webhooks_sample_clean_of_harness_constant_and_runs_offline_demo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """webhooks_sample must not leak MAX_HOOK_OUTPUT_CHARS and verify_webhook_demo runs offline."""
+    monkeypatch.syspath_prepend(str(REPO_ROOT))
     sample_path = SAMPLES_DIR / "webhooks_sample.py"
     source = sample_path.read_text(encoding="utf-8")
     assert "MAX_HOOK_OUTPUT_CHARS" not in source
@@ -190,7 +196,7 @@ def test_new_sample_imports_contacts_sample_from_unrelated_cwd(tmp_path: Path) -
 
 
 def test_readme_accurate_types_tls_adapter_and_patch_examples() -> None:
-    """README.md avoids SendV3Payload typo, raw HTTPAdapter TLS stripping, and invalid contact.patch."""
+    """README.md avoids SendV3Payload typo, raw HTTPAdapter TLS stripping, and removed PATCH section."""
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     assert "SendV3Payload" not in readme
     assert "from requests.adapters import HTTPAdapter" not in readme
@@ -198,7 +204,11 @@ def test_readme_accurate_types_tls_adapter_and_patch_examples() -> None:
     assert "SecureHTTPAdapter" in readme
     assert "Config(max_retries=" in readme
     assert "mailjet.contact.patch(" not in readme
-    assert "v1_templates.patch(" in readme
+    assert "v1_templates.patch(" not in readme
+    assert "#### PATCH (Partial Update)" not in readme
+    assert "#patch-partial-update" not in readme
+    assert "### Standard REST Actions (GET, POST, PUT, DELETE)" in readme
+    assert "(#standard-rest-actions-get-post-put-delete)" in readme
 
     async_sample_ref = next(
         (line for line in readme.splitlines() if "samples/async_client_sample.py" in line),
