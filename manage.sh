@@ -62,6 +62,7 @@ lint() {
 
     info "Running MyPy strict type checking..."
     mypy --strict "${SRC_DIR}"
+    mypy --strict "${SRC_DIR}/client.py" "${SRC_DIR}/endpoint.py"
 
     info "Running Pyright type checking..."
     pyright "${SRC_DIR}"
@@ -107,9 +108,9 @@ test_integration() {
 }
 
 test_cov() {
-    info "Running tests with coverage requirements (fail under 80%)..."
+    info "Running tests with coverage requirements (fail under 93%)..."
     pytest -n auto --cov="${SRC_DIR}" "${TEST_DIR}/unit" "${TEST_DIR}/property" "${TEST_DIR}/regression" \
-        --cov-fail-under=80 --cov-report=term-missing --cov-report=html
+        --cov-fail-under=93 --cov-report=term-missing --cov-report=html
     success "Coverage report generated in htmlcov/index.html"
 }
 
@@ -187,7 +188,7 @@ fuzz_all() {
     fi
 
     shopt -s nullglob
-    local fuzzers=("${fuzzer_dir}"/fuzz_*.py)
+    local fuzzers=("${fuzzer_dir}"/fuzz_*.py "${fuzzer_dir}"/*/fuzz_*.py)
     shopt -u nullglob
 
     if [[ ${#fuzzers[@]} -eq 0 ]]; then
@@ -195,16 +196,44 @@ fuzz_all() {
         return 1
     fi
 
+    local fuzz_env="${FUZZ_CONDA_ENV_NAME:-mailjet-fuzz}"
     local -a exec_cmd=()
-    if [[ "${CONDA_DEFAULT_ENV:-}" == "${CONDA_ENV_NAME}" ]]; then
+    if python -c "import atheris" >/dev/null 2>&1; then
         exec_cmd=("python")
+    elif command -v conda >/dev/null 2>&1 && conda run --name "${fuzz_env}" python -c "import atheris" >/dev/null 2>&1; then
+        exec_cmd=("conda" "run" "--name" "${fuzz_env}" "python")
     else
         exec_cmd=("conda" "run" "--name" "${CONDA_ENV_NAME}" "python")
     fi
 
     local -a pids=()
-    local fuzzer
+    local -a all_pids=()
+    local -a active_pids=()
+    local total_fuzzers="${#fuzzers[@]}"
+    local max_jobs="${FUZZ_JOBS:-${total_fuzzers}}"
+    if [[ ! "${max_jobs}" =~ ^[1-9][0-9]*$ ]]; then
+        error "FUZZ_JOBS must be a positive integer (got '${max_jobs}')."
+        return 1
+    fi
+    info "Launching ${total_fuzzers} fuzzers (max parallel jobs: ${max_jobs}; set FUZZ_JOBS=<n> to override)..."
+
+    local fuzzer pid
+    local idx=0
     for fuzzer in "${fuzzers[@]}"; do
+        idx=$((idx + 1))
+        while [[ "${#pids[@]}" -ge "${max_jobs}" ]]; do
+            active_pids=()
+            for pid in "${pids[@]}"; do
+                if kill -0 "${pid}" 2>/dev/null; then
+                    active_pids+=("${pid}")
+                fi
+            done
+            pids=("${active_pids[@]+"${active_pids[@]}"}")
+            if [[ "${#pids[@]}" -ge "${max_jobs}" ]]; then
+                sleep 0.2
+            fi
+        done
+
         local fuzzer_name
         fuzzer_name="$(basename -- "${fuzzer}" .py)"
 
@@ -212,7 +241,7 @@ fuzz_all() {
         local fuzzer_corpus="${root_dir}/${corpus_dir}/${fuzzer_name}"
 
         mkdir -p -- "${fuzzer_work_dir}" "${fuzzer_corpus}"
-        echo -e "Running fuzzer: ${fuzzer_name} (Logs: logs/${fuzzer_name}/fuzz_output.log)"
+        echo -e "[${idx}/${total_fuzzers}] Running fuzzer: ${fuzzer_name} (Logs: logs/${fuzzer_name}/fuzz_output.log)"
 
         (
             cd -- "${fuzzer_work_dir}"
@@ -222,18 +251,21 @@ fuzz_all() {
                 -timeout=5 \
                 -shrink=1 \
                 -use_value_profile=1 \
+                -print_final_stats=1 \
+                -rss_limit_mb=1536 \
                 -max_total_time="${duration}" \
                 -artifact_prefix="./" \
                 "${fuzzer_corpus}" \
                 "$@" > "fuzz_output.log" 2>&1
         ) &
-        pids+=("$!")
+        pid="$!"
+        pids+=("${pid}")
+        all_pids+=("${pid}")
     done
 
     info "All fuzzers launched in isolation. Waiting for completion..."
     local status=0
-    local pid
-    for pid in "${pids[@]}"; do
+    for pid in "${all_pids[@]}"; do
         if ! wait "${pid}"; then
             status=1
         fi
@@ -245,6 +277,20 @@ fuzz_all() {
     fi
 
     success "All fuzz tests finished cleanly."
+}
+
+mutation() {
+    if ! command -v mutmut >/dev/null 2>&1; then
+        error "mutmut is not installed. Install with: pip install -e '.[mutation]'"
+        exit 1
+    fi
+    info "Running local mutation testing (mutmut)..."
+    if [[ $# -eq 0 ]]; then
+        mutmut run
+        mutmut results
+    else
+        mutmut "$@"
+    fi
 }
 
 # ==============================================================================
@@ -308,15 +354,15 @@ release() {
 clean() {
     info "Cleaning up workspace (caches, builds, coverage)..."
 
-    find . -type d -name '__pycache__' -exec rm -rf {} +
-    find . -type f -name '*.py[co]' -exec rm -f {} +
-    find . -type f -name '*~' -exec rm -f {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type d -name '__pycache__' -exec rm -rf {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type f -name '*.py[co]' -exec rm -f {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type f -name '*~' -exec rm -f {} +
 
     rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/ .tox/
     rm -rf .coverage htmlcov/ coverage.xml reports/
     rm -rf build/ dist/ .eggs/
-    find . -type d -name '*.egg-info' -exec rm -rf {} +
-    find . -type f -name '*.egg' -exec rm -f {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type d -name '*.egg-info' -exec rm -rf {} +
+    find . \( -path './.git' -o -path './.venv' -o -path './venv' -o -path './.audit-venv' -o -path './.sbom-*-venv' \) -prune -o -type f -name '*.egg' -exec rm -f {} +
 
     rm -rf logs/
     rm -rf mutants/ .mutmut-cache
@@ -342,13 +388,14 @@ help() {
     echo "  test_all             - Run all tests"
     echo "  test_unit            - Run offline unit, property, and regression tests"
     echo "  test_integration     - Run live integration tests"
-    echo "  test_cov             - Run offline tests with >=80% coverage gate"
+    echo "  test_cov             - Run offline tests with >=93% coverage gate"
     echo "  test_no_warnings     - Run tests hiding DeprecationWarnings"
     echo "  test_strict_warnings - Run offline tests with warnings as errors"
     echo "  test_examples        - Run sample scripts in samples/"
     echo ""
     echo -e "${YELLOW}Security & Fuzzing:${NC}"
     echo "  fuzz_all             - Run all fuzz tests (duration_s [libfuzzer flags])"
+    echo "  mutation             - Run local mutation testing via mutmut ([subcommand/args])"
     echo "  audit_deps           - Run pip-audit and osv-scanner (fail closed)"
     echo ""
     echo -e "${YELLOW}Performance & Release:${NC}"
@@ -369,7 +416,7 @@ COMMAND="$1"
 shift
 
 case "${COMMAND}" in
-    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|test_examples|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|fuzz_all)
+    env_setup|format|lint|test_all|test_unit|test_integration|test_cov|test_no_warnings|test_strict_warnings|test_examples|perf_bench|perf_profile|audit_deps|run_hooks|build_pkg|release|clean|fuzz_all|mutation)
         "${COMMAND}" "$@"
         ;;
     help)

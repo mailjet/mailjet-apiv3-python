@@ -45,7 +45,7 @@ jobs:
       fail-fast: false
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -54,6 +54,8 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb # v4.1.0
         with:
+          activate-environment: mailjet
+          auto-activate: false
           python-version: ${{ matrix.python-version }}
           channels: defaults
           show-channel-urls: true
@@ -71,18 +73,45 @@ jobs:
       - name: Run static typing & slot checks
         run: |
           mypy --strict mailjet_rest
+          mypy --strict mailjet_rest/client.py mailjet_rest/endpoint.py
           pyright mailjet_rest
           slotscheck -m mailjet_rest
           python scripts/check_stubs.py --check
 
       - name: Run offline tests
         run: |
-          pytest -v -W error tests/unit tests/property tests/regression --cov=mailjet_rest --cov-report=xml
+          pytest -v -W error -m "not property_heavy" tests/unit tests/property tests/regression tests/integration/test_local_https_integration.py --cov=mailjet_rest --cov-report=xml
           python tests/test_boot.py
           pytest tests/test_perf.py
 
       - name: Upload Coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
+
+  extras:
+    name: Optional Extras & Sync-Only Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Test [speedups] (orjson) canonical JSON fingerprinting
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[async,speedups,tests]"
+          pytest -v -W error -m "not property_heavy" tests/unit tests/regression tests/integration/test_local_https_integration.py
+
+      - name: Test sync-only install without httpx2 ([async])
+        run: |
+          pip uninstall -y httpx2
+          python -c "import mailjet_rest, mailjet_rest.client as c; assert mailjet_rest.Client is not None and c._httpx2 is None"
+          pytest -v -W error -m "not property_heavy" tests/unit tests/property tests/regression tests/integration/test_local_https_integration.py

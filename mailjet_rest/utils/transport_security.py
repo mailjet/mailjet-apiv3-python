@@ -20,7 +20,10 @@ from urllib3.connection import HTTPConnection
 
 
 if TYPE_CHECKING:
+    import httpx2
     import requests
+
+    from mailjet_rest.types import CertConfig
 
 if sys.version_info >= (3, 12):
     from typing import override
@@ -62,7 +65,13 @@ def resolve_tls_verify(verify: Any) -> bool | str:
         if not raw_verify.strip() or _CONTROL_CHAR_RE.search(raw_verify):
             msg = "Invalid CA bundle path: must be a non-empty path without control characters."
             raise ValueError(msg)
-        ca_path = Path(raw_verify).expanduser()
+
+        try:
+            ca_path = Path(raw_verify).expanduser()
+        except RuntimeError as e:
+            msg = f"Invalid CA bundle path '{raw_verify}': could not determine home directory."
+            raise ValueError(msg) from e
+
         if not ca_path.exists() or not ca_path.is_file():
             msg = f"Custom CA bundle path does not exist or is not a file: {ca_path}"
             raise ValueError(msg)
@@ -72,14 +81,12 @@ def resolve_tls_verify(verify: Any) -> bool | str:
     raise TypeError(msg)
 
 
-@lru_cache(maxsize=8)
-def _cached_ssl_context(ca_bundle: str | None, mtime_ns: int, size: int) -> ssl.SSLContext:
-    """Build and cache an isolated TLS 1.2+ SSLContext keyed on CA bundle identity and mtime/size.
+def _new_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
+    """Create a fresh hardened TLS 1.2+ SSLContext with isolated CA trust store.
 
     Returns:
-        ssl.SSLContext: Configured SSL context with isolated CA trust store.
+        ssl.SSLContext: Configured SSL context.
     """
-    _ = (mtime_ns, size)
     if ca_bundle is not None:
         context = ssl.create_default_context(cafile=ca_bundle)
     else:
@@ -91,6 +98,17 @@ def _cached_ssl_context(ca_bundle: str | None, mtime_ns: int, size: int) -> ssl.
     context.verify_mode = ssl.CERT_REQUIRED
     context.options |= getattr(ssl, "OP_NO_COMPRESSION", 0)
     return context
+
+
+@lru_cache(maxsize=8)
+def _cached_ssl_context(ca_bundle: str | None, mtime_ns: int, size: int) -> ssl.SSLContext:
+    """Build and cache an isolated TLS 1.2+ SSLContext keyed on CA bundle identity and mtime/size.
+
+    Returns:
+        ssl.SSLContext: Configured SSL context with isolated CA trust store.
+    """
+    _ = (mtime_ns, size)
+    return _new_secure_ssl_context(ca_bundle)
 
 
 def get_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
@@ -105,6 +123,28 @@ def get_secure_ssl_context(ca_bundle: str | None = None) -> ssl.SSLContext:
     return _cached_ssl_context(None, 0, 0)
 
 
+def build_ssl_context_with_cert(ca_bundle: str | None = None, cert: CertConfig = None) -> ssl.SSLContext:
+    """Return a hardened TLS 1.2+ SSLContext with an optional uncached client certificate chain.
+
+    Returns:
+        ssl.SSLContext: Configured SSL context.
+    """
+    if cert is None:
+        return get_secure_ssl_context(ca_bundle)
+    context = _new_secure_ssl_context(ca_bundle)
+    if isinstance(cert, (tuple, list)):
+        if len(cert) != 2:
+            msg = "Client 'cert' tuple must contain (certfile, keyfile)."  # type: ignore[unreachable]
+            raise ValueError(msg)
+        context.load_cert_chain(certfile=cert[0], keyfile=cert[1])
+    elif isinstance(cert, (str, os.PathLike)):
+        context.load_cert_chain(certfile=cert)
+    else:
+        msg = f"Invalid 'cert' type: expected str, PathLike, or (certfile, keyfile) tuple, got {type(cert).__name__}."  # type: ignore[unreachable]
+        raise TypeError(msg)
+    return context
+
+
 def _build_tls_context(ca_bundle: str | None = None) -> ssl.SSLContext:
     """Create or retrieve a hardened SSLContext enforcing TLS 1.2+ and isolated CA trust stores.
 
@@ -112,6 +152,50 @@ def _build_tls_context(ca_bundle: str | None = None) -> ssl.SSLContext:
         ssl.SSLContext: Configured SSL context.
     """
     return get_secure_ssl_context(ca_bundle)
+
+
+def coerce_httpx2_timeout(httpx2_mod: Any, timeout_val: Any) -> Any:
+    """Convert Mailjet timeout values into an ``httpx2.Timeout`` configuration.
+
+    Returns:
+        Any: Configured ``httpx2.Timeout`` instance or original timeout value.
+    """
+    if isinstance(timeout_val, tuple) and len(timeout_val) == 2:
+        connect_t, read_t = float(timeout_val[0]), float(timeout_val[1])
+        return httpx2_mod.Timeout(read_t, connect=connect_t, read=read_t, write=read_t, pool=connect_t)
+    if isinstance(timeout_val, (int, float)) and not isinstance(timeout_val, bool):
+        return httpx2_mod.Timeout(float(timeout_val))
+    return timeout_val
+
+
+def build_httpx2_transport(
+    httpx2_mod: Any,
+    resolved_verify: bool | str,
+    *,
+    pool_connections: int,
+    pool_maxsize: int,
+    proxy: Any = None,
+    cert: CertConfig = None,
+) -> httpx2.AsyncHTTPTransport:
+    """Construct a hardened TLS 1.2+ ``httpx2.AsyncHTTPTransport`` with TCP keep-alive options.
+
+    Returns:
+        httpx2.AsyncHTTPTransport: Configured async HTTP transport instance.
+    """
+    ca_bundle = resolved_verify if isinstance(resolved_verify, str) else None
+    ssl_ctx = build_ssl_context_with_cert(ca_bundle, cert) if cert is not None else get_secure_ssl_context(ca_bundle)
+    limits = httpx2_mod.Limits(
+        max_connections=pool_maxsize,
+        max_keepalive_connections=pool_connections,
+    )
+    transport: httpx2.AsyncHTTPTransport = httpx2_mod.AsyncHTTPTransport(
+        verify=ssl_ctx,
+        limits=limits,
+        proxy=proxy,
+        retries=0,
+        socket_options=_KEEPALIVE_SOCKET_OPTIONS,
+    )
+    return transport
 
 
 class SecureHTTPAdapter(HTTPAdapter):
@@ -152,7 +236,7 @@ class SecureHTTPAdapter(HTTPAdapter):
         return base_proxy(proxy, **proxy_kwargs)
 
     @override
-    def cert_verify(self, conn: Any, url: str, verify: Any, cert: Any) -> None:
+    def cert_verify(self, conn: Any, url: str, verify: Any, cert: CertConfig) -> None:
         """Enforce strict TLS verification and isolate per-call CA/client-cert SSL contexts."""
         resolved = resolve_tls_verify(verify)
         base_verify: Any = super().cert_verify
@@ -181,13 +265,37 @@ class SecretAuth(AuthBase):
     Pre-encodes the Basic Authorization header in __init__.
     """
 
-    def __init__(self, auth_tuple: tuple[str, str]) -> None:
+    def __init__(self, auth_tuple: object) -> None:
         """Initialize with API credentials and pre-compute Basic Auth header."""
         __tracebackhide__ = True
-        self._api_key = auth_tuple[0]
-        self._api_secret = auth_tuple[1]
-        auth_bytes = f"{self._api_key}:{self._api_secret}".encode("latin1")
+        if not isinstance(auth_tuple, tuple) or len(auth_tuple) != 2:
+            msg = "auth_tuple must be a 2-tuple of (api_key, api_secret)"
+            raise ValueError(msg)
+        api_key, api_secret = auth_tuple
+        if not isinstance(api_key, str) or not isinstance(api_secret, str):
+            msg = "API credentials must be strings"
+            raise TypeError(msg)
+        for val in (api_key, api_secret):
+            if any(ord(ch) < 32 or ord(ch) == 127 for ch in val):
+                msg = "API credentials contain forbidden control characters or CRLF (CWE-113)"
+                raise ValueError(msg)
+        self._api_key = api_key
+        self._api_secret = api_secret
+        try:
+            auth_bytes = f"{self._api_key}:{self._api_secret}".encode("latin1")
+        except UnicodeEncodeError as e:
+            msg = "API credentials must contain valid Latin-1 characters (RFC 7617 Basic Auth)."
+            raise ValueError(msg) from e
         self._auth_header = "Basic " + base64.b64encode(auth_bytes).decode("ascii")
+
+    @property
+    def auth_header(self) -> str:
+        """The pre-encoded Basic Authorization header value.
+
+        Returns:
+            str: Pre-computed Basic Authorization header string.
+        """
+        return self._auth_header
 
     def __call__(self, r: requests.PreparedRequest) -> requests.PreparedRequest:
         """Apply pre-computed Basic Auth headers to the request.
@@ -230,6 +338,7 @@ class SecretAuth(AuthBase):
 
     def __getitem__(self, index: int) -> NoReturn:
         """Prevent Credential extraction via tuple unpacking / indexing."""
+        _ = index
         msg = "Credential extraction via indexing is blocked for security (CWE-316)."
         raise TypeError(msg)
 

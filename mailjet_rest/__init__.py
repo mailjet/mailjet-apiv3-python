@@ -7,7 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
-    from mailjet_rest.client import Client, Config
+    from mailjet_rest.client import AsyncClient, Client, Config
+    from mailjet_rest.endpoint import AsyncEndpoint, Endpoint
     from mailjet_rest.errors import (
         ActionDeniedError,
         ApiError,
@@ -21,7 +22,9 @@ if TYPE_CHECKING:
         TimeoutError,  # ruff: ignore[builtin-import-shadowing]
         ValidationError,
     )
+    from mailjet_rest.testing import MockMailjetClient
     from mailjet_rest.utils.version import get_version
+    from mailjet_rest.webhooks import verify_webhook_signature
 
     __version__: str
 
@@ -30,34 +33,44 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "ActionDeniedError": ("mailjet_rest.errors", "ActionDeniedError"),
     "ApiError": ("mailjet_rest.errors", "ApiError"),
     "ApiRateLimitError": ("mailjet_rest.errors", "ApiRateLimitError"),
+    "AsyncClient": ("mailjet_rest.client", "AsyncClient"),
+    "AsyncEndpoint": ("mailjet_rest.endpoint", "AsyncEndpoint"),
     "AuthorizationError": ("mailjet_rest.errors", "AuthorizationError"),
     "Client": ("mailjet_rest.client", "Client"),
     "Config": ("mailjet_rest.client", "Config"),
     "CriticalApiError": ("mailjet_rest.errors", "CriticalApiError"),
     "DoesNotExistError": ("mailjet_rest.errors", "DoesNotExistError"),
+    "Endpoint": ("mailjet_rest.endpoint", "Endpoint"),
     "MailjetApiError": ("mailjet_rest.errors", "MailjetApiError"),
     "MailjetAuthError": ("mailjet_rest.errors", "MailjetAuthError"),
     "MailjetNetworkError": ("mailjet_rest.errors", "MailjetNetworkError"),
+    "MockMailjetClient": ("mailjet_rest.testing", "MockMailjetClient"),
     "TimeoutError": ("mailjet_rest.errors", "TimeoutError"),
     "ValidationError": ("mailjet_rest.errors", "ValidationError"),
     "get_version": ("mailjet_rest.utils.version", "get_version"),
+    "verify_webhook_signature": ("mailjet_rest.webhooks", "verify_webhook_signature"),
 }
 
 __all__ = [
     "ActionDeniedError",
     "ApiError",
     "ApiRateLimitError",
+    "AsyncClient",
+    "AsyncEndpoint",
     "AuthorizationError",
     "Client",
     "Config",
     "CriticalApiError",
     "DoesNotExistError",
+    "Endpoint",
     "MailjetApiError",
     "MailjetAuthError",
     "MailjetNetworkError",
+    "MockMailjetClient",
     "TimeoutError",
     "ValidationError",
     "get_version",
+    "verify_webhook_signature",
 ]
 
 
@@ -69,10 +82,16 @@ def _import_known_submodule(module_name: str) -> Any:
     """
     if module_name == "mailjet_rest.client":
         return importlib.import_module("mailjet_rest.client")
+    if module_name == "mailjet_rest.endpoint":
+        return importlib.import_module("mailjet_rest.endpoint")
     if module_name == "mailjet_rest.errors":
         return importlib.import_module("mailjet_rest.errors")
+    if module_name == "mailjet_rest.testing":
+        return importlib.import_module("mailjet_rest.testing")
     if module_name == "mailjet_rest.utils.version":
         return importlib.import_module("mailjet_rest.utils.version")
+    if module_name == "mailjet_rest.webhooks":
+        return importlib.import_module("mailjet_rest.webhooks")
     msg = f"Disallowed lazy submodule: {module_name!r}"
     raise ImportError(msg)
 

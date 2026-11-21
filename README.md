@@ -4,7 +4,7 @@
 
 [![PyPI Version](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
 [![GitHub Release](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/v/release/mailjet/mailjet-apiv3-python)
-[![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://github.com/mailjet/mailjet-apiv3-python)
+[![Python Versions](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](https://github.com/mailjet/mailjet-apiv3-python)
 [![License](https://img.shields.io/github/license/mailjet/mailjet-apiv3-python)](https://github.com/mailjet/mailjet-apiv3-python/blob/master/LICENSE)
 [![PyPI Downloads](https://img.shields.io/pypi/dm/mailjet-rest)](https://img.shields.io/pypi/dm/mailjet-rest)
 [![GitHub Stars](https://img.shields.io/github/stars/mailjet/mailjet-apiv3-python)](https://img.shields.io/github/stars/mailjet/mailjet-apiv3-python)
@@ -26,6 +26,7 @@
     - [Management script](#management-script)
 - [Authentication](#authentication)
 - [Quick Start](#quick-start)
+  - [Async Quick Start (`mailjet-rest[async]`)](#async-quick-start-mailjet-restasync)
   - [Advanced Configuration](#advanced-configuration)
     - [API Versioning](#api-versioning)
     - [Base URL](#base-url)
@@ -54,6 +55,7 @@
   - [Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)](#email-api-ecosystem-webhooks-parse-api-segmentation-stats)
   - [Content API](#content-api)
 - [Deprecation Warnings](#deprecation-warnings)
+- [Testing & Webhook Verification](#testing--webhook-verification)
 - [Type Hinting](#type-hinting)
 - [License](#license)
 - [Contribute](#contribute)
@@ -69,12 +71,14 @@ Check out all the resources and Python code examples in the official [Mailjet Do
 
 This library `mailjet-rest` officially supports the following Python versions:
 
-- Python >= 3.10, < 3.15
+- Python >= 3.10 (3.10 - 3.15)
 
 ## Requirements
 
 - **Build backend:** `setuptools`, `wheel`, `setuptools-scm`
 - **Runtime:** `requests >=2.33.0`
+- **Optional async (`mailjet-rest[async]`):** `httpx2 >=2.0.0`
+- **Optional speedups (`mailjet-rest[speedups]`):** `orjson >=3.10.0` (fast canonical JSON idempotency fingerprinting)
 
 ### Test dependencies
 
@@ -91,6 +95,12 @@ Create a virtual environment and install the wrapper:
 python -m venv venv
 source venv/bin/activate
 pip install mailjet-rest
+
+# Optional async support (AsyncClient / AsyncEndpoint backed by httpx2>=2.0.0)
+pip install "mailjet-rest[async]"
+
+# Optional canonical JSON speedup (orjson>=3.10.0)
+pip install "mailjet-rest[speedups]"
 ```
 
 #### git clone & pip install locally
@@ -143,8 +153,11 @@ We provide a universal management script (`manage.sh`) to simplify local develop
 ./manage.sh env_setup
 conda activate mailjet-dev
 
-# 2. Run the test suite (Unit + Integration)
+# 2. Run the test suite, branch coverage gate (>= 93%), mutation tests, and fuzzers
 ./manage.sh test_all
+./manage.sh test_cov
+./manage.sh mutation
+./manage.sh fuzz_all
 
 # 3. Run the performance profilers
 ./manage.sh perf_bench
@@ -191,20 +204,73 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
 ```
 
 > [!WARNING]
-> **Resource Management:** If you choose not to use the context manager, you **must** manually call `mailjet.close()` when your application shuts down to release the underlying sockets.
+> **Resource Management:** If you choose not to use the context manager, you **must** manually call `mailjet.close()` (or `await mailjet.aclose()` for `AsyncClient`) when your application shuts down to release the underlying sockets.
+
+### Async Quick Start (`mailjet-rest[async]`)
+
+For `asyncio` workloads, install `pip install "mailjet-rest[async]"` (`httpx2>=2.0.0`) and use `AsyncClient` with `async with`:
+
+```python
+import asyncio
+import os
+from mailjet_rest import AsyncClient
+
+
+async def main() -> None:
+    auth = (
+        os.environ.get("MJ_APIKEY_PUBLIC", ""),
+        os.environ.get("MJ_APIKEY_PRIVATE", ""),
+    )
+    async with AsyncClient(auth=auth) as mailjet:
+        if await mailjet.ping():
+            resp = await mailjet.send_v31.create(
+                data={
+                    "Messages": [
+                        {
+                            "From": {
+                                "Email": "pilot@mailjet.com",
+                                "Name": "Mailjet Pilot",
+                            },
+                            "To": [
+                                {
+                                    "Email": "passenger1@mailjet.com",
+                                    "Name": "Passenger 1",
+                                }
+                            ],
+                            "Subject": "Async email flight plan!",
+                            "TextPart": "Hello from AsyncClient!",
+                        }
+                    ]
+                }
+            )
+            print(resp.status_code)
+
+
+asyncio.run(main())
+```
+
+See [samples/async_client_sample.py](samples/async_client_sample.py) for `ping()`, `update()`, `available_endpoints`, and `async for ... in client.contact.stream()` pagination.
 
 ### Advanced Configuration
 
-You can pass configuration overrides directly when initializing the `Client` or during individual API calls:
+You can pass configuration overrides directly when initializing the `Client` (or via a `Config` object) and during individual API calls:
 
 ```python
-# Set custom base URL, timeout, and API version
-with Client(
-    auth=(api_key, api_secret),
+from mailjet_rest import Client, Config
+
+cfg = Config(
     version="v3.1",
     api_url="https://api.us.mailjet.com/",
     timeout=30,
-) as mailjet:
+    max_retries=3,  # 0..20 transient retries with full jitter
+    auto_idempotency_mode="fingerprint",  # "fingerprint" | "uuid4" | "off"
+    pool_connections=100,
+    pool_maxsize=100,
+    verify=True,  # or path to a custom CA bundle file
+    warn_unclosed=False,  # opt-in ResourceWarning on unclosed Client/AsyncClient
+)
+
+with Client(auth=(api_key, api_secret), config=cfg) as mailjet:
     # Override timeout for a single, heavy request
     result = mailjet.contact.get(timeout=60)
 ```
@@ -216,6 +282,7 @@ The Mailjet API is spread among distinct versions:
 - `v3` - The Email API
 - `v3.1` - Email Send API v3.1, which is the latest version of our Send API
 - `v1` - Content API (Templates, Blocks, Images)
+- `v4` - GDPR Contact Erasure API (`client.contacts.delete(id=...)`)
 
 Since most Email API endpoints are located under `v3`, it is set as the default one and does not need to be specified when making your request.
 For the others you need to specify the version using `version`. For example, if using Send API `v3.1`:
@@ -251,7 +318,13 @@ If your account has been moved to Mailjet's **US architecture**, the URL value y
 The client raises typed exceptions inheriting from `ApiError` for both network failures and HTTP `4xx`/`5xx` error responses (`ValidationError` on `400`, `MailjetAuthError` on `401`/`403`, `DoesNotExistError` on `404`, `ApiRateLimitError` on `429`, `MailjetApiError` on other HTTP errors, and `TimeoutError` / `CriticalApiError` on transport failures).
 
 ```python
-from mailjet_rest import ApiError, CriticalApiError, MailjetAuthError, TimeoutError, ValidationError
+from mailjet_rest import (
+    ApiError,
+    CriticalApiError,
+    MailjetAuthError,
+    TimeoutError,
+    ValidationError,
+)
 
 try:
     result = mailjet.contact.get()
@@ -301,7 +374,8 @@ _Console output will feature_: `DEBUG - Sending Request: POST ... | Trace: [Cust
 ### IDE Autocompletion & DX
 
 Because the SDK utilizes dynamic URL dispatching (`__getattr__`), to prevent "Magic Method Traps" (accidentally dispatching internal Python methods), the SDK includes strict _poka-yoke_ guardrails.
-Attempting to access private attributes or removed properties (like `client.auth`) will safely throw an explicit `AttributeError` instead of a ghost API request.
+Attempting to access private attributes or removed properties (like `client.auth`) will safely throw an explicit `AttributeError` instead of a ghost API request, and misspelled endpoints emit `difflib` `"Did you mean '...'?"` suggestions.
+You can also inspect `client.available_endpoints` for runtime route discovery and call `client.ping()` (or `await async_client.ping()`) for lightweight API health/credential checks.
 
 ### URL path
 
@@ -360,7 +434,7 @@ Additional built-in protections:
 - **SSRF & Open Redirects:** Hard-disabled automatic redirects and enforced strict hostname validation.
 - **CRLF Injection:** Native string evaluation blocks header injection attempts via compromised Bearer tokens or custom headers.
 - **Downgrade Attacks:** Enforced TLS 1.2+ minimum version via a custom `SecureHTTPAdapter`.
-- **Idempotency Fingerprinting:** Automatically generates SHA-256 `Idempotency-Key` headers for `POST`, `PUT`, and `DELETE` requests to prevent duplicate mutations.
+- **Idempotency Fingerprinting:** Automatically generates SHA-256 `Idempotency-Key` headers for mutating requests (`POST`, `PUT`, `PATCH`, and `DELETE`), configurable via `Config.auto_idempotency_mode` (`"fingerprint"`, `"uuid4"`, or `"off"`).
 - **SpamGuard Analysis:** Pre-flight HTML static analyzer that intercepts and blocks XSS vectors (e.g., `<script>`, `onerror=`) before network dispatch.
 - **Secret Obfuscation (CWE-316):** Utilizes a custom `SecretAuth` transport adapter and `RedactingFilter` to strictly prevent API credentials from leaking in tracebacks, logs, or memory dumps.
 - **Punycode IDN Support:** Automatically normalizes Internationalized Domain Names (IDNs) in sender and recipient addresses to prevent Homograph attacks.
@@ -390,14 +464,14 @@ with Client(auth=(api_key, api_secret), config=cfg) as mailjet:
 ### Network Resilience & Retries
 
 The SDK incorporates a custom `JitterRetry` connection pooling policy to gracefully handle transient network drops, 5xx server errors, and `429 Too Many Requests` limits. It utilizes exponential backoff combined with randomized full jitter to prevent the "Thundering Herd" effect on Mailjet's upstream API during concurrent high-throughput batching.
-While the SDK automatically configures resilient retries natively, you can override the default connection pool by mounting a custom HTTPAdapter to the client's session.
+While the SDK automatically configures resilient retries natively, you can tune the retry budget via `Config(max_retries=5)` or subclass/mount `SecureHTTPAdapter` (never raw `HTTPAdapter`, which would strip TLS 1.2+ pinning and CA trust-store isolation):
 
 ```python
 import os
 import random
 from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
-from mailjet_rest import Client
+from mailjet_rest import Client, Config
+from mailjet_rest.utils.guardrails import SecureHTTPAdapter
 
 
 class CustomJitterRetry(Retry):
@@ -409,7 +483,11 @@ class CustomJitterRetry(Retry):
         return random.uniform(0, backoff) if backoff > 0 else 0
 
 
-# Configure custom total retries and backoff factor
+# 1. Recommended: tune transient retry budget directly via Config
+with Client(auth=(api_key, api_secret), config=Config(max_retries=5)) as mailjet:
+    result = mailjet.contact.get()
+
+# 2. Advanced: mount SecureHTTPAdapter with a custom Retry policy (preserves TLS 1.2+ pinning)
 custom_retry_strategy = CustomJitterRetry(
     total=5,
     backoff_factor=0.5,
@@ -421,8 +499,8 @@ api_key = os.environ.get("MJ_APIKEY_PUBLIC", "")
 api_secret = os.environ.get("MJ_APIKEY_PRIVATE", "")
 
 with Client(auth=(api_key, api_secret)) as mailjet:
-    # Mount the custom adapter to the underlying requests session
-    adapter = HTTPAdapter(max_retries=custom_retry_strategy)
+    # Always use SecureHTTPAdapter so TLS 1.2+ and isolated CA verification remain enforced
+    adapter = SecureHTTPAdapter(max_retries=custom_retry_strategy)
     mailjet.session.mount("https://", adapter)
 
     # Subsequent API calls will utilize your custom retry engine
@@ -521,9 +599,12 @@ message = (
     .add_cc("copilot@mailjet.com")
     .set_subject("Your Boarding Pass")
     .set_content(html="<h3>Welcome aboard!</h3>")
+    .set_custom_id("boarding-pass-001")
+    .set_tracking(opens="enabled", clicks="enabled")
+    .set_list_unsubscribe("https://example.com/unsubscribe", "unsubscribe@example.com")  # RFC 8058
     # Safely encodes using memory-efficient ChunkedStreamer
     .attach_file("tickets/pass.pdf")
-    .attach_inline("assets/logo.png")  # Adds inline attachments seamlessly
+    .attach_inline("assets/logo.png", content_id="logo")  # Adds inline CID attachments safely
     .build()
 )
 
@@ -711,10 +792,14 @@ print(result.json())
 Upon a successful `DELETE` request the response will not include a response body, but only a `204 No Content` response code.
 
 ```python
-# Delete an email template
+# Delete an email template (v3)
 id_ = "Template_ID"
 result = mailjet.template.delete(id=id_)
-print(result.json())
+print(result.status_code)
+
+# Permanently erase a contact (v4 GDPR)
+result = mailjet.contacts.delete(id=contact_id)
+print(result.status_code)
 ```
 
 ### Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)
@@ -793,7 +878,7 @@ with Client(auth=(api_key, api_secret), version="v1") as client:
         "Name": "My Access Token",
         "Permissions": ["read_template", "create_template"],
     }
-    result = client.token.create(data=data)
+    result = client.tokens.create(data=data)
     print(result.json())
 ```
 
@@ -820,12 +905,12 @@ result = client.data_images.create(headers={"Content-Type": None}, files=files_p
 
 #### Locking a Template Content
 
-Sub-actions are safely handled using slashes (e.g., `template_contents_lock` becomes `template/<template_id>/contents/lock`).
+Sub-actions are safely handled using slashes (e.g., `template_contents_lock` becomes `templates/<template_id>/contents/lock`).
 
 ```python
 template_id = 1234567
 
-# This routes to POST /v1/REST/template/1234567/contents/lock
+# This routes to POST /v1/REST/templates/1234567/contents/lock
 result = client.template_contents_lock.create(id=template_id)
 ```
 
@@ -841,15 +926,34 @@ It will successfully execute the request but will emit a non-breaking `Deprecati
 When calling retired Mailjet endpoints, the SDK executes the request but emits an actionable `DeprecationWarning` directing you to canonical replacements:
 
 - **Newsletters (`newsletter*`):** Migrate to `campaigndraft` and `campaigndraft_*`.
-- **Legacy Statistics (`campaignstatistics`, `liststatistics`, `domainstatistics`, `apikeytotals`):** Migrate to `statcounters` or `statistics_recipientEsp`.
+- **Legacy Statistics (`campaignstatistics`, `messagesentstatistics`, `liststatistics`, `domainstatistics`, `apikeytotals`):** Migrate to `statcounters` or `statistics_recipientEsp`.
 - **Webhook Alias (`client.webhook`):** Use the official REST resource `client.eventcallbackurl`.
 - **Ambiguous Templates (`templates_contents`):** Use `template_detailcontent` (v3) or `template_contents` (v1).
 
+## Testing & Webhook Verification
+
+Eliminate HTTP mocking boilerplate in unit tests using `MockMailjetClient`, and validate inbound webhook callbacks in constant time with replay-window enforcement:
+
+```python
+from mailjet_rest import MockMailjetClient, verify_webhook_signature
+
+with MockMailjetClient() as mock_client:
+    res = mock_client.send_v31.create(data={"Messages": [{"Subject": "Hi"}]})
+    assert res.status_code == 200
+    assert len(mock_client.sent_requests) == 1
+
+is_valid = verify_webhook_signature(
+    payload_bytes=raw_body,
+    signature_header=request_sig,
+    webhook_secret=signing_secret,
+    timestamp_unix=event_ts,
+    max_age_seconds=300,
+)
+```
+
 ## Type Hinting
 
-This SDK is fully type-hinted and compatible with static type checkers like `mypy` and `pyright`.
-
-Because of the dynamic URL dispatch engine (`__getattr__`), IDEs may flag endpoints like `client.contact.create` as `Any`. If you enforce strict typing in your application, you may safely ignore these specific dynamically dispatched calls.
+This SDK ships PEP 561 `py.typed` metadata with inline PEP 484 annotations and hover docstrings across all 20 modules, deterministic `.pyi` stubs only for dynamic `__getattr__` route dispatch (`mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi`), and consolidated `TypedDict` DTOs in `mailjet_rest.types` (e.g., `SendV31Payload`, `SendV31Response`, `ContactPayload`, `V1TemplatePayload`). Static type checkers (`mypy --strict`, `pyright`) and IDEs get full autocompletion for all 89 registered routes on both `Client` and `AsyncClient`, plus `client.available_endpoints` for runtime discovery.
 
 ## License
 

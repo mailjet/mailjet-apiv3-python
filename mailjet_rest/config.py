@@ -1,11 +1,10 @@
 """Configuration settings for the Mailjet SDK."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import ClassVar
 
 from mailjet_rest._version import __version__
-from mailjet_rest.types import _DEFAULT_TIMEOUT, AutoIdempotencyMode, TimeoutType
+from mailjet_rest.types import _DEFAULT_TIMEOUT, ApiVersion, AutoIdempotencyMode, TimeoutType, VerifyConfig
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
@@ -29,26 +28,40 @@ class Config:
         pool_connections (int): Number of urllib3 connection pools to cache per Client.
         pool_maxsize (int): Maximum number of persistent connections saved per pool.
         warn_unclosed (bool): Emit ResourceWarning on garbage collection if session was not closed.
+        max_retries (int): Maximum retry attempts for transient connection and HTTP errors.
+        trust_env (bool): Honor environment proxy/NETRC/CA variables when creating HTTP sessions.
     """
 
     ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
+    MAX_RETRIES_LIMIT: ClassVar[int] = 20
 
-    version: str = "v3"
+    version: ApiVersion = "v3"
     api_url: str = "https://api.mailjet.com/"
     user_agent: str = f"mailjet-apiv3-python/v{__version__}"
     timeout: TimeoutType = _DEFAULT_TIMEOUT
     dry_run: bool = False
     enable_security_audit: bool = False
-    verify: bool | str | Path = True
+    verify: VerifyConfig = True
     auto_idempotency_mode: AutoIdempotencyMode = "fingerprint"
     pool_connections: int = 100
     pool_maxsize: int = 100
     warn_unclosed: bool = False
+    max_retries: int = 3
+    trust_env: bool = False
 
     @staticmethod
-    def _validate_pool_size(name: str, value: int) -> None:
-        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-            msg = f"{name} must be an integer >= 1, got {value!r}."
+    def _validate_bool_flag(name: str, value: object) -> None:
+        if not isinstance(value, bool):
+            msg = f"{name} must be a bool, got {type(value).__name__}."
+            raise TypeError(msg)
+
+    @staticmethod
+    def _validate_int_min(name: str, value: int, minimum: int, maximum: int | None = None) -> None:
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            msg = f"{name} must be an integer >= {minimum}, got {value!r}."
+            raise ValueError(msg)
+        if maximum is not None and value > maximum:
+            msg = f"{name} must be an integer <= {maximum}, got {value!r}."
             raise ValueError(msg)
 
     def __post_init__(self) -> None:
@@ -71,10 +84,9 @@ class Config:
             msg = f"Invalid auto_idempotency_mode {self.auto_idempotency_mode!r}; expected one of {sorted(_VALID_IDEMPOTENCY_MODES)}."
             raise ValueError(msg)
 
-        # 5. Validate connection pool bounds and warning flags
-        self._validate_pool_size("pool_connections", self.pool_connections)
-        self._validate_pool_size("pool_maxsize", self.pool_maxsize)
-        raw_warn: object = self.warn_unclosed
-        if not isinstance(raw_warn, bool):
-            msg = f"warn_unclosed must be a bool, got {type(raw_warn).__name__}."
-            raise TypeError(msg)
+        # 5. Validate connection pool bounds, retry budget, and warning flags
+        self._validate_int_min("pool_connections", self.pool_connections, 1)
+        self._validate_int_min("pool_maxsize", self.pool_maxsize, 1)
+        self._validate_int_min("max_retries", self.max_retries, 0, self.MAX_RETRIES_LIMIT)
+        self._validate_bool_flag("warn_unclosed", self.warn_unclosed)
+        self._validate_bool_flag("trust_env", self.trust_env)

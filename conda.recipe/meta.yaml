@@ -2,10 +2,11 @@
 {% set project = pyproject['project'] %}
 
 {% set name = project['name'] %}
+{% set git_tag = environ.get('GIT_DESCRIBE_TAG', '').lstrip('v') %}
 {% set version_match = load_file_regex(
   load_file=name.replace('-', '_') + "/_version.py",
   regex_pattern='__version__ = "(.+)"') %}
-{% set version = version_match[1] %}
+{% set version = git_tag or version_match[1] %}
 
 package:
   name: {{ name|lower }}
@@ -32,21 +33,31 @@ requirements:
     - python
     - requests >=2.33.0
     - typing-extensions >=4.7.1  # [py<312]
+  run_constrained:
+    - httpx2 >=2.0.0
 
 test:
   imports:
     - mailjet_rest
+    - mailjet_rest.testing
     - mailjet_rest.utils
+    - mailjet_rest.webhooks
   source_files:
+    - .clusterfuzzlite/build.sh
+    - scripts/
+    - tests/__init__.py
+    - tests/fuzz/fuzz_*.py
+    - tests/fuzz/fuzzer.dict
     - tests/unit/
   requires:
+    - httpx2 >=2.0.0
     - hypothesis
     - pip
     - pytest
     - responses
   commands:
     - pip check
-    - pytest tests/unit/ -v
+    - python -m pytest tests/unit/ -v
 
 about:
   home: {{ project['urls']['Homepage'] }}
