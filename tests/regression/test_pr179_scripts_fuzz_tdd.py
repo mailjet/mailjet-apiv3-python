@@ -9,6 +9,7 @@ import io
 import json
 import string
 import sys
+import tokenize
 import types
 import zipfile
 from collections import Counter
@@ -757,3 +758,66 @@ def test_fuzz_jitter_retry_asserts_math_isfinite() -> None:
         sys.modules.pop(alias, None)
         if injected:
             sys.modules.pop("atheris", None)
+
+
+def test_all_fuzz_targets_document_empty_except_pass_handlers() -> None:
+    """CodeQL #85/#86 (py/empty-except): every except ...: pass in tests/fuzz/fuzz_*.py must include a rationale comment."""
+    uncommented: list[str] = []
+    for fuzz_file in sorted((REPO_ROOT / "tests" / "fuzz").glob("fuzz_*.py")):
+        source = fuzz_file.read_text(encoding="utf-8")
+        comment_lines = {
+            tok.start[0]
+            for tok in tokenize.generate_tokens(io.StringIO(source).readline)
+            if tok.type == tokenize.COMMENT
+        }
+        tree = ast.parse(source, filename=str(fuzz_file))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ExceptHandler) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
+                end_line = node.end_lineno or node.lineno
+                has_comment = any(node.lineno <= ln <= end_line for ln in comment_lines)
+                if not has_comment:
+                    uncommented.append(f"{fuzz_file.name}:{node.lineno}")
+
+    assert not uncommented, f"Empty except...pass handlers missing explanatory comments: {uncommented}"
+
+
+def test_harvest_fuzzer_dict_allows_actions_githubusercontent_redirect_without_token_leak() -> None:
+    """PR #179 harvest_fuzzer_dict: allow 302 redirects to *.actions.githubusercontent.com without leaking Auth."""
+    harvester = _load_script("harvest_fuzzer_dict.py", "harvest_v2_redirect")
+
+    with pytest.raises(ValueError, match="Disallowed GitHub log URL"):
+        harvester._build_validated_github_url("https://actions.githubusercontent.com/foo")
+    with pytest.raises(ValueError, match="Disallowed GitHub log URL"):
+        harvester._build_validated_github_url("http://results-receiver.actions.githubusercontent.com/foo")
+
+    seen_calls: list[tuple[str, dict[str, str]]] = []
+    redirect_url = "https://results-receiver.actions.githubusercontent.com/rest/runs/1/logs?sig=xyz"
+
+    def _fake_get(url: str, *, headers: dict[str, str], **_kwargs: Any) -> Any:
+        seen_calls.append((url, dict(headers)))
+        if url.startswith("https://api.github.com/"):
+            return types.SimpleNamespace(
+                status_code=302,
+                headers={"Location": redirect_url},
+                content=b"",
+                close=lambda: None,
+            )
+        return types.SimpleNamespace(
+            status_code=200,
+            headers={},
+            content=b"zip-bytes",
+            close=lambda: None,
+        )
+
+    with patch.object(harvester.requests, "get", side_effect=_fake_get):
+        status, body, _ = harvester._github_https_get(
+            "https://api.github.com/repos/mailjet/mailjet-apiv3-python/actions/jobs/1/logs",
+            "dummy-token-for-redirect-test",
+        )
+
+    assert status == 200
+    assert body == b"zip-bytes"
+    assert len(seen_calls) == 2
+    assert seen_calls[0][1].get("Authorization") == "Bearer dummy-token-for-redirect-test"
+    assert seen_calls[1][0] == redirect_url
+    assert "Authorization" not in seen_calls[1][1]
