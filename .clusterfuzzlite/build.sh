@@ -33,6 +33,9 @@ EOF
   local dict_path
   dict_path="$(dirname -- "${fuzzer}")/fuzzer.dict"
   if [ ! -f "${dict_path}" ]; then
+    dict_path="$(dirname -- "$(dirname -- "${fuzzer}")")/fuzzer.dict"
+  fi
+  if [ ! -f "${dict_path}" ]; then
     echo "ERROR: Missing fuzzer dictionary '${dict_path}' (expected tests/fuzz/fuzzer.dict)" >&2
     return 1
   fi
