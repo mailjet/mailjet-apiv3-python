@@ -71,12 +71,14 @@ def TestOneInput(data: bytes) -> None:
         if fdp.ConsumeBool():
             chunk_size = fdp.ConsumeIntInRange(-10, 2000)
             try:
-                for idx, _ in enumerate(endpoint.stream(
-                    id=id_val,
-                    action_id=action_id,
-                    filters=filters,
-                    chunk_size=chunk_size,
-                )):
+                for idx, _ in enumerate(
+                    endpoint.stream(
+                        id=id_val,
+                        action_id=action_id,
+                        filters=filters,
+                        chunk_size=chunk_size,
+                    )
+                ):
                     if idx > 5:
                         break
             except (ValueError, TypeError, ValidationError):

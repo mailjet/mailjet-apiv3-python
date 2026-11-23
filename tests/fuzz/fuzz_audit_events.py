@@ -15,6 +15,7 @@ with atheris.instrument_imports(include=["mailjet_rest"]):
 
 logging.disable(logging.CRITICAL)
 
+
 def TestOneInput(data: bytes) -> None:
     if len(data) < 5:
         return
@@ -59,6 +60,7 @@ def TestOneInput(data: bytes) -> None:
                 "The SDK must sanitize strings before emitting audit events."
             ) from e
         raise RuntimeError(f"UNHANDLED CRASH in Audit Emission: {type(e).__name__} - {e}") from e
+
 
 if __name__ == "__main__":
     # Ensure audit logging is active for the fuzzer

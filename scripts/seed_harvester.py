@@ -8,10 +8,12 @@ seeds across all synchronous and asynchronous Atheris fuzz targets.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import uuid
 from dataclasses import dataclass, field
@@ -30,6 +32,32 @@ BASE_URL_V1 = "https://api.mailjet.com/v1/REST"
 BASE_URL_V1_DATA = "https://api.mailjet.com/v1/data"
 BASE_URL_V3_SEND = "https://api.mailjet.com/v3"
 BASE_URL_V4 = "https://api.mailjet.com/v4"
+
+_REDACTED_KEY_FIELDS: frozenset[str] = frozenset(
+    {
+        "apikey",
+        "api_key",
+        "secretkey",
+        "secret_key",
+        "accesstoken",
+        "access_token",
+        "token",
+        "bearer",
+        "password",
+        "secret",
+        "authorization",
+        "privatekey",
+        "private_key",
+        "publickey",
+        "public_key",
+    }
+)
+_REDACTED_EMAIL_FIELDS: frozenset[str] = frozenset({"email", "fromemail", "replyto", "contactalt"})
+_REDACTED_NAME_FIELDS: frozenset[str] = frozenset(
+    {"name", "fromname", "firstname", "lastname", "username", "fullname", "companyname"}
+)
+_BEARER_VALUE_RE = re.compile(r"\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+\b", re.IGNORECASE)
+_EMAIL_VALUE_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,18 +126,6 @@ TARGETS: tuple[HarvestTarget, ...] = (
         },
     ),
     HarvestTarget(
-        name="send_v3_post",
-        method="POST",
-        url=f"{BASE_URL_V3_SEND}/send",
-        json_body={
-            "FromEmail": "pilot@mailjet.com",
-            "FromName": "Mailjet Pilot",
-            "Subject": "Fuzzing v3 Send",
-            "Text-part": "Legacy send API fuzzing",
-            "Recipients": [{"Email": "passenger1@mailjet.com"}],
-        },
-    ),
-    HarvestTarget(
         name="send_v3_error_post",
         method="POST",
         url=f"{BASE_URL_V3_SEND}/send",
@@ -156,9 +172,6 @@ TARGETS: tuple[HarvestTarget, ...] = (
     ),
     HarvestTarget(name="eventcallbackurl_get", method="GET", url=f"{BASE_URL_V3}/eventcallbackurl"),
     HarvestTarget(name="parseroute_get", method="GET", url=f"{BASE_URL_V3}/parseroute"),
-    HarvestTarget(name="myprofile_get", method="GET", url=f"{BASE_URL_V3}/myprofile"),
-    HarvestTarget(name="user_get", method="GET", url=f"{BASE_URL_V3}/user"),
-    HarvestTarget(name="apikey_get", method="GET", url=f"{BASE_URL_V3}/apikey"),
     HarvestTarget(name="sender_get", method="GET", url=f"{BASE_URL_V3}/sender"),
     HarvestTarget(name="sender_error_post", method="POST", url=f"{BASE_URL_V3}/sender", json_body={}),
     HarvestTarget(name="metasender_get", method="GET", url=f"{BASE_URL_V3}/metasender"),
@@ -178,7 +191,6 @@ TARGETS: tuple[HarvestTarget, ...] = (
     HarvestTarget(name="geostatistics_get", method="GET", url=f"{BASE_URL_V3}/geostatistics"),
     HarvestTarget(name="toplinkclicked_get", method="GET", url=f"{BASE_URL_V3}/toplinkclicked"),
     HarvestTarget(name="useragentstatistics_get", method="GET", url=f"{BASE_URL_V3}/useragentstatistics"),
-    HarvestTarget(name="tokens_get", method="GET", url=f"{BASE_URL_V1}/tokens"),
     HarvestTarget(name="labels_get", method="GET", url=f"{BASE_URL_V1}/labels"),
     HarvestTarget(name="v1_templates_get", method="GET", url=f"{BASE_URL_V1}/templates"),
     HarvestTarget(
@@ -229,9 +241,6 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "sender_get",
         "metasender_get",
         "dns_get",
-        "user_get",
-        "apikey_get",
-        "myprofile_get",
         "eventcallbackurl_get",
         "parseroute_get",
         "statcounters_get",
@@ -241,7 +250,6 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "geostatistics_get",
         "toplinkclicked_get",
         "useragentstatistics_get",
-        "tokens_get",
         "labels_get",
         "v1_templates_get",
         "template_contents_lock_notfound_post",
@@ -258,7 +266,6 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "campaign_get",
         "template_get",
         "statcounters_get",
-        "tokens_get",
         "labels_get",
         "v1_templates_get",
         "template_contents_lock_notfound_post",
@@ -282,22 +289,15 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "contact_patch_notfound",
         "v1_templates_get",
         "lifecycle_contact_create",
-        "lifecycle_template_create",
     ),
     "fuzz_builder": (
         "send_v31_sandbox_post",
         "send_v31_variables_post",
-        "send_v3_post",
-        "lifecycle_template_create",
-        "lifecycle_template_content",
     ),
     "fuzz_structure_aware": (
         "send_v31_sandbox_post",
         "send_v31_variables_post",
-        "send_v3_post",
         "lifecycle_contact_create",
-        "lifecycle_template_create",
-        "lifecycle_template_content",
         "csvimport_error_post",
         "listrecipient_error_post",
     ),
@@ -343,18 +343,16 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
     "fuzz_differential": (
         "send_v31_sandbox_post",
         "send_v31_variables_post",
-        "send_v3_post",
         "send_v3_error_post",
     ),
     "fuzz_differential_v3": (
         "send_v31_sandbox_post",
-        "send_v3_post",
+        "send_v3_error_post",
     ),
     "fuzz_idempotency_fingerprint": (
         "send_v31_sandbox_post",
         "send_v31_variables_post",
         "lifecycle_contact_create",
-        "lifecycle_template_content",
     ),
 }
 
@@ -396,17 +394,49 @@ class CorpusWriter:
         logger.debug("Saved seed %s (%d bytes)", file_path, len(data))
 
 
-def _serialize_response_body(resp: requests.Response) -> bytes:
-    """Parse response body as pretty JSON if valid, otherwise preserve raw bytes.
+def _scrub_string_value(text: str, key_lower: str) -> str:
+    if key_lower in _REDACTED_KEY_FIELDS:
+        return "[REDACTED]"
+    if key_lower in _REDACTED_EMAIL_FIELDS:
+        return "redacted@example.com"
+    if key_lower in _REDACTED_NAME_FIELDS:
+        return "[REDACTED_NAME]"
+    scrubbed = _BEARER_VALUE_RE.sub(r"\1 [REDACTED]", text)
+    return _EMAIL_VALUE_RE.sub("redacted@example.com", scrubbed)
+
+
+def scrub_sensitive_payload(node: Any, *, key_name: str | None = None) -> Any:
+    """Recursively scrub PII and credential fields from harvested API payloads.
 
     Returns:
-        bytes: Encoded JSON or raw response bytes.
+        Any: Redacted payload preserving original JSON schema structure.
+    """
+    if isinstance(node, dict):
+        return {k: scrub_sensitive_payload(v, key_name=str(k)) for k, v in node.items()}
+    if isinstance(node, list):
+        return [scrub_sensitive_payload(item, key_name=key_name) for item in node]
+    if isinstance(node, str):
+        return _scrub_string_value(node, (key_name or "").lower())
+    if key_name and key_name.lower() in _REDACTED_KEY_FIELDS and node is not None:
+        return "[REDACTED]"
+    return node
+
+
+def _serialize_response_body(resp: requests.Response) -> bytes:
+    """Parse response body as pretty scrubbed JSON if valid, otherwise scrub raw text bytes.
+
+    Returns:
+        bytes: Encoded redacted JSON or scrubbed raw response bytes.
     """
     try:
         parsed = resp.json()
-        return json.dumps(parsed, indent=2, ensure_ascii=False).encode("utf-8")
     except ValueError:
-        return resp.content or resp.text.encode("utf-8", errors="replace")
+        raw_bytes = resp.content or resp.text.encode("utf-8", errors="replace")
+        if not raw_bytes:
+            return b""
+        return _scrub_string_value(raw_bytes.decode("utf-8", errors="replace"), "").encode("utf-8")
+    cleaned = scrub_sensitive_payload(parsed)
+    return json.dumps(cleaned, indent=2, ensure_ascii=False).encode("utf-8")
 
 
 def _dispatch_target_to_corpora(writer: CorpusWriter, target_name: str, status_code: int, payload: bytes) -> None:
@@ -524,12 +554,15 @@ def harvest_live_crud_lifecycles(
         logger.warning("Contact/List lifecycle harvest interrupted: %s", exc)
     finally:
         if contact_id is not None:
-            c_del = session.delete(f"{BASE_URL_V3}/contact/{contact_id}", timeout=timeout)
-            _dispatch_target_to_corpora(
-                writer, "lifecycle_contact_delete", c_del.status_code, _serialize_response_body(c_del)
-            )
+            with contextlib.suppress(requests.RequestException):
+                c_del = session.delete(f"{BASE_URL_V4}/contacts/{contact_id}", timeout=timeout)
+                if c_del.status_code < 400:
+                    del_payload = _serialize_response_body(c_del)
+                    if del_payload:
+                        _dispatch_target_to_corpora(writer, "lifecycle_contact_delete", c_del.status_code, del_payload)
         if list_id is not None:
-            session.delete(f"{BASE_URL_V3}/contactslist/{list_id}", timeout=timeout)
+            with contextlib.suppress(requests.RequestException):
+                session.delete(f"{BASE_URL_V3}/contactslist/{list_id}", timeout=timeout)
 
 
 def generate_synthetic_seeds(writer: CorpusWriter) -> None:
@@ -583,9 +616,61 @@ def generate_synthetic_seeds(writer: CorpusWriter) -> None:
                 ]
             }
         ).encode("utf-8"),
+        "synthetic_v3_send": json.dumps(
+            {
+                "FromEmail": "pilot@example.com",
+                "FromName": "Synthetic Pilot",
+                "Subject": "Synthetic v3 Send",
+                "Text-part": "Legacy send API fuzzing",
+                "Recipients": [{"Email": "passenger1@example.com"}],
+            }
+        ).encode("utf-8"),
+        "synthetic_v1_tokens": json.dumps(
+            {
+                "Count": 1,
+                "Data": [
+                    {
+                        "ID": 1001,
+                        "Name": "synthetic-token",
+                        "AccessToken": "[REDACTED_TOKEN]",
+                        "Scopes": ["mailjet:content:read"],
+                    }
+                ],
+            }
+        ).encode("utf-8"),
+        "synthetic_profile_user": json.dumps(
+            {
+                "Count": 1,
+                "Data": [
+                    {
+                        "ID": 42,
+                        "Email": "profile@example.com",
+                        "Name": "Synthetic Profile",
+                        "Username": "synth_user",
+                    }
+                ],
+            }
+        ).encode("utf-8"),
+        "synthetic_apikey": json.dumps(
+            {
+                "Count": 1,
+                "Data": [
+                    {
+                        "ID": 7,
+                        "APIKey": "[REDACTED_APIKEY]",
+                        "SecretKey": "[REDACTED_SECRET]",
+                        "IsMaster": False,
+                        "Name": "Synthetic Key",
+                    }
+                ],
+            }
+        ).encode("utf-8"),
     }
 
     for target_fuzzer in (
+        "fuzz_endpoint",
+        "fuzz_async_endpoint",
+        "fuzz_async_client",
         "fuzz_builder",
         "fuzz_structure_aware",
         "fuzz_differential",
@@ -637,6 +722,7 @@ def generate_synthetic_seeds(writer: CorpusWriter) -> None:
         "fuzz_state_machine",
         "fuzz_state_sequence",
         "fuzz_router",
+        "fuzz_webhooks",
     )
 
     for fuzzer_name in all_fdp_fuzzers:
@@ -686,6 +772,26 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _run_live_harvest(writer: CorpusWriter, timeout: float) -> None:
+    public_key = os.environ.get("MJ_APIKEY_PUBLIC")
+    private_key = os.environ.get("MJ_APIKEY_PRIVATE")
+    if not public_key or not private_key:
+        logger.warning("MJ_APIKEY_PUBLIC or MJ_APIKEY_PRIVATE is not set; skipping live API harvest.")
+        return
+
+    with requests.Session() as session:
+        session.auth = (public_key, private_key)
+        session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "mailjet-apiv3-python-seed-harvester/1.0",
+            }
+        )
+        harvest_live_static_targets(session=session, writer=writer, timeout=timeout)
+        harvest_live_crud_lifecycles(session=session, writer=writer, timeout=timeout)
+
+
 def harvest_seeds(
     mode: str = "all",
     output_dir: Path | None = None,
@@ -707,17 +813,7 @@ def harvest_seeds(
         generate_synthetic_seeds(writer)
 
     if mode in {"all", "live"}:
-        public_key = os.environ.get("MJ_APIKEY_PUBLIC")
-        private_key = os.environ.get("MJ_APIKEY_PRIVATE")
-
-        if not public_key or not private_key:
-            logger.warning("MJ_APIKEY_PUBLIC or MJ_APIKEY_PRIVATE is not set; skipping live API harvest.")
-        else:
-            with requests.Session() as session:
-                session.auth = (public_key, private_key)
-                session.headers.update({"Content-Type": "application/json"})
-                harvest_live_static_targets(session=session, writer=writer, timeout=timeout)
-                harvest_live_crud_lifecycles(session=session, writer=writer, timeout=timeout)
+        _run_live_harvest(writer=writer, timeout=timeout)
 
     logger.info(
         "Seed harvesting complete: %d unique seeds written, %d duplicates skipped.",

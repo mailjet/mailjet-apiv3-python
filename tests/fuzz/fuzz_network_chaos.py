@@ -77,20 +77,35 @@ def TestOneInput(data: bytes) -> None:
         resp.request = request
 
         # Status Code: Standard, Gateway Panics, or Out-of-Range Codes
-        resp.status_code = fdp.PickValueInList([
-            200, 204, 400, 401, 403, 404, 422, 429, 500, 502, 503, 504,
-            fdp.ConsumeIntInRange(100, 599),
-        ])
+        resp.status_code = fdp.PickValueInList(
+            [
+                200,
+                204,
+                400,
+                401,
+                403,
+                404,
+                422,
+                429,
+                500,
+                502,
+                503,
+                504,
+                fdp.ConsumeIntInRange(100, 599),
+            ]
+        )
 
         # Chaotic Header Injection
         headers: dict[str, str] = {
-            "Content-Type": fdp.PickValueInList([
-                "application/json",
-                "application/json; charset=utf-8",
-                "text/html; charset=iso-8859-1",
-                "application/octet-stream",
-                fdp.ConsumeUnicodeNoSurrogates(32),
-            ]),
+            "Content-Type": fdp.PickValueInList(
+                [
+                    "application/json",
+                    "application/json; charset=utf-8",
+                    "text/html; charset=iso-8859-1",
+                    "application/octet-stream",
+                    fdp.ConsumeUnicodeNoSurrogates(32),
+                ]
+            ),
         }
         # Add random fuzzed headers
         for _ in range(fdp.ConsumeIntInRange(0, 4)):
@@ -141,9 +156,7 @@ def TestOneInput(data: bytes) -> None:
 
         except Exception as e:
             # UNHANDLED FAULT: Leaked native crashes (KeyError, RecursionError, MemoryError)
-            raise RuntimeError(
-                f"UNHANDLED NETWORK CHAOS CRASH: {type(e).__name__} -> {e}"
-            ) from e
+            raise RuntimeError(f"UNHANDLED NETWORK CHAOS CRASH: {type(e).__name__} -> {e}") from e
 
         finally:
             # Prevent state bleeding across Atheris iterations
