@@ -1,26 +1,15 @@
-"""Exhaustive offline real-socket HTTPS TLS 1.2+ and HTTP integration tests for Client, AsyncClient, and transport."""
+"""Offline loopback TLS 1.2+ and HTTP integration tests for sync Client, Endpoint, Config, errors, retry, and routing."""
 
 from __future__ import annotations
 
-import asyncio
 import copy
-import http.server
 import io
-import json
-import os
-import shutil
-import socket
 import ssl
-import subprocess
-import threading
 import types
-import warnings
-from collections.abc import Generator
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -30,7 +19,6 @@ from mailjet_rest import (
     ActionDeniedError,
     ApiError,
     ApiRateLimitError,
-    AsyncClient,
     AuthorizationError,
     Client,
     Config,
@@ -43,7 +31,7 @@ from mailjet_rest import (
     ValidationError,
 )
 from mailjet_rest.client import BaseClient, _httpx2, _resolve_proxy_url, logging_handler, parse_response
-from mailjet_rest.endpoint import AsyncEndpoint, Endpoint
+from mailjet_rest.endpoint import Endpoint
 from mailjet_rest.errors import (
     MAX_ERROR_BODY_CHARS,
     extract_error_detail,
@@ -57,7 +45,6 @@ from mailjet_rest.utils.retry import (
     compute_retry_delay,
     parse_retry_after_http_date,
     reset_stream_pointers,
-    run_async_with_retries,
     snapshot_stream_offsets,
 )
 from mailjet_rest.utils.routing import (
@@ -79,318 +66,18 @@ from mailjet_rest.utils.transport_security import (
     get_secure_ssl_context,
     resolve_tls_verify,
 )
-
-
-class _TransportIntegrationHandler(http.server.BaseHTTPRequestHandler):
-    """Thread-safe local HTTP/HTTPS Mailjet stub exercising status codes, headers, retries, and pagination."""
-
-    @property
-    def _srv(self) -> _BaseRecordingServer:
-        return cast("_BaseRecordingServer", self.server)
-
-    def log_message(self, format: str, *args: Any) -> None:
-        _ = (format, args)
-
-    def _read_body(self) -> bytes:
-        length = int(self.headers.get("Content-Length", "0") or "0")
-        return self.rfile.read(length) if length > 0 else b""
-
-    def _write_bytes(
-        self,
-        status: int,
-        raw: bytes,
-        *,
-        content_type: str | None = "application/json",
-        extra_headers: dict[str, str] | None = None,
-    ) -> None:
-        try:
-            self.send_response(status)
-            if content_type is not None:
-                self.send_header("Content-Type", content_type)
-            if status not in {204, 205, 304}:
-                self.send_header("Content-Length", str(len(raw)))
-            if extra_headers:
-                for k, v in extra_headers.items():
-                    self.send_header(k, v)
-            self.end_headers()
-            if raw and status not in {204, 205, 304}:
-                self.wfile.write(raw)
-        except OSError:
-            pass
-
-    def _write_json(self, status: int, payload: Any, extra_headers: dict[str, str] | None = None) -> None:
-        encoded = json.dumps(payload).encode("utf-8")
-        self._write_bytes(status, encoded, content_type="application/json", extra_headers=extra_headers)
-
-    def _record(self, method: str, body: bytes) -> tuple[str, dict[str, list[str]]]:
-        parsed = urlparse(self.path)
-        query = parse_qs(parsed.query)
-        self._srv.recorded_requests.append(
-            {
-                "method": method,
-                "path": parsed.path,
-                "raw_path": self.path,
-                "query": query,
-                "headers": {k.lower(): v for k, v in self.headers.items()},
-                "body": body,
-            }
-        )
-        return parsed.path, query
-
-    def _handle_contact_get(self, query: dict[str, list[str]]) -> None:
-        if query.get("empty_stream") == ["1"]:
-            self._write_json(200, {"Count": 0, "Total": 0, "Data": []})
-            return
-        if query.get("bad_json") == ["1"]:
-            self._write_bytes(200, b"not-valid-json", content_type="text/plain")
-            return
-        if query.get("list_json") == ["1"]:
-            self._write_json(200, [1, 2, 3])
-            return
-        if query.get("no_data") == ["1"]:
-            self._write_json(200, {"Count": 0})
-            return
-        if query.get("bad_data") == ["1"]:
-            self._write_json(200, {"Data": "not-a-list"})
-            return
-
-        offset = int(query.get("Offset", ["0"])[0])
-        limit = int(query.get("Limit", ["10"])[0])
-        items = [{"ID": 1}, {"ID": 2}, {"ID": 3}]
-        page = items[offset : offset + limit]
-        self._write_json(200, {"Count": len(page), "Total": len(items), "Data": page})
-
-    def do_GET(self) -> None:
-        body = self._read_body()
-        path, query = self._record("GET", body)
-
-        if self.headers.get("Authorization") == "Basic aW52YWxpZDppbnZhbGlk":
-            self._write_json(401, {"ErrorMessage": "Invalid credentials"})
-            return
-
-        if path == "/v3/REST/apikey":
-            if self.headers.get("Authorization") == "Bearer fail_ping":
-                self._write_json(503, {"ErrorMessage": "Service unavailable"})
-            else:
-                self._write_json(200, {"Count": 1, "Total": 1, "Data": [{"ID": 1}]})
-            return
-
-        if path == "/v3/REST/slow":
-            self._srv.shutdown_event.wait(0.25)
-            self._write_json(200, {"Count": 0, "Data": []})
-            return
-
-        if path == "/v3/REST/flaky503":
-            attempt = self._srv.flaky_503_calls
-            self._srv.flaky_503_calls += 1
-            if attempt == 0:
-                self._write_json(503, {"ErrorMessage": "Temporary overload"})
-                return
-            self._write_json(200, {"Count": 1, "Data": [{"ID": 55}]})
-            return
-
-        if path == "/v3/REST/always429":
-            self._write_json(429, {"ErrorMessage": "Too many requests"}, extra_headers={"Retry-After": "0"})
-            return
-
-        if path == "/v3/REST/forbidden":
-            self._write_json(403, {"ErrorMessage": "Forbidden action"})
-            return
-
-        if path == "/v3/REST/notfound":
-            self._write_json(404, {"ErrorMessage": "Object not found"})
-            return
-
-        if path == "/v3/REST/err500":
-            self._write_json(500, {"ErrorMessage": "Internal failure"})
-            return
-
-        if path == "/v3/REST/badreqlist":
-            self._write_json(400, ["list-level-error"])
-            return
-
-        if path == "/v3/REST/badreqempty":
-            self._write_bytes(400, b"", content_type="text/plain")
-            return
-
-        if path == "/v3/REST/badreqbig":
-            huge = ("E" * (MAX_ERROR_BODY_CHARS + 500) + "\n\x00tail").encode("utf-8")
-            self._write_bytes(400, huge, content_type="text/plain")
-            return
-
-        if path == "/v3/REST/badreqinfo":
-            self._write_json(400, {"ErrorInfo": "Schema mismatch", "Messages": [{"Errors": []}]})
-            return
-
-        if path == "/v3/REST/nocontent":
-            self._write_bytes(204, b"", content_type=None)
-            return
-
-        if path == "/v3/REST/resetcontent":
-            self._write_bytes(205, b"", content_type=None)
-            return
-
-        if path == "/v3/REST/redirect":
-            self._write_bytes(302, b"", content_type=None, extra_headers={"Location": "https://evil.example/bounce"})
-            return
-
-        if path == "/v3/REST/contact":
-            self._handle_contact_get(query)
-            return
-
-        self._write_json(200, {"Count": 1, "Data": [{"ID": 1}], "path": path, "query": query})
-
-    def do_POST(self) -> None:
-        body = self._read_body()
-        path, _ = self._record("POST", body)
-
-        if path == "/v3/REST/flaky":
-            attempt = self._srv.flaky_calls
-            self._srv.flaky_calls += 1
-            if attempt < 2:
-                retry_after = (
-                    format_datetime(datetime.now(timezone.utc) - timedelta(seconds=1), usegmt=True)
-                    if self.headers.get("X-Use-Http-Date") == "1"
-                    else "0"
-                )
-                self._write_json(429, {"ErrorMessage": "Rate limit"}, extra_headers={"Retry-After": retry_after})
-                return
-            self._write_json(
-                201,
-                {"Count": 1, "Data": [{"ID": 99}], "echo_len": len(body), "body_text": body.decode("utf-8", "replace")},
-            )
-            return
-
-        if path == "/v3/REST/always429":
-            self._write_json(429, {"ErrorMessage": "Rate limited"}, extra_headers={"Retry-After": "0"})
-            return
-
-        self._write_json(201, {"Count": 1, "Data": [{"ID": 101}], "path": path, "echo_len": len(body)})
-
-    def do_PUT(self) -> None:
-        body = self._read_body()
-        path, _ = self._record("PUT", body)
-        self._write_json(200, {"Count": 1, "Data": [{"ID": 42}], "path": path})
-
-    def do_PATCH(self) -> None:
-        body = self._read_body()
-        path, _ = self._record("PATCH", body)
-        self._write_json(200, {"Count": 1, "Data": [{"ID": 42, "Patched": True}], "path": path})
-
-    def do_DELETE(self) -> None:
-        body = self._read_body()
-        self._record("DELETE", body)
-        self._write_bytes(204, b"", content_type=None)
-
-
-class _BaseRecordingServer(http.server.ThreadingHTTPServer):
-    allow_reuse_address = True
-
-    def __init__(self, server_address: tuple[str, int]) -> None:
-        super().__init__(server_address, _TransportIntegrationHandler)
-        self.recorded_requests: list[dict[str, Any]] = []
-        self.flaky_calls = 0
-        self.flaky_503_calls = 0
-        self.shutdown_event = threading.Event()
-
-    def handle_error(self, request: Any, client_address: Any) -> None:
-        """Suppress noisy stderr tracebacks when clients abort on intentional timeout tests."""
-        _ = (request, client_address)
-
-
-class _RecordingHTTPSServer(_BaseRecordingServer):
-    def __init__(self, server_address: tuple[str, int], cert_path: Path, key_path: Path) -> None:
-        super().__init__(server_address)
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
-        self.socket = ctx.wrap_socket(self.socket, server_side=True)
-
-
-def _generate_self_signed_cert(cert_dir: Path, name: str) -> tuple[Path, Path]:
-    openssl = shutil.which("openssl")
-    if openssl is None:
-        pytest.skip("openssl binary not available for loopback TLS integration test")
-    assert openssl is not None
-    cert_path = cert_dir / f"{name}.pem"
-    key_path = cert_dir / f"{name}.key"
-    subprocess.run(
-        [
-            openssl,
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-keyout",
-            str(key_path),
-            "-out",
-            str(cert_path),
-            "-days",
-            "1",
-            "-nodes",
-            "-subj",
-            "/CN=localhost",
-            "-addext",
-            "subjectAltName=DNS:localhost,IP:127.0.0.1",
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    return cert_path, key_path
-
-
-def _unused_loopback_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
-@pytest.fixture(scope="module")
-def loopback_servers(tmp_path_factory: pytest.TempPathFactory) -> Generator[dict[str, Any], None, None]:
-    """Start isolated loopback TLS 1.2+ HTTPS and plain HTTP servers with valid, untrusted, and combined PEMs."""
-    cert_dir = tmp_path_factory.mktemp("transport_tls")
-    cert_path, key_path = _generate_self_signed_cert(cert_dir, "server")
-    other_ca_path, _ = _generate_self_signed_cert(cert_dir, "untrusted")
-    combined_pem = cert_dir / "combined.pem"
-    combined_pem.write_text(
-        cert_path.read_text(encoding="utf-8") + key_path.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-
-    https_srv = _RecordingHTTPSServer(("127.0.0.1", 0), cert_path, key_path)
-    http_srv = _BaseRecordingServer(("127.0.0.1", 0))
-    https_thread = threading.Thread(target=https_srv.serve_forever, daemon=True)
-    http_thread = threading.Thread(target=http_srv.serve_forever, daemon=True)
-    https_thread.start()
-    http_thread.start()
-    try:
-        yield {
-            "https_url": f"https://127.0.0.1:{https_srv.server_address[1]}/",
-            "http_url": f"http://127.0.0.1:{http_srv.server_address[1]}/",
-            "ca_path": cert_path,
-            "key_path": key_path,
-            "combined_pem": combined_pem,
-            "untrusted_ca": other_ca_path,
-            "https_server": https_srv,
-            "http_server": http_srv,
-        }
-    finally:
-        https_srv.shutdown_event.set()
-        http_srv.shutdown_event.set()
-        https_srv.shutdown()
-        http_srv.shutdown()
-        https_srv.server_close()
-        http_srv.server_close()
-        https_thread.join(timeout=5)
-        http_thread.join(timeout=5)
+from tests.integration.local_loopback._servers import (
+    _BytesPathLike,
+    _RecordingHTTPSServer,
+    unused_loopback_port,
+)
 
 
 def test_lazy_package_exports_and_version_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     """Exercise mailjet_rest.__init__ lazy exports, client module __getattr__, and version.py helpers."""
     assert mailjet_rest.__getattr__("__version__") == mailjet_rest.__version__
     assert mailjet_rest.__getattr__("Endpoint") is Endpoint
-    assert mailjet_rest.__getattr__("AsyncEndpoint") is AsyncEndpoint
+    assert mailjet_rest.__getattr__("AsyncEndpoint") is client_mod.AsyncEndpoint
     assert mailjet_rest.__getattr__("ActionDeniedError") is ActionDeniedError
     assert mailjet_rest.__getattr__("MockMailjetClient").__name__ == "MockMailjetClient"
     assert mailjet_rest.__getattr__("get_version") is version_mod.get_version
@@ -415,14 +102,14 @@ def test_lazy_package_exports_and_version_helpers(monkeypatch: pytest.MonkeyPatc
 
     # mailjet_rest.client lazy __getattr__
     assert client_mod.Endpoint is Endpoint
-    assert client_mod.AsyncEndpoint is AsyncEndpoint
+    assert client_mod.AsyncEndpoint.__name__ == "AsyncEndpoint"
     assert client_mod.BaseEndpoint.__name__ == "BaseEndpoint"
     with pytest.raises(AttributeError, match="no attribute"):
         getattr(client_mod, "nonexistent_client_attr_xyz")
 
     monkeypatch.setattr(client_mod, "_httpx2", None, raising=False)
     with pytest.raises(ImportError, match="httpx2"):
-        AsyncClient(auth="tok")
+        client_mod.AsyncClient(auth="tok")
     monkeypatch.undo()
 
     # mailjet_rest.utils.version helpers
@@ -521,10 +208,6 @@ def test_transport_security_tls_verify_certs_and_secret_auth(
         resolve_tls_verify(False)
     with pytest.raises(ValueError, match="cannot be disabled"):
         resolve_tls_verify(None)
-
-    class _BytesPathLike:
-        def __fspath__(self) -> bytes:
-            return b"ca.pem"
 
     with pytest.raises(TypeError, match="Invalid CA bundle path type"):
         resolve_tls_verify(_BytesPathLike())
@@ -716,15 +399,15 @@ def test_errors_mapping_sanitization_and_real_socket_errors(loopback_servers: di
         assert isinstance(to_exc.value, MailjetNetworkError)
         assert isinstance(to_exc.value, TimeoutError)
 
-    dead_url = f"https://127.0.0.1:{_unused_loopback_port()}/"
+    dead_url = f"https://127.0.0.1:{unused_loopback_port()}/"
     with Client(auth=("pub", "priv"), api_url=dead_url, verify=ca_path, max_retries=0) as dead_c:
         with pytest.raises(CriticalApiError) as conn_exc:
             dead_c.contact.get()
         assert isinstance(conn_exc.value, MailjetNetworkError)
 
 
-def test_retry_helpers_http_date_stream_offsets_and_async_retries() -> None:
-    """Exercise retry.py JitterRetry, HTTP-date parsing, stream pointer snapshots/rewinds, and async retry edge paths."""
+def test_retry_helpers_http_date_and_stream_offsets() -> None:
+    """Exercise sync retry.py JitterRetry, HTTP-date parsing, and stream pointer snapshots/rewinds."""
     # JitterRetry backoff calculation for empty vs populated history
     jr = JitterRetry(total=3, backoff_factor=1)
     assert jr.get_backoff_time() == 0
@@ -824,111 +507,6 @@ def test_retry_helpers_http_date_stream_offsets_and_async_retries() -> None:
 
     reset_stream_pointers(b1, None, None)
     assert b1.tell() == 0
-
-    if _httpx2 is not None:
-        import logging
-
-        log = logging.getLogger("test_retry")
-
-        async def _check_async_paths() -> None:
-            with pytest.raises(ValueError, match="non-negative integer"):
-                await run_async_with_retries(
-                    lambda: asyncio.sleep(0),
-                    _httpx2,
-                    method="GET",
-                    url="https://127.0.0.1/",
-                    raw_retries=-1,
-                    max_retries_limit=5,
-                    allowed_methods=("GET",),
-                    transient_status_codes=frozenset({429}),
-                    max_delay=1.0,
-                    data=None,
-                    files=None,
-                    log=log,
-                )
-
-            async def _unsupported() -> Any:
-                raise _httpx2.UnsupportedProtocol("bad proto")
-
-            with pytest.raises(_httpx2.UnsupportedProtocol):
-                await run_async_with_retries(
-                    _unsupported,
-                    _httpx2,
-                    method="GET",
-                    url="https://127.0.0.1/",
-                    raw_retries=2,
-                    max_retries_limit=5,
-                    allowed_methods=("GET",),
-                    transient_status_codes=frozenset({429}),
-                    max_delay=1.0,
-                    data=None,
-                    files=None,
-                    log=log,
-                )
-
-            class _UnclosedResp:
-                def __init__(self, status: int) -> None:
-                    self.status_code = status
-                    self.headers = {"Retry-After": "0"}
-                    self.is_closed = False
-                    self.closed_called = False
-
-                async def aclose(self) -> None:
-                    self.closed_called = True
-                    self.is_closed = True
-
-            first_resp = _UnclosedResp(429)
-            second_resp = _UnclosedResp(200)
-            calls = 0
-
-            async def _flaky_unclosed() -> Any:
-                nonlocal calls
-                calls += 1
-                return first_resp if calls == 1 else second_resp
-
-            res = await run_async_with_retries(
-                _flaky_unclosed,
-                _httpx2,
-                method="GET",
-                url="https://127.0.0.1/",
-                raw_retries=2,
-                max_retries_limit=5,
-                allowed_methods=("GET",),
-                transient_status_codes=frozenset({429}),
-                max_delay=1.0,
-                data=None,
-                files=None,
-                log=log,
-            )
-            assert res is second_resp
-            assert first_resp.closed_called is True
-
-            # Non-idempotent POST omitted from allowed_methods does NOT retry
-            post_calls = 0
-
-            async def _post_429() -> Any:
-                nonlocal post_calls
-                post_calls += 1
-                return _UnclosedResp(429)
-
-            post_res = await run_async_with_retries(
-                _post_429,
-                _httpx2,
-                method="POST",
-                url="https://127.0.0.1/",
-                raw_retries=3,
-                max_retries_limit=5,
-                allowed_methods=("GET",),
-                transient_status_codes=frozenset({429}),
-                max_delay=1.0,
-                data=None,
-                files=None,
-                log=log,
-            )
-            assert post_res.status_code == 429
-            assert post_calls == 1
-
-        asyncio.run(_check_async_paths())
 
 
 def test_routing_urls_headers_query_casting_and_stream_validation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1095,7 +673,7 @@ def test_sync_client_and_endpoint_real_https_and_http_integration(
     no_auth_client.close()
 
     # trust_env=False must ignore HTTPS_PROXY on real TLS requests
-    dead_proxy = f"http://127.0.0.1:{_unused_loopback_port()}"
+    dead_proxy = f"http://127.0.0.1:{unused_loopback_port()}"
     monkeypatch.setenv("HTTPS_PROXY", dead_proxy)
     monkeypatch.setenv("https_proxy", dead_proxy)
 
@@ -1220,9 +798,10 @@ def test_sync_client_and_endpoint_real_https_and_http_integration(
         with pytest.raises(ValueError, match="non-empty"):
             client.contact.delete(id="  ")
 
-        # 204, 205, 302
+        # 204, 205, 304, 302
         assert client.nocontent.get().status_code == 204
         assert client.resetcontent.get().status_code == 205
+        assert client.notmodified.get().status_code == 304
         assert client.redirect.get().status_code == 302
 
         # Deprecated module-level parse_response & logging_handler
@@ -1322,156 +901,3 @@ def test_sync_client_and_endpoint_real_https_and_http_integration(
     with Client(auth=("pub", "priv"), api_url=http_url, max_retries=0) as http_client:
         assert http_client.ping() is True
         assert http_client.contact.create(data={"Email": "http@example.com"}).status_code == 201
-
-
-@pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
-def test_async_client_and_endpoint_real_https_and_http_integration(loopback_servers: dict[str, Any]) -> None:
-    """Exercise AsyncClient and AsyncEndpoint over real loopback TLS 1.2+ and HTTP sockets."""
-    https_url: str = loopback_servers["https_url"]
-    http_url: str = loopback_servers["http_url"]
-    ca_path: Path = loopback_servers["ca_path"]
-    untrusted_ca: Path = loopback_servers["untrusted_ca"]
-    https_srv: _RecordingHTTPSServer = loopback_servers["https_server"]
-
-    async def _run() -> None:
-        https_srv.flaky_calls = 0
-
-        # Basic Auth (SecretAuth) over TLS 1.2+ + copy/deepcopy + CRUD + stream + retries with HTTP-date Retry-After
-        async with AsyncClient(
-            auth=("pub", "priv"),
-            config=Config(api_url=https_url, verify=ca_path, max_retries=3),
-        ) as ac:
-            assert "AsyncClient" in repr(ac)
-            assert "Mailjet AsyncClient" in str(ac)
-            assert "contact" in dir(ac)
-            assert await ac.ping() is True
-
-            # Endpoint cache hit & private attr check
-            assert ac.contact is ac.contact
-            with pytest.raises(AttributeError):
-                _ = ac._hidden
-
-            # Shallow & deep copy
-            ac_shallow = copy.copy(ac)
-            ac_deep = copy.deepcopy(ac)
-            try:
-                assert ac_shallow._session is None
-                assert ac_deep._session is None
-                assert await ac_shallow.ping() is True
-                assert await ac_deep.ping() is True
-            finally:
-                await ac_shallow.aclose()
-                await ac_deep.close()
-
-            # Async CRUD verbs
-            assert (await ac.contact.create(data={"Email": "async@example.com"})).status_code == 201
-            assert (await ac.contact.update(id=42, data={"Name": "AsyncPut"})).status_code == 200
-            assert (await ac.contact.patch(id=42, data={"Name": "AsyncPatch"})).json()["Data"][0]["Patched"] is True
-            assert (await ac.contact.delete(id=42)).status_code == 204
-            assert (
-                await ac.contact.create(
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    data=types.MappingProxyType({"Field": "Value"}),
-                )
-            ).status_code == 201
-
-            with pytest.raises(ValueError, match="non-empty"):
-                await ac.contact.patch(id=" ")
-            with pytest.raises(ValueError, match="non-empty"):
-                await ac.contact.delete(id="")
-
-            # Async stream natural termination & max_items=0
-            assert [item["ID"] async for item in ac.contact.stream(chunk_size=2, max_items=0)] == []
-            assert [item["ID"] async for item in ac.contact.stream(chunk_size=2)] == [1, 2, 3]
-
-            # One-shot StringIO stream reader + RFC-2822 HTTP-date Retry-After retry recovery
-            s_io = io.StringIO("async-string-payload")
-            flaky_resp = await ac.api_call(
-                "POST",
-                f"{https_url}v3/REST/flaky",
-                headers={"X-Use-Http-Date": "1"},
-                data=s_io,  # type: ignore[arg-type]
-            )
-            assert flaky_resp.status_code == 201
-            assert flaky_resp.json()["body_text"] == "async-string-payload"
-
-            # stream=True rejection
-            with pytest.raises(ValueError, match="stream=True is not supported"):
-                await ac.api_call("GET", f"{https_url}v3/REST/contact", stream=True)
-
-            # TimeoutError over real socket
-            with pytest.raises(MailjetTimeoutError):
-                await ac.api_call("GET", f"{https_url}v3/REST/slow", timeout=0.05)
-
-        # Closed AsyncClient session placeholder & re-entry with stale open session cleanup
-        closed_placeholder = ac.session
-        assert ac.session is closed_placeholder
-        assert closed_placeholder.auth is None
-        assert dict(closed_placeholder.headers) == {}
-        ac.session = None
-
-        # Simulate stale unclosed session when re-entering __aenter__
-        ac.session = _httpx2.AsyncClient(follow_redirects=False, trust_env=False)
-        async with ac as reopened_ac:
-            assert await reopened_ac.ping() is True
-
-        # Isolated transport success (config untrusted_ca overridden by per-call valid ca_path)
-        async with AsyncClient(
-            auth="bearer_tok",
-            config=Config(api_url=https_url, verify=untrusted_ca, max_retries=0),
-        ) as iso_ac:
-            ok_iso = await iso_ac.api_call("GET", f"{https_url}v3/REST/contact", verify=ca_path)
-            assert ok_iso.status_code == 200
-
-            # Unencrypted HTTP proxy warning + ProxyError/ConnectError -> CriticalApiError
-            dead_proxy = f"http://127.0.0.1:{_unused_loopback_port()}"
-            with pytest.warns(UserWarning, match="Unencrypted HTTP proxy"):
-                with pytest.raises(CriticalApiError):
-                    await iso_ac.api_call(
-                        "GET",
-                        f"{https_url}v3/REST/contact",
-                        verify=ca_path,
-                        proxies={"https": dead_proxy},
-                    )
-
-        # dry_run=True + 429 retry exhaustion + HTTP status mapping
-        async with AsyncClient(
-            auth="bearer_tok",
-            config=Config(api_url=https_url, verify=ca_path, dry_run=True),
-        ) as dry_ac:
-            pre_count = len(https_srv.recorded_requests)
-            dry_resp = await dry_ac.contact.create(data={"Email": "dry-async@example.com"})
-            assert dry_resp.status_code == 200
-            assert dry_resp.json()["DryRun"] is True
-            assert len(https_srv.recorded_requests) == pre_count
-
-        async with AsyncClient(
-            auth="bearer_tok",
-            config=Config(api_url=https_url, verify=ca_path, max_retries=1),
-        ) as err_ac:
-            with pytest.raises(ApiRateLimitError):
-                await err_ac.always429.get()
-            with pytest.raises(MailjetAuthError):
-                await err_ac.forbidden.get()
-            with pytest.raises(DoesNotExistError):
-                await err_ac.notfound.get()
-            with pytest.raises(MailjetApiError):
-                await err_ac.err500.get()
-
-        # warn_unclosed ResourceWarning on AsyncClient
-        warn_ac = AsyncClient(auth="bearer_tok", api_url=https_url, verify=ca_path, warn_unclosed=True)
-        _ = warn_ac.session
-        with pytest.warns(ResourceWarning, match="Unclosed Mailjet AsyncClient"):
-            warn_ac._warn_if_unclosed()
-        await warn_ac.aclose()
-
-        # Unused AsyncClient close
-        unused_ac = AsyncClient(auth="bearer_tok", api_url=https_url, verify=ca_path)
-        await unused_ac.aclose()
-
-        # Plain HTTP loopback AsyncClient
-        async with AsyncClient(auth=("pub", "priv"), api_url=http_url, max_retries=0) as http_ac:
-            assert await http_ac.ping() is True
-            assert (await http_ac.contact.create(data={"Email": "http-async@example.com"})).status_code == 201
-
-    asyncio.run(_run())
