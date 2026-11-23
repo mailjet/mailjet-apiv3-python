@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import builtins
 import hashlib
@@ -9,6 +10,7 @@ import hmac
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import time
 import types
@@ -18,6 +20,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import responses
 
+from mailjet_rest.builders import ChunkedStreamer
 from mailjet_rest.client import AsyncClient, Client, _httpx2
 from mailjet_rest.config import Config
 from mailjet_rest.errors import (
@@ -662,3 +665,59 @@ def test_check_stubs_extracts_classvars_all_and_overloads_from_ast(tmp_path: Pat
     assert "@overload\n    def overloaded_probe(self, x: int) -> int: ..." in generated
     assert "@overload\n    def overloaded_probe(self, x: str) -> str: ..." in generated
     assert "def overloaded_probe(self, x: int | str)" not in generated
+
+
+def test_chunked_streamer_encode_file_closes_fd_on_fdopen_error_and_lexically_pairs_fd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CodeQL #87 (py/file-not-closed): encode_file must close fd if fdopen fails and pair open/close lexically."""
+    sample_file = tmp_path / "attachment.txt"
+    sample_file.write_bytes(b"hello-mailjet")
+
+    real_open = os.open
+    real_close = os.close
+    opened_fds: list[int] = []
+    closed_fds: list[int] = []
+
+    def _spy_open(path: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+        fd = real_open(path, flags, *args, **kwargs)
+        opened_fds.append(fd)
+        return fd
+
+    def _spy_close(fd: int) -> None:
+        closed_fds.append(fd)
+        real_close(fd)
+
+    def _fail_fdopen(*_args: Any, **_kwargs: Any) -> Any:
+        msg = "simulated fdopen failure"
+        raise OSError(msg)
+
+    monkeypatch.setattr(os, "open", _spy_open)
+    monkeypatch.setattr(os, "close", _spy_close)
+    monkeypatch.setattr(os, "fdopen", _fail_fdopen)
+
+    with pytest.raises(OSError, match="simulated fdopen failure"):
+        ChunkedStreamer.encode_file(sample_file, safe_base_dir=tmp_path)
+
+    assert len(opened_fds) == 1
+    assert closed_fds == opened_fds, f"Leaked fd(s) {set(opened_fds) - set(closed_fds)} when os.fdopen raised"
+
+    # AST lexical pairing witness so CodeQL py/file-not-closed can prove fd closure within encode_file
+    builders_path = Path(__file__).resolve().parents[2] / "mailjet_rest" / "builders.py"
+    tree = ast.parse(builders_path.read_text(encoding="utf-8"), filename=str(builders_path))
+    streamer_cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ChunkedStreamer")
+    encode_fn = next(
+        node for node in streamer_cls.body if isinstance(node, ast.FunctionDef) and node.name == "encode_file"
+    )
+    os_calls = {
+        node.func.attr
+        for node in ast.walk(encode_fn)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "os"
+    }
+    assert {"open", "fdopen", "close"} <= os_calls
+    has_try_finally = any(isinstance(node, ast.Try) and bool(node.finalbody) for node in ast.walk(encode_fn))
+    assert has_try_finally, "ChunkedStreamer.encode_file must pair os.open with try/finally os.close"
