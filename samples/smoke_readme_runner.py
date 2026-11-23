@@ -29,7 +29,7 @@ logging.basicConfig(format="%(levelname)s - %(message)s")
 
 
 def section(title: str) -> None:
-    print(f"\n{'=' * 60}\n🚀 RUNNING: {title}\n{'=' * 60}")
+    print(f"\n{'=' * 60}\n[RUN] RUNNING: {title}\n{'=' * 60}")
 
 
 def safe_cleanup(action, name, **kwargs):
@@ -44,14 +44,14 @@ def safe_cleanup(action, name, **kwargs):
         client_logger.setLevel(old_level)
 
         if res.status_code in (200, 204):
-            print(f"✅ CLEANUP: {name} deleted successfully.")
+            print(f"[OK] CLEANUP: {name} deleted successfully.")
 
     except MailjetAuthError:
-        print(f"⚠️ CLEANUP: {name} skipped (Permission denied: Operation not allowed).")
+        print(f"[WARN] CLEANUP: {name} skipped (Permission denied: Operation not allowed).")
     except DoesNotExistError:
-        print(f"⚠️ CLEANUP: {name} skipped (Not found: likely eventual consistency delay).")
+        print(f"[WARN] CLEANUP: {name} skipped (Not found: likely eventual consistency delay).")
     except Exception as e:
-        print(f"❌ CLEANUP: {name} raised unexpected exception: {e}")
+        print(f"[FAIL] CLEANUP: {name} raised unexpected exception: {e}")
 
 
 def run_readme_tests():
@@ -60,7 +60,7 @@ def run_readme_tests():
     content_token = os.environ.get("MJ_CONTENT_TOKEN", "")
 
     if not api_key or not api_secret:
-        print("⚠️ Missing Mailjet API credentials in environment variables.")
+        print("[WARN] Missing Mailjet API credentials in environment variables.")
         return
 
     with (
@@ -81,7 +81,7 @@ def run_readme_tests():
         payload = SendPayloadBuilder().add_message(message).set_sandbox_mode(True).build()
         res = mailjet_v31.send.create(data=payload)
         assert res.status_code == 200, f"Failed Send API: {res.text}"
-        print("✅ Send API passed (Check logs for sanitized CustomID).")
+        print("[OK] Send API passed (Check logs for sanitized CustomID).")
 
         # 2. SECURITY GUARDRAILS
         section("Security Guardrails (Active Protection)")
@@ -89,13 +89,13 @@ def run_readme_tests():
             mailjet_v3.contact.get(headers={"X-Injected": "value\r\nBadHeader: true"})
             assert False, "SDK failed to block CRLF injection."
         except ValueError as e:
-            print(f"✅ Guardrail Success: Blocked Header Injection - '{e}'")
+            print(f"[OK] Guardrail Success: Blocked Header Injection - '{e}'")
 
         try:
             mailjet_v3.contact.get(verify=False)
             assert False, "SDK allowed insecure TLS connection."
         except ValueError as e:
-            print(f"✅ Guardrail Success: Blocked Insecure TLS - '{e}'")
+            print(f"[OK] Guardrail Success: Blocked Insecure TLS - '{e}'")
 
         # 3. STANDARD REST ACTIONS
         section("Standard REST Actions (Contact Lifecycle)")
@@ -103,11 +103,11 @@ def run_readme_tests():
         res = mailjet_v3.contact.create(data={"Email": test_email})
         assert res.status_code == 201
         contact_id = res.json()["Data"][0]["ID"]
-        print(f"✅ POST (Create Contact) passed. Created ID: {contact_id}")
+        print(f"[OK] POST (Create Contact) passed. Created ID: {contact_id}")
 
         res = mailjet_v3.contact.get(filters={"limit": 2, "sort": "Email desc"})
         assert res.status_code == 200
-        print("✅ GET (Read all/Pagination) passed.")
+        print("[OK] GET (Read all/Pagination) passed.")
 
         # ---------------------------------------------------------------------
         # LAZY PAGINATION & STREAM RESUMPTION (.stream())
@@ -117,9 +117,9 @@ def run_readme_tests():
         contact_stream = mailjet_v3.contact.stream(chunk_size=2)
         first_contact = next(contact_stream, None)
         if first_contact:
-            print(f"✅ STREAM (Basic .stream()) passed. Found Contact ID: {first_contact.get('ID')}")
+            print(f"[OK] STREAM (Basic .stream()) passed. Found Contact ID: {first_contact.get('ID')}")
         else:
-            print("⚠️ STREAM (Basic .stream()) passed (Collection empty).")
+            print("[WARN] STREAM (Basic .stream()) passed (Collection empty).")
 
         # 2. Resumed stream starting from an explicit Offset checkpoint
         # Ensures that passing a non-zero starting Offset does not prematurely abort
@@ -129,20 +129,20 @@ def run_readme_tests():
         )
         resumed_contact = next(resumed_stream, None)
         if resumed_contact:
-            print(f"✅ STREAM (Resumption via Offset) passed. Found Contact ID: {resumed_contact.get('ID')}")
+            print(f"[OK] STREAM (Resumption via Offset) passed. Found Contact ID: {resumed_contact.get('ID')}")
         else:
-            print("⚠️ STREAM (Resumption via Offset) passed (No items beyond offset 1).")
+            print("[WARN] STREAM (Resumption via Offset) passed (No items beyond offset 1).")
 
         # 3. Stream with multidict query parameters (e.g. from urllib.parse.parse_qs)
         parsed_filters = {"offset": ["0"], "limit": ["50"]}
         query_stream = mailjet_v3.contact.stream(filters=parsed_filters, chunk_size=2)
         _ = next(query_stream, None)
-        print("✅ STREAM (Query string normalization) passed.")
+        print("[OK] STREAM (Query string normalization) passed.")
 
         # GET (Read one)
         res = mailjet_v3.contact.get(id=contact_id)
         assert res.status_code == 200
-        print("✅ GET (Read one) passed.")
+        print("[OK] GET (Read one) passed.")
 
         prop_name = f"test_prop_{uuid.uuid4().hex[:6]}"
         res_meta = mailjet_v3.contactmetadata.create(data={"Datatype": "str", "Name": prop_name, "NameSpace": "static"})
@@ -151,7 +151,7 @@ def run_readme_tests():
             update_data = {"Data": [{"Name": prop_name, "Value": "John"}]}
             res = mailjet_v3.contactdata.update(id=contact_id, data=update_data)
             assert res.status_code == 200
-            print("✅ PUT (Update Contact Data) passed.")
+            print("[OK] PUT (Update Contact Data) passed.")
             safe_cleanup(mailjet_v3.contactmetadata.delete, f"Metadata {prop_id}", id=prop_id)
 
         safe_cleanup(mailjet_v3.contact.delete, f"Contact {contact_id}", id=contact_id)
@@ -170,7 +170,7 @@ def run_readme_tests():
 
         if res.status_code in (200, 201):
             w_id = res.json()["Data"][0]["ID"]
-            print("✅ Webhooks (eventcallbackurl) created/updated.")
+            print("[OK] Webhooks (eventcallbackurl) created/updated.")
             safe_cleanup(mailjet_v3.eventcallbackurl.delete, f"Webhook {w_id}", id=w_id)
 
         parse_url = f"https://www.example.com/parse_{uuid.uuid4().hex[:6]}"
@@ -183,7 +183,7 @@ def run_readme_tests():
 
         if res.status_code in (200, 201):
             p_id = res.json()["Data"][0]["ID"]
-            print("✅ Parse API (parseroute) created/updated.")
+            print("[OK] Parse API (parseroute) created/updated.")
             safe_cleanup(mailjet_v3.parseroute.delete, f"ParseRoute {p_id}", id=p_id)
 
         res = mailjet_v3.contactfilter.create(
@@ -195,14 +195,14 @@ def run_readme_tests():
         )
         if res.status_code == 201:
             f_id = res.json()["Data"][0]["ID"]
-            print("✅ Segmentation (contactfilter) created.")
+            print("[OK] Segmentation (contactfilter) created.")
             safe_cleanup(mailjet_v3.contactfilter.delete, f"ContactFilter {f_id}", id=f_id)
 
         res = mailjet_v3.statcounters.get(
             filters={"CounterSource": "APIKey", "CounterTiming": "Message", "CounterResolution": "Lifetime"}
         )
         assert res.status_code == 200
-        print("✅ Statcounters passed.")
+        print("[OK] Statcounters passed.")
 
         # 5. CONTENT API (v1)
         section("Content API (v1)")
@@ -212,10 +212,10 @@ def run_readme_tests():
         try:
             res = mailjet_v1.data_images.create(data={"name": "test.png", "image_data": "invalid"})
             assert res.status_code == 400
-            print("✅ Content API (Negative Upload) passed.")
+            print("[OK] Content API (Negative Upload) passed.")
         except (ValidationError, ApiError) as e:
             assert getattr(e, "status_code", 400) == 400
-            print("✅ Content API (Negative Upload) passed.")
+            print("[OK] Content API (Negative Upload) passed.")
         finally:
             client_logger.setLevel(prev_level)
 
@@ -228,14 +228,14 @@ def run_readme_tests():
 
         if res.status_code == 201:
             image_id = res.json()["Data"][0]["ID"]
-            print(f"✅ Content API Upload passed. Image ID: {image_id}")
+            print(f"[OK] Content API Upload passed. Image ID: {image_id}")
             time.sleep(1)
             try:
                 safe_cleanup(mailjet_v1.data_images.delete, f"Image {image_id}", id=image_id)
             except (ApiError, OSError) as exc:
                 print(f"Cleanup skipped for Image {image_id}: {exc}")
         else:
-            print(f"⚠️ Content API Upload skipped/failed: {res.status_code}")
+            print(f"[WARN] Content API Upload skipped/failed: {res.status_code}")
 
         # 6. ADDITIONAL HEALTH CHECKS
         section("Additional Health Checks (Read-Only & RPC-Actions)")
@@ -259,13 +259,13 @@ def run_readme_tests():
                     iterator = endpoint.stream(id=resource_id, chunk_size=1)
                     item = next(iterator, None)
                     if item is not None:
-                        print(f"✅ {name} (stream) passed (Found items).")
+                        print(f"[OK] {name} (stream) passed (Found items).")
                     else:
-                        print(f"⚠️ {name} (stream) passed (Resource exists but is empty).")
+                        print(f"[WARN] {name} (stream) passed (Resource exists but is empty).")
                 else:
                     res = endpoint.get(id=resource_id)
                     if res.status_code in (200, 400, 405):
-                        print(f"✅ {name} (ping) passed (Status: {res.status_code}).")
+                        print(f"[OK] {name} (ping) passed (Status: {res.status_code}).")
                     else:
                         assert False, f"Unexpected status {res.status_code}"
 
@@ -277,9 +277,9 @@ def run_readme_tests():
                         status = getattr(response, "status_code", None)
 
                 if status in (200, 400, 404, 405):
-                    print(f"✅ {name} (ping) passed (Expected status: {status}).")
+                    print(f"[OK] {name} (ping) passed (Expected status: {status}).")
                 else:
-                    print(f"❌ {name} failed: {e}")
+                    print(f"[FAIL] {name} failed: {e}")
                     assert False, f"Health Check failed for {name}: {e}"
 
     # 7. ASYNC CLIENT SMOKE CHECK (Optional mailjet-rest[async])
@@ -292,11 +292,11 @@ def run_readme_tests():
             async with AsyncClient(auth=(api_key, api_secret)) as aclient:
                 assert "send_v31" in aclient.available_endpoints
                 ok = await aclient.ping()
-                print(f"✅ AsyncClient.ping() -> {ok}")
+                print(f"[OK] AsyncClient.ping() -> {ok}")
 
         asyncio.run(_async_ping())
     except ImportError:
-        print("⚠️ AsyncClient skipped (httpx2 extra not installed).")
+        print("[WARN] AsyncClient skipped (httpx2 extra not installed).")
 
     # 8. ECOSYSTEM DX (MockMailjetClient & Webhook Signature Verification)
     section("Ecosystem DX (MOD-03: MockMailjetClient & Webhook Verifier)")
@@ -308,9 +308,9 @@ def run_readme_tests():
     if verify_webhook_signature(b"{}", "0" * 64, "signing_key"):
         msg = "verify_webhook_signature accepted an invalid digest."
         raise RuntimeError(msg)
-    print("✅ MockMailjetClient & verify_webhook_signature passed.")
+    print("[OK] MockMailjetClient & verify_webhook_signature passed.")
 
-    print(f"\n{'=' * 60}\n🎉 ALL TESTS AND HEALTH CHECKS COMPLETED SUCCESSFULLY!\n{'=' * 60}")
+    print(f"\n{'=' * 60}\n[DONE] ALL TESTS AND HEALTH CHECKS COMPLETED SUCCESSFULLY!\n{'=' * 60}")
 
 
 if __name__ == "__main__":
