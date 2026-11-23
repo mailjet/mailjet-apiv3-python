@@ -65,7 +65,13 @@ def resolve_tls_verify(verify: Any) -> bool | str:
         if not raw_verify.strip() or _CONTROL_CHAR_RE.search(raw_verify):
             msg = "Invalid CA bundle path: must be a non-empty path without control characters."
             raise ValueError(msg)
-        ca_path = Path(raw_verify).expanduser()
+
+        try:
+            ca_path = Path(raw_verify).expanduser()
+        except RuntimeError as e:
+            msg = f"Invalid CA bundle path '{raw_verify}': could not determine home directory."
+            raise ValueError(msg) from e
+
         if not ca_path.exists() or not ca_path.is_file():
             msg = f"Custom CA bundle path does not exist or is not a file: {ca_path}"
             raise ValueError(msg)
