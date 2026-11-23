@@ -1,7 +1,11 @@
-"""Property-based tests for Mailjet SDK Pagination and Streaming.
+"""Property-based tests for synchronous Mailjet SDK Pagination and Streaming.
+
 Powered by Hypothesis.
 """
 
+from __future__ import annotations
+
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -36,7 +40,8 @@ def test_property_pagination_math(total_items: int, chunk_size: int) -> None:
 
     # Mock the client's API call to intercept the HTTP logic securely.
     # This avoids issues with patching __slots__ bounded methods on the Endpoint.
-    def mock_api_call(*args, **kwargs):
+    def mock_api_call(*args: Any, **kwargs: Any) -> Any:
+        _ = args
         filters = kwargs.get("filters") or {}
         offset = filters.get("Offset", 0)
         limit = filters.get("Limit", chunk_size)
