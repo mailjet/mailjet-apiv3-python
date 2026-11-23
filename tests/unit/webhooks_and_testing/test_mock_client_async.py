@@ -231,8 +231,10 @@ def test_mock_endpoint_async_validation_guards_and_context_exception() -> None:
                 ):
                     await aclient.contact.delete(bad_id)
 
-            assert (await aclient.contact.patch(0, data={"Name": "Zero"})).status_code == 200
-            assert (await aclient.contact.delete("0")).status_code == 200
+            patch_zero_resp = await aclient.contact.patch(0, data={"Name": "Zero"})
+            del_zero_resp = await aclient.contact.delete("0")
+            assert patch_zero_resp.status_code == 200
+            assert del_zero_resp.status_code == 200
 
             with pytest.raises(ValueError, match="stream\\(\\) is designed for GET requests only"):
                 aclient.contact.stream(method="POST")
@@ -246,11 +248,15 @@ def test_mock_endpoint_async_validation_guards_and_context_exception() -> None:
             with pytest.raises(AttributeError, match="'MockMailjetClient' object has no attribute '_hidden'"):
                 _ = aclient._hidden
 
+        caught_async_err: RuntimeError | None = None
         err_client = MockMailjetClient()
-        with pytest.raises(RuntimeError, match="async boom"):
+        try:
             async with err_client:
                 await err_client.contact.get(id=1)
                 raise RuntimeError("async boom")
+        except RuntimeError as exc:
+            caught_async_err = exc
+        assert caught_async_err is not None and str(caught_async_err) == "async boom"
         assert len(err_client.sent_requests) == 1
 
     asyncio.run(_run())

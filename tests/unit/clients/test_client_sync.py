@@ -266,9 +266,14 @@ def test_client_context_manager_lifecycle() -> None:
 
 def test_client_context_manager_exception_safety() -> None:
     client = Client(auth=("test", "test"))
-    with pytest.raises(ValueError), client:
-        raise ValueError("Test error")
-    assert client.session.auth is None  # type: ignore[unreachable]
+    caught_err: ValueError | None = None
+    try:
+        with client:
+            raise ValueError("Test error")
+    except ValueError as exc:
+        caught_err = exc
+    assert caught_err is not None
+    assert client.session.auth is None
 
 
 def test_client_dir_includes_dynamic_endpoints(client_offline: Client) -> None:
