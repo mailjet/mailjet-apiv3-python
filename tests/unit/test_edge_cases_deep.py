@@ -7,7 +7,6 @@ import importlib
 import io
 import logging
 import os
-import sys
 import types
 import warnings
 from pathlib import Path
@@ -15,9 +14,8 @@ from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import requests
 
-import mailjet_rest.client as client_mod
-import mailjet_rest.utils.guardrails as guardrails_mod
 from mailjet_rest.builders import ChunkedStreamer, MessageBuilder, SendPayloadBuilder, TemplateContentBuilder
 from mailjet_rest.client import AsyncClient, BaseClient, Client, _httpx2
 from mailjet_rest.config import Config
@@ -40,11 +38,12 @@ def test_errors_v31_nested_extraction_and_non_error_status() -> None:
     detail = extract_error_detail(resp_v31, "raw fallback")
     assert detail == ": bad recipient  forged"
 
-    for payload in (
+    edge_payloads: tuple[dict[str, Any], ...] = (
         {"Messages": ["not-a-dict"]},
         {"Messages": [{"Errors": []}]},
         {"Messages": [{"Errors": ["not-a-dict"]}]},
-    ):
+    )
+    for payload in edge_payloads:
         resp_edge = MagicMock(status_code=400, text="")
         resp_edge.json.return_value = payload
         assert extract_error_detail(resp_edge, "") == ""
@@ -65,7 +64,7 @@ def test_redacting_filter_deep_types_recursion_and_failsafe() -> None:
 
     class _ModelObj:
         def model_dump(self) -> dict[str, str]:
-            return {"api_secret": "dump_secret", "Authorization": "Bearer dump_tok_99"}
+            return {"api_secret": "dump_secret", "Authorization": "Bearer dump_tok_99"}  # pragma: allowlist secret
 
     class _DictObj:
         def __init__(self) -> None:
@@ -171,7 +170,7 @@ def test_security_guard_validation_orjson_fallback_and_idn_edges(monkeypatch: py
         return b'{"ok":1}'
 
     fake_orjson.dumps = _orjson_dumps
-    monkeypatch.setattr(guardrails_mod, "_orjson", fake_orjson)
+    monkeypatch.setattr("mailjet_rest.utils.guardrails._orjson", fake_orjson)
     assert SecurityGuard._canonical_json_bytes({"ok": 1}) == b'{"ok":1}'
     fallback = SecurityGuard._canonical_json_bytes({1: "one"})
     assert fallback == b'{"1":"one"}'
@@ -202,6 +201,7 @@ def test_client_lazy_httpx2_failures_auth_warnings_and_timeout_recovery(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Cover _get_httpx2 ImportError, __getattr__, auth=None warning, timeout mutation recovery, and stream reset."""
+    client_mod = importlib.import_module("mailjet_rest.client")
     orig_cache = list(client_mod._httpx2_cache)
     try:
         client_mod._httpx2_cache.clear()
@@ -240,10 +240,11 @@ def test_client_lazy_httpx2_failures_auth_warnings_and_timeout_recovery(
         BaseClient._reset_stream_pointers(stream_buf, None)
         assert stream_buf.tell() == 0
 
-        # Mutating config.timeout post-init resets to default on invalid call
+        # Mutating config.timeout post-init resets to default on invalid call before any transport
         client.config.timeout = -5
-        with pytest.raises(ValueError, match="strictly positive"):
-            client.api_call("GET", "https://api.mailjet.com/v3/REST/contact")
+        with patch.object(requests.Session, "request", side_effect=AssertionError("unexpected real network call")):
+            with pytest.raises(ValueError, match="strictly positive"):
+                client.api_call("GET", "https://api.mailjet.com/v3/REST/contact")
         assert client.config.timeout == 60
 
     with pytest.raises(ValueError, match="forbidden control characters or CRLF"):
@@ -255,18 +256,22 @@ def test_client_lazy_httpx2_failures_auth_warnings_and_timeout_recovery(
     adapter.cert_verify(conn, "http://localhost/v3/send", True, None)
     assert conn.ssl_context == "unchanged"
 
-    # AsyncClient closed placeholder session, stale re-entry, isolated request, and stream=True rejection
+    # AsyncClient closed placeholder session (safe even with broken SSL_CERT_FILE), stale re-entry,
+    # isolated request via MockTransport, and stream=True rejection
     if _httpx2 is not None:
-        ca_file = tmp_path / "ca.pem"
-        ca_file.write_text("dummy", encoding="utf-8")
+        monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "nonexistent_conda_cacert.pem"))
+
+        def _mock_transport_handler(request: Any) -> Any:
+            return _httpx2.Response(200, json={"Data": []}, request=request)
+
+        mock_tp = _httpx2.MockTransport(_mock_transport_handler)
 
         async def _check_async_edges() -> None:
-            aclient = AsyncClient(auth=("pub", "priv"))
+            aclient = AsyncClient(auth=("pub", "priv"), transport=mock_tp)
             await aclient.aclose()
             closed_sess = aclient.session
             assert closed_sess.is_closed
-            # Calling session again while already closed reuses closed placeholder when not yet disposed,
-            # or recreates closed placeholder if disposed
+            # Calling session again while already closed reuses closed placeholder when not yet disposed
             assert aclient.session is closed_sess
 
             stale_mock_sess = AsyncMock()
@@ -279,13 +284,8 @@ def test_client_lazy_httpx2_failures_auth_warnings_and_timeout_recovery(
             with pytest.raises(ValueError, match="stream=True is not supported"):
                 await entered.api_call("GET", "https://api.mailjet.com/v3/REST/contact", stream=True)
 
-            # Isolated request branch when per-call proxies are supplied
-            fake_ephemeral_resp = _httpx2.Response(
-                200,
-                json={"Data": []},
-                request=_httpx2.Request("GET", "https://api.mailjet.com/v3/REST/contact"),
-            )
-            with patch.object(_httpx2.AsyncClient, "request", AsyncMock(return_value=fake_ephemeral_resp)):
+            # Isolated request branch when per-call proxies are supplied (mocked transport, zero network I/O)
+            with patch.object(_httpx2, "AsyncHTTPTransport", return_value=mock_tp) as mock_http_tp:
                 iso_resp = await entered._execute_request(
                     "GET",
                     "https://api.mailjet.com/v3/REST/contact",
@@ -296,6 +296,7 @@ def test_client_lazy_httpx2_failures_auth_warnings_and_timeout_recovery(
                     proxies={"https": "https://localhost:8443"},
                 )
             assert iso_resp.status_code == 200
+            assert mock_http_tp.call_args.kwargs["proxy"] == "https://localhost:8443"
 
         asyncio.run(_check_async_edges())
 
@@ -355,9 +356,9 @@ def test_builders_filesystem_html_and_routing_edges(tmp_path: Path) -> None:
     assert validate_attachment_path(os.fsencode(att1), safe_base_dir=tmp_path) == att1.resolve()  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="Null byte"):
         validate_attachment_path(b"bad\x00path", safe_base_dir=tmp_path)  # type: ignore[arg-type]
-    validate_multipart_files("not-a-mapping", header_sanitizer=lambda h: dict(h))
-    validate_multipart_files([("bad_arity",)], header_sanitizer=lambda h: dict(h))
-    validate_multipart_files({"f": "scalar-spec"}, header_sanitizer=lambda h: dict(h))
+    validate_multipart_files("not-a-mapping", header_sanitizer=dict)
+    validate_multipart_files([("bad_arity",)], header_sanitizer=dict)
+    validate_multipart_files({"f": "scalar-spec"}, header_sanitizer=dict)
 
     # html_guard handle_comment tag budget
     parser = build_spam_guard_parser()(max_tags=1)
