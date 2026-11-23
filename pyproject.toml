@@ -45,11 +45,19 @@ dependencies = [
 
 keywords = [
         "Mailjet API v3 / v3.1 Python Wrapper",
-        "wrapper",
-        "email python-wrapper",
-        "transactional-emails",
         "mailjet",
         "mailjet-api",
+        "python-sdk",
+        "wrapper",
+        "email",
+        "email-api",
+        "transactional-emails",
+        "asyncio",
+        "http2",
+        "webhooks",
+        "type-hints",
+        "pep561",
+        "idempotency",
     ]
 classifiers = [
         "Development Status :: 4 - Beta",
