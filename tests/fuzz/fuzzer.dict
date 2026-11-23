@@ -64,6 +64,7 @@
 "%0d%0a%20"
 "%0d%0aProxy-Connection: Keep-Alive"
 "%1"
+"%1<a"
 "%20n"
 "%2525"
 "%2525252525"
