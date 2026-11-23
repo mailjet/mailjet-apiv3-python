@@ -124,6 +124,7 @@ def test_live_email_api_v3_template_lifecycle(client_live: Client) -> None:
         client_live.template.delete(id=template_id)
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_live_content_api_v1_template_lifecycle(client_live: Client) -> None:
     """End-to-End test of the true v1 Content API Templates utilizing lock/unlock workflow."""
     auth_tuple = (os.environ["MJ_APIKEY_PUBLIC"], os.environ["MJ_APIKEY_PRIVATE"])
