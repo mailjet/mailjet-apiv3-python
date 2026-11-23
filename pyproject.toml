@@ -163,7 +163,7 @@ exclude = [
     "site-packages",
     "venv",
 ]
-extend-exclude = ["mailjet_rest/_version.py", "tests", "test"]
+extend-exclude = ["mailjet_rest/_version.py", "test"]
 
 line-length = 120
 
@@ -254,6 +254,10 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "C90",    # McCabe complexity
     "T20",    # Print statements in tests
     "TC",     # Type checking block constraints
+    "boolean-positional-value-in-call",  # Intentional boolean boundary test vectors
+    "math-constant",                     # Literal '3.14' numeric parsing tests
+    "hardcoded-string-charset",          # Literal '0123456789' string truncation tests
+    "shared-clock-mock",                 # Intentional time/asyncio clock isolation in unit tests
 ]
 "*.pyi" = [
     "D",      # Docstrings not required in stub files
@@ -446,12 +450,17 @@ markers = [
 source_paths = ["mailjet_rest"]
 only_mutate = [
     "mailjet_rest/builders.py",
+    "mailjet_rest/client.py",
     "mailjet_rest/config.py",
     "mailjet_rest/endpoint.py",
     "mailjet_rest/errors.py",
     "mailjet_rest/testing.py",
+    "mailjet_rest/utils/filesystem_security.py",
+    "mailjet_rest/utils/guardrails.py",
+    "mailjet_rest/utils/html_guard.py",
     "mailjet_rest/utils/retry.py",
     "mailjet_rest/utils/routing.py",
+    "mailjet_rest/utils/telemetry.py",
     "mailjet_rest/utils/transport_security.py",
     "mailjet_rest/utils/version.py",
     "mailjet_rest/webhooks.py",

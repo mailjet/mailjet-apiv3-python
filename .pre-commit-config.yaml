@@ -147,7 +147,13 @@ repos:
     hooks:
       - id: pip-audit
         name: "🔒 security · Audit Python dependencies"
-        additional_dependencies: ["pip>=26.2"]
+        args: ["--strict", "--skip-editable"]
+        additional_dependencies:
+          - "pip>=26.2"
+          - "requests>=2.33.0"
+          - "typing-extensions>=4.7.1; python_version < '3.12'"
+          - "httpx2>=2.0.0"
+          - "orjson>=3.10.0"
 
   - repo: https://github.com/woodruffw/zizmor-pre-commit
     rev: v1.32.0

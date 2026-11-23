@@ -6,6 +6,5 @@ dependencies:
   # build & host deps
   - pip
   # runtime deps
-  - httpx2 >=2.0.0
   - requests >=2.33.0
-  - typing-extensions>=4.7.1  # [py<312]
+  - typing-extensions >=4.7.1

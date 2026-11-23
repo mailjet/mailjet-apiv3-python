@@ -13,7 +13,6 @@ dependencies:
   - clangxx >=20
   - compiler-rt >=20
   - llvm-tools >=20
-  - libstdcxx-devel_linux-64  # [linux]
   # runtime deps
   - requests >=2.33.0
   - httpx2 >=2.0.0
