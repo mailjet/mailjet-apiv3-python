@@ -17,6 +17,7 @@ else:
 
 __all__ = [
     "_ALLOWED_TRACE_FIELDS",
+    "_CSV_HEADERS",
     "_DEFAULT_TIMEOUT",
     "_JSON_HEADERS",
     "_TEXT_HEADERS",
@@ -81,6 +82,7 @@ RequestHeaders: TypeAlias = dict[str, str | None]
 QueryFilters: TypeAlias = Mapping[str, Any]
 
 _DEFAULT_TIMEOUT: Final[int] = 60
+_CSV_HEADERS: Final = MappingProxyType({"Content-Type": "text/csv"})
 _JSON_HEADERS: Final = MappingProxyType({"Content-Type": "application/json"})
 _TEXT_HEADERS: Final = MappingProxyType({"Content-Type": "text/plain"})
 _ALLOWED_TRACE_FIELDS: Final[frozenset[str]] = frozenset({"CustomID", "TemplateID"})

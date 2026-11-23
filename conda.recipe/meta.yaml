@@ -37,7 +37,9 @@ requirements:
 test:
   imports:
     - mailjet_rest
+    - mailjet_rest.testing
     - mailjet_rest.utils
+    - mailjet_rest.webhooks
   source_files:
     - .clusterfuzzlite/build.sh
     - scripts/

@@ -62,6 +62,7 @@ lint() {
 
     info "Running MyPy strict type checking..."
     mypy --strict "${SRC_DIR}"
+    mypy --strict "${SRC_DIR}/client.py" "${SRC_DIR}/endpoint.py"
 
     info "Running Pyright type checking..."
     pyright "${SRC_DIR}"
@@ -107,9 +108,9 @@ test_integration() {
 }
 
 test_cov() {
-    info "Running tests with coverage requirements (fail under 80%)..."
+    info "Running tests with coverage requirements (fail under 93%)..."
     pytest -n auto --cov="${SRC_DIR}" "${TEST_DIR}/unit" "${TEST_DIR}/property" "${TEST_DIR}/regression" \
-        --cov-fail-under=80 --cov-report=term-missing --cov-report=html
+        --cov-fail-under=93 --cov-report=term-missing --cov-report=html
     success "Coverage report generated in htmlcov/index.html"
 }
 
@@ -206,8 +207,13 @@ fuzz_all() {
     fi
 
     local -a pids=()
+    local max_jobs="${FUZZ_JOBS:-3}"
     local fuzzer
     for fuzzer in "${fuzzers[@]}"; do
+        while [[ "$(jobs -rp | wc -l)" -ge "${max_jobs}" ]]; do
+            sleep 0.2
+        done
+
         local fuzzer_name
         fuzzer_name="$(basename -- "${fuzzer}" .py)"
 
@@ -225,6 +231,8 @@ fuzz_all() {
                 -timeout=5 \
                 -shrink=1 \
                 -use_value_profile=1 \
+                -print_final_stats=1 \
+                -rss_limit_mb=1536 \
                 -max_total_time="${duration}" \
                 -artifact_prefix="./" \
                 "${fuzzer_corpus}" \
@@ -359,7 +367,7 @@ help() {
     echo "  test_all             - Run all tests"
     echo "  test_unit            - Run offline unit, property, and regression tests"
     echo "  test_integration     - Run live integration tests"
-    echo "  test_cov             - Run offline tests with >=80% coverage gate"
+    echo "  test_cov             - Run offline tests with >=93% coverage gate"
     echo "  test_no_warnings     - Run tests hiding DeprecationWarnings"
     echo "  test_strict_warnings - Run offline tests with warnings as errors"
     echo "  test_examples        - Run sample scripts in samples/"

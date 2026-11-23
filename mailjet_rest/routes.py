@@ -40,6 +40,7 @@ DEPRECATION_ADVISORY: Final[MappingProxyType[str, str]] = MappingProxyType(
         "domainstatistics": "statistics_recipientEsp",
         "graphstatistics": "statcounters",
         "liststatistics": "statcounters",
+        "messagesentstatistics": "statcounters",
         "messagestatistics": "statcounters",
         "openstatistics": "statcounters",
         "senderstatistics": "statcounters",

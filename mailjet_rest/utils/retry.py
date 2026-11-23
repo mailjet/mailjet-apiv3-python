@@ -62,6 +62,7 @@ DEFAULT_RETRY_STRATEGY: Final[JitterRetry] = JitterRetry(
     backoff_factor=1,
     status_forcelist=sorted(TRANSIENT_STATUS_CODES),
     allowed_methods=list(RETRY_ALLOWED_METHODS),  # Mutations use safe idempotency keys
+    raise_on_status=False,
 )
 
 

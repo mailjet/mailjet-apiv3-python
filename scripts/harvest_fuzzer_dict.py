@@ -56,6 +56,11 @@ _WAVE6_PROTOCOL_TOKENS: tuple[bytes, ...] = (
     b"MessageHref",
     b"fingerprint",
     b"uuid4",
+    b"sha256=",
+    b"ErrTreshold",
+    b"text/csv",
+    b"MockMailjetClient",
+    b"messagesentstatistics",
 )
 
 _SECRET_PREFIXES: tuple[str, ...] = (
@@ -75,6 +80,7 @@ _TYPO_EXACT_HEX_TOKENS: frozenset[bytes] = frozenset(
         b"\x5f\x5f\x68\x65\x6c\x6c\x6f\x5f\x6f\x6e\x6c",
         b"\x65\x6e\x63\x6f\x64\x69\x6e",
         b"\x75\x2d\x69\x6d\x6f\x72\x74\x2d\x6f\x71\x74\x69\x6f\x6e\x73\xef\xbf\xbd\x62\x25",
+        b"\x65\x72\x72\x74\x72\x65\x73\x68\x6f\x6c\x64",
     }
 )
 

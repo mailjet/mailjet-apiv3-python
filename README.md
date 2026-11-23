@@ -56,6 +56,7 @@
   - [Email API Ecosystem (Webhooks, Parse API, Segmentation, Stats)](#email-api-ecosystem-webhooks-parse-api-segmentation-stats)
   - [Content API](#content-api)
 - [Deprecation Warnings](#deprecation-warnings)
+- [Testing & Webhook Verification](#testing--webhook-verification)
 - [Type Hinting](#type-hinting)
 - [License](#license)
 - [Contribute](#contribute)
@@ -153,8 +154,11 @@ We provide a universal management script (`manage.sh`) to simplify local develop
 ./manage.sh env_setup
 conda activate mailjet-dev
 
-# 2. Run the test suite (Unit + Integration)
+# 2. Run the test suite, branch coverage gate (>= 93%), mutation tests, and fuzzers
 ./manage.sh test_all
+./manage.sh test_cov
+./manage.sh mutation
+./manage.sh fuzz_all
 
 # 3. Run the performance profilers
 ./manage.sh perf_bench
@@ -928,13 +932,34 @@ It will successfully execute the request but will emit a non-breaking `Deprecati
 When calling retired Mailjet endpoints, the SDK executes the request but emits an actionable `DeprecationWarning` directing you to canonical replacements:
 
 - **Newsletters (`newsletter*`):** Migrate to `campaigndraft` and `campaigndraft_*`.
-- **Legacy Statistics (`campaignstatistics`, `liststatistics`, `domainstatistics`, `apikeytotals`):** Migrate to `statcounters` or `statistics_recipientEsp`.
+- **Legacy Statistics (`campaignstatistics`, `messagesentstatistics`, `liststatistics`, `domainstatistics`, `apikeytotals`):** Migrate to `statcounters` or `statistics_recipientEsp`.
 - **Webhook Alias (`client.webhook`):** Use the official REST resource `client.eventcallbackurl`.
 - **Ambiguous Templates (`templates_contents`):** Use `template_detailcontent` (v3) or `template_contents` (v1).
 
+## Testing & Webhook Verification
+
+Eliminate HTTP mocking boilerplate in unit tests using `MockMailjetClient`, and validate inbound webhook callbacks in constant time with replay-window enforcement:
+
+```python
+from mailjet_rest import MockMailjetClient, verify_webhook_signature
+
+with MockMailjetClient() as mock_client:
+    res = mock_client.send_v31.create(data={"Messages": [{"Subject": "Hi"}]})
+    assert res.status_code == 200
+    assert len(mock_client.sent_requests) == 1
+
+is_valid = verify_webhook_signature(
+    payload_bytes=raw_body,
+    signature_header=request_sig,
+    webhook_secret=signing_secret,
+    timestamp_unix=event_ts,
+    max_age_seconds=300,
+)
+```
+
 ## Type Hinting
 
-This SDK ships PEP 561 `py.typed` metadata, deterministic `.pyi` type stubs (`mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi`), and consolidated `TypedDict` DTOs in `mailjet_rest.types` (e.g., `SendV31Payload`, `ContactPayload`, `SendV3Payload`). Static type checkers (`mypy --strict`, `pyright`) and IDEs get full autocompletion for all 89 registered routes on both `Client` and `AsyncClient`, plus `client.available_endpoints` for runtime discovery.
+This SDK ships PEP 561 `py.typed` metadata with inline PEP 484 annotations and hover docstrings across all 20 modules, deterministic `.pyi` stubs only for dynamic `__getattr__` route dispatch (`mailjet_rest/client.pyi` and `mailjet_rest/endpoint.pyi`), and consolidated `TypedDict` DTOs in `mailjet_rest.types` (e.g., `SendV31Payload`, `ContactPayload`, `SendV3Payload`). Static type checkers (`mypy --strict`, `pyright`) and IDEs get full autocompletion for all 89 registered routes on both `Client` and `AsyncClient`, plus `client.available_endpoints` for runtime discovery.
 
 ## License
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import email.utils
+import importlib.util
 import io
 import ipaddress
 import logging
@@ -13,11 +14,10 @@ import warnings
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import mailjet_rest
 from mailjet_rest import types as mj_types
 from mailjet_rest.client import AsyncClient, BaseClient, Client, Config, JitterRetry, _httpx2
 from mailjet_rest.errors import MailjetApiError
@@ -78,8 +78,9 @@ def test_wave6_new_openapi_and_v4_routes_build_urls_and_preserve_legacy() -> Non
 
 def test_wave6_routes_declared_in_client_pyi_stubs() -> None:
     """Confirm every new route is declared on both Client and AsyncClient in client.pyi."""
-    assert mailjet_rest.__file__ is not None
-    stub_text = (Path(mailjet_rest.__file__).resolve().parent / "client.pyi").read_text(encoding="utf-8")
+    spec = importlib.util.find_spec("mailjet_rest")
+    assert spec is not None and spec.origin is not None
+    stub_text = (Path(spec.origin).resolve().parent / "client.pyi").read_text(encoding="utf-8")
     new_routes = (
         "send_v31",
         "contacts",
@@ -520,3 +521,34 @@ def test_secret_auth_rejects_non_latin1_with_clean_value_error() -> None:
     with pytest.raises(ValueError, match="Latin-1") as exc_info:
         SecretAuth(("ключ", "secret"))
     assert type(exc_info.value) is ValueError
+
+
+def test_csverror_headers_304_not_redirect_and_messagesentstatistics_deprecation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify *_csverror sends text/csv, HTTP 304 skips redirect warning/audit, and messagesentstatistics warns."""
+    from mailjet_rest.utils.routing import build_endpoint_headers  # ruff: ignore[import-outside-top-level]
+
+    assert build_endpoint_headers("batchjob_csverror") == {"Content-Type": "text/csv"}
+    assert build_endpoint_headers("batchjob_csverror", {"content-type": "text/plain"}) == {"content-type": "text/plain"}
+
+    with Client(auth=("pub_key", "priv_key")) as client:
+        assert client.batchjob_csverror._build_headers() == {"Content-Type": "text/csv"}  # ruff: ignore[private-member-access]
+        with pytest.warns(DeprecationWarning, match="Migrate to 'statcounters'"):
+            assert client.messagesentstatistics._build_url() == "https://api.mailjet.com/v3/REST/messagesentstatistics"  # ruff: ignore[private-member-access]
+
+    url = "https://api.mailjet.com/v3/REST/contact/123"
+    resp_304 = MagicMock(status_code=304)
+    with caplog.at_level(logging.WARNING, logger="mailjet_rest.client"), patch("sys.audit") as mock_audit:
+        BaseClient._check_unexpected_redirect(url, resp_304)  # ruff: ignore[private-member-access]
+    assert not any("304" in rec.message for rec in caplog.records)
+    assert not any(
+        call.args and call.args[0] == "mailjet.security.unexpected_redirect" for call in mock_audit.call_args_list
+    )
+
+    for status_code in (301, 302, 307, 308):
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger="mailjet_rest.client"), patch("sys.audit") as mock_audit:
+            BaseClient._check_unexpected_redirect(url, MagicMock(status_code=status_code))  # ruff: ignore[private-member-access]
+        assert any(f"({status_code})" in rec.message for rec in caplog.records)
+        mock_audit.assert_any_call("mailjet.security.unexpected_redirect", url, status_code)

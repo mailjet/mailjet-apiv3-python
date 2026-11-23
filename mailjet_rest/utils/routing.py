@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from mailjet_rest.errors import MailjetApiError
 from mailjet_rest.routes import DEPRECATION_ADVISORY, ROUTE_MAP
-from mailjet_rest.types import _JSON_HEADERS, _TEXT_HEADERS
+from mailjet_rest.types import _CSV_HEADERS, _JSON_HEADERS, _TEXT_HEADERS
 from mailjet_rest.utils.guardrails import SecurityGuard
 
 
@@ -236,7 +236,12 @@ def build_endpoint_headers(name_lower: str, custom_headers: HeadersMapping | Non
     Returns:
         RequestHeaders: Clean headers ready for client request preparation.
     """
-    base_headers = _TEXT_HEADERS if name_lower.endswith("_csvdata") else _JSON_HEADERS
+    if name_lower.endswith("_csvdata"):
+        base_headers = _TEXT_HEADERS
+    elif name_lower.endswith("_csverror"):
+        base_headers = _CSV_HEADERS
+    else:
+        base_headers = _JSON_HEADERS
     if custom_headers:
         clean_custom = SecurityGuard.sanitize_headers(dict(custom_headers))
         if any(k.lower() == "content-type" for k in clean_custom):

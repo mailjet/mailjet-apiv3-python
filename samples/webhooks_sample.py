@@ -1,6 +1,9 @@
+import hashlib
+import hmac
 import os
+import time
 
-from mailjet_rest import Client
+from mailjet_rest import Client, verify_webhook_signature
 
 
 MAX_HOOK_OUTPUT_CHARS = 8_000
@@ -40,17 +43,30 @@ def delete_webhook(webhook_id: int):
     return mailjet30.eventcallbackurl.delete(id=webhook_id)
 
 
+def verify_webhook_demo() -> bool:
+    """Demonstrate offline constant-time HMAC-SHA256 webhook verification with replay protection."""
+    payload = b'{"event":"open","MessageID":123456}'
+    demo_secret = "demo_signing_key"  # pragma: allowlist secret
+    sig = hmac.new(demo_secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+    now_ts = int(time.time())
+    valid = verify_webhook_signature(payload, sig, demo_secret, timestamp_unix=now_ts, max_age_seconds=300)
+    expired = verify_webhook_signature(payload, sig, demo_secret, timestamp_unix=now_ts - 3600, max_age_seconds=300)
+    return valid and not expired
+
+
 if __name__ == "__main__":
+    demo_ok = verify_webhook_demo()
+    print(f"verify_webhook_demo: {demo_ok}"[:MAX_HOOK_OUTPUT_CHARS])
     if not os.environ.get("MJ_APIKEY_PUBLIC") or not os.environ.get("MJ_APIKEY_PRIVATE"):
-        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run this sample.")
+        print("Set MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE to run live webhook calls."[:MAX_HOOK_OUTPUT_CHARS])
     else:
         listed = list_webhooks()
-        print(f"list_webhooks: {listed.status_code}")
+        print(f"list_webhooks: {listed.status_code}"[:MAX_HOOK_OUTPUT_CHARS])
         result = setup_webhook()
         output = f"setup_webhook: {result.status_code}"
         print(output[:MAX_HOOK_OUTPUT_CHARS])
         if result.status_code == 201 and result.json().get("Data"):
             wid = result.json()["Data"][0]["ID"]
-            print(f"get_webhook: {get_webhook(wid).status_code}")
-            print(f"update_webhook: {update_webhook(wid).status_code}")
-            print(f"delete_webhook: {delete_webhook(wid).status_code}")
+            print(f"get_webhook: {get_webhook(wid).status_code}"[:MAX_HOOK_OUTPUT_CHARS])
+            print(f"update_webhook: {update_webhook(wid).status_code}"[:MAX_HOOK_OUTPUT_CHARS])
+            print(f"delete_webhook: {delete_webhook(wid).status_code}"[:MAX_HOOK_OUTPUT_CHARS])

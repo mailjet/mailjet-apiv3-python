@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 from typing import TYPE_CHECKING
 
 
@@ -12,7 +13,7 @@ if TYPE_CHECKING:
 
 
 async def main() -> None:
-    """Demonstrate AsyncClient health check, RFC 8058 builders, send_v31, patch, and stream pagination."""
+    """Demonstrate AsyncClient health check, RFC 8058 builders, send_v31, update, and stream pagination."""
     from mailjet_rest import AsyncClient, Config  # ruff: ignore[import-outside-top-level]
     from mailjet_rest.builders import MessageBuilder, SendPayloadBuilder  # ruff: ignore[import-outside-top-level]
 
@@ -50,11 +51,11 @@ async def main() -> None:
             print("Contact:", contact.get("Email"))
 
         if first_contact_id is not None:
-            patch_resp = await client.contact.patch(
+            update_resp = await client.contact.update(
                 id=first_contact_id,
-                data={"Name": "Passenger Updated"},
+                data={"Name": f"Passenger {uuid.uuid4().hex[:6]}"},
             )
-            print("PATCH contact status:", patch_resp.status_code)
+            print("PUT contact status:", update_resp.status_code)
 
 
 if __name__ == "__main__":

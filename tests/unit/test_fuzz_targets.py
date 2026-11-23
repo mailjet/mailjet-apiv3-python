@@ -140,7 +140,7 @@ def _imports_mailjet_rest(node: ast.AST) -> bool:
 def test_all_fuzz_targets_scope_instrumentation_to_mailjet_rest() -> None:
     """Ensure every Atheris target scopes import instrumentation to mailjet_rest and avoids instrument_all()."""
     fuzz_files = sorted(Path("tests/fuzz").glob("fuzz_*.py"))
-    assert len(fuzz_files) == 29
+    assert len(fuzz_files) == 30
 
     for fuzz_file in fuzz_files:
         tree = ast.parse(fuzz_file.read_text(encoding="utf-8"), filename=str(fuzz_file))
@@ -381,3 +381,18 @@ def test_harvest_fuzzer_dict_skips_processed_ci_runs_and_jobs(tmp_path: Path) ->
     assert any("/jobs/202/logs" in u for u in fetched_urls)
     assert counts[b"fresh_ci_token"] == 5
     assert 202 in loaded_jobs
+
+
+def test_fuzz_webhooks_target_smoke() -> None:
+    """Verify fuzz_webhooks target imports cleanly and handles mode 0, 1, 2 inputs."""
+    _, injected = _ensure_atheris_stub()
+    try:
+        sys.modules.pop("tests.fuzz.fuzz_webhooks", None)
+        fuzz_mod = importlib.import_module("tests.fuzz.fuzz_webhooks")
+        fuzz_mod.TestOneInput(b"short")
+        for mode_byte in (0, 1, 2):
+            fuzz_mod.TestOneInput(bytes([mode_byte]) + b"webhook_payload_fuzz_seed_bytes_12345678")
+    finally:
+        sys.modules.pop("tests.fuzz.fuzz_webhooks", None)
+        if injected:
+            sys.modules.pop("atheris", None)
