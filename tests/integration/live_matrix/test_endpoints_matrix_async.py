@@ -501,7 +501,8 @@ def test_live_parseroute_campaigndraft_sender_dns_probes() -> None:
                             )
                         ).status_code == 200
                     finally:
-                        assert (await live_v3.parseroute.delete(id=pr_id)).status_code in {200, 204}
+                        pr_del = await live_v3.parseroute.delete(id=pr_id)
+                        assert pr_del.status_code in {200, 204}
             else:
                 with contextlib.suppress(DoesNotExistError):
                     assert (await live_v3.parseroute.get(id=existing_pr[0]["ID"])).status_code == 200

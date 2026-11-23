@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from mailjet_rest.client import AsyncClient, Client, Config
     from mailjet_rest.endpoint import AsyncEndpoint, Endpoint
     from mailjet_rest.errors import (
@@ -74,39 +76,65 @@ __all__ = [
 ]
 
 
+_SUBMODULE_LOADERS: dict[str, Callable[[], Any]] = {
+    "mailjet_rest.builders": lambda: importlib.import_module("mailjet_rest.builders"),
+    "mailjet_rest.client": lambda: importlib.import_module("mailjet_rest.client"),
+    "mailjet_rest.config": lambda: importlib.import_module("mailjet_rest.config"),
+    "mailjet_rest.endpoint": lambda: importlib.import_module("mailjet_rest.endpoint"),
+    "mailjet_rest.errors": lambda: importlib.import_module("mailjet_rest.errors"),
+    "mailjet_rest.routes": lambda: importlib.import_module("mailjet_rest.routes"),
+    "mailjet_rest.testing": lambda: importlib.import_module("mailjet_rest.testing"),
+    "mailjet_rest.types": lambda: importlib.import_module("mailjet_rest.types"),
+    "mailjet_rest.utils": lambda: importlib.import_module("mailjet_rest.utils"),
+    "mailjet_rest.utils.version": lambda: importlib.import_module("mailjet_rest.utils.version"),
+    "mailjet_rest.webhooks": lambda: importlib.import_module("mailjet_rest.webhooks"),
+}
+
+_LAZY_SUBMODULES: frozenset[str] = frozenset(
+    {
+        "builders",
+        "client",
+        "config",
+        "endpoint",
+        "errors",
+        "routes",
+        "testing",
+        "types",
+        "utils",
+        "webhooks",
+    }
+)
+
+
 def _import_known_submodule(module_name: str) -> Any:
     """Import an allowlisted internal submodule using string literals only.
 
     Returns:
         Any: The imported internal submodule object.
     """
-    if module_name == "mailjet_rest.client":
-        return importlib.import_module("mailjet_rest.client")
-    if module_name == "mailjet_rest.endpoint":
-        return importlib.import_module("mailjet_rest.endpoint")
-    if module_name == "mailjet_rest.errors":
-        return importlib.import_module("mailjet_rest.errors")
-    if module_name == "mailjet_rest.testing":
-        return importlib.import_module("mailjet_rest.testing")
-    if module_name == "mailjet_rest.utils.version":
-        return importlib.import_module("mailjet_rest.utils.version")
-    if module_name == "mailjet_rest.webhooks":
-        return importlib.import_module("mailjet_rest.webhooks")
-    msg = f"Disallowed lazy submodule: {module_name!r}"
-    raise ImportError(msg)
+    loader = _SUBMODULE_LOADERS.get(module_name)
+    if loader is None:
+        msg = f"Disallowed lazy submodule: {module_name!r}"
+        raise ImportError(msg)
+    return loader()
 
 
 def __getattr__(name: str) -> Any:
-    """Resolve top-level SDK exports lazily via PEP 562.
+    """Resolve top-level SDK exports and submodules lazily via PEP 562.
 
     Returns:
-        Any: The resolved class, function, or version string.
+        Any: The resolved class, function, submodule, or version string.
     """
     if name == "__version__":
         version_mod = _import_known_submodule("mailjet_rest.utils.version")
         value = version_mod.get_version()
         globals()[name] = value
         return value
+
+    if name in _LAZY_SUBMODULES:
+        submod = _import_known_submodule(f"mailjet_rest.{name}")
+        globals()[name] = submod
+        return submod
 
     target = _LAZY_EXPORTS.get(name)
     if target is None:

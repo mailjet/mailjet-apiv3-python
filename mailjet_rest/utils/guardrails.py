@@ -891,3 +891,33 @@ class SecurityGuard(metaclass=_LazyGuardMeta):
 
         msg = f"Invalid auth type: expected tuple, str, or None, got {type(auth).__name__}"  # type: ignore[unreachable]
         raise TypeError(msg)
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve legacy v1.9.1 module-level symbols extracted from guardrails lazily.
+
+    Returns:
+        Any: Resolved legacy class or exception symbol.
+    """
+    if name == "ValidationError":
+        from mailjet_rest.errors import ValidationError  # ruff: ignore[import-outside-top-level]
+
+        globals()[name] = ValidationError
+        return ValidationError
+    if name == "HTTPAdapter":
+        from requests.adapters import HTTPAdapter  # ruff: ignore[import-outside-top-level]
+
+        globals()[name] = HTTPAdapter
+        return HTTPAdapter
+    if name == "AuthBase":
+        from requests.auth import AuthBase  # ruff: ignore[import-outside-top-level]
+
+        globals()[name] = AuthBase
+        return AuthBase
+    if name == "HTMLParser":
+        from html.parser import HTMLParser  # ruff: ignore[import-outside-top-level]
+
+        globals()[name] = HTMLParser
+        return HTMLParser
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

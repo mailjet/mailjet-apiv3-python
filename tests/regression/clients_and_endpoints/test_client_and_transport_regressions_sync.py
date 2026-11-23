@@ -160,7 +160,7 @@ def test_sync_stream_retry_preserves_nonzero_initial_seek_offset() -> None:
 
 def test_raise_mapped_http_error_bounds_response_body() -> None:
     """PR #179 #9c: MailjetApiError.response_body must be bounded by MAX_ERROR_BODY_CHARS to prevent RAM bloat."""
-    from mailjet_rest import errors as errors_mod
+    from mailjet_rest.errors import MAX_ERROR_BODY_CHARS
 
     huge_body = "X" * 50_000
     fake_resp = types.SimpleNamespace(
@@ -171,9 +171,8 @@ def test_raise_mapped_http_error_bounds_response_body() -> None:
     with pytest.raises(MailjetApiError) as exc_info:
         raise_mapped_http_error(fake_resp, RuntimeError("upstream 502"))
 
-    max_body = getattr(errors_mod, "MAX_ERROR_BODY_CHARS", 16_384)
-    assert max_body == 16_384
-    assert exc_info.value.response_body == f"{huge_body[:max_body]}...[truncated]"
+    assert MAX_ERROR_BODY_CHARS == 16_384
+    assert exc_info.value.response_body == f"{huge_body[:MAX_ERROR_BODY_CHARS]}...[truncated]"
 
 
 def test_timeout_error_inherits_from_builtin_timeout_error() -> None:

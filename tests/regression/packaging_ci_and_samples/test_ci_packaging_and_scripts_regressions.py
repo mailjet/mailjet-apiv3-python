@@ -422,6 +422,12 @@ def _scan_file_codeql_hygiene(py_file: Path) -> list[str]:
     lines = src.splitlines()
     tree = ast.parse(src, filename=str(py_file))
 
+    known_subpkgs = {
+        f"mailjet_rest.{p.stem}"
+        for p in (REPO_ROOT / "mailjet_rest").iterdir()
+        if (p.is_file() and p.suffix == ".py" and p.name != "__init__.py")
+        or (p.is_dir() and (p / "__init__.py").is_file())
+    }
     imported_modules: dict[str, int] = {}
     import_from_modules: dict[str, int] = {}
     for node in ast.walk(tree):
@@ -430,10 +436,23 @@ def _scan_file_codeql_hygiene(py_file: Path) -> list[str]:
                 imported_modules.setdefault(alias.name, node.lineno)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             import_from_modules.setdefault(node.module, node.lineno)
+            for alias in node.names:
+                candidate_submod = f"{node.module}.{alias.name}"
+                if candidate_submod in known_subpkgs:
+                    imported_modules.setdefault(candidate_submod, node.lineno)
     findings: list[str] = [
         f"{rel}:{imported_modules[mod_name]} & :{import_from_modules[mod_name]} py/import-and-import-from ({mod_name})"
         for mod_name in sorted(set(imported_modules) & set(import_from_modules))
     ]
+
+    findings.extend(
+        f"{rel}:{sub.lineno} py/asserts-side-effect in finally block"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Try)
+        for fin_stmt in node.finalbody
+        for sub in ast.walk(fin_stmt)
+        if isinstance(sub, ast.Assert) and any(isinstance(expr, (ast.Call, ast.Await)) for expr in ast.walk(sub.test))
+    )
 
     if py_file.name != "__init__.py":
         exports = _extract_module_all_exports(tree)

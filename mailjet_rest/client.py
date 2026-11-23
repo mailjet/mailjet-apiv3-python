@@ -53,7 +53,7 @@ from mailjet_rest.utils.retry import (
     reset_stream_pointers,
     run_async_with_retries,
 )
-from mailjet_rest.utils.telemetry import extract_telemetry, log_api_response, record_debug_telemetry
+from mailjet_rest.utils.telemetry import extract_telemetry, log_api_response
 from mailjet_rest.utils.transport_security import build_httpx2_transport, coerce_httpx2_timeout
 
 
@@ -154,17 +154,31 @@ def _resolve_proxy_url(proxies: Any) -> str | None:
 
 
 def __getattr__(name: str) -> Any:
-    """Resolve optional ``_httpx2`` lazily to preserve synchronous cold-boot speed.
+    """Resolve optional ``_httpx2`` and legacy module-level symbols lazily.
 
     Returns:
-        Any: Imported ``httpx2`` module when installed, or None.
+        Any: Imported module/symbol when supported.
     """
     if name == "_httpx2":
         return _get_httpx2()
     if name in {"AsyncEndpoint", "BaseEndpoint", "Endpoint"}:
-        from mailjet_rest import endpoint  # ruff: ignore[import-outside-top-level]
+        from mailjet_rest.endpoint import (  # ruff: ignore[import-outside-top-level]
+            AsyncEndpoint,
+            BaseEndpoint,
+            Endpoint,
+        )
 
-        return getattr(endpoint, name)
+        return {"AsyncEndpoint": AsyncEndpoint, "BaseEndpoint": BaseEndpoint, "Endpoint": Endpoint}[name]
+    if name == "Retry":
+        from urllib3.util.retry import Retry  # ruff: ignore[import-outside-top-level]
+
+        globals()[name] = Retry
+        return Retry
+    if name == "_ALLOWED_TRACE_FIELDS":
+        from mailjet_rest.types import _ALLOWED_TRACE_FIELDS  # ruff: ignore[import-outside-top-level]
+
+        globals()[name] = _ALLOWED_TRACE_FIELDS
+        return _ALLOWED_TRACE_FIELDS
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 
@@ -393,6 +407,25 @@ class BaseClient:
     def _extract_telemetry(data: Any, _headers: HeadersMapping | None) -> tuple[str, dict[str, str]]:
         return extract_telemetry(data, _headers)
 
+    def _record_success_telemetry(
+        self,
+        method: str,
+        url: str,
+        response: Any,
+        data: Any,
+        headers: HeadersMapping | None,
+    ) -> None:
+        if getattr(response, "status_code", None) not in {200, 201, 204}:
+            return
+        cls = type(self)
+        has_custom_hook = (
+            cls._log_request is not BaseClient._log_request
+            or cls._extract_telemetry is not BaseClient._extract_telemetry
+        )
+        if has_custom_hook or logger.isEnabledFor(logging.DEBUG):
+            trace_suffix, _ = self._extract_telemetry(data, headers)
+            self._log_request(method, url, response, trace_suffix)
+
     @staticmethod
     def _prepare_clean_headers(headers: Mapping[str, Any], files: Any = None) -> dict[str, Any]:
         if files is not None:
@@ -599,9 +632,13 @@ class Client(BaseClient):
                 return cached
         if sys.meta_path is None:
             raise AttributeError(name)
-        from mailjet_rest.endpoint import Endpoint  # ruff: ignore[import-outside-top-level]
+        ep_cls: type[Endpoint] | None = globals().get("Endpoint")
+        if ep_cls is None:
+            from mailjet_rest.endpoint import Endpoint  # ruff: ignore[import-outside-top-level]
 
-        return self._resolve_endpoint(name, Endpoint)
+            ep_cls = Endpoint
+
+        return self._resolve_endpoint(name, ep_cls)
 
     def _execute_request(
         self,
@@ -691,9 +728,9 @@ class Client(BaseClient):
         except RequestsConnectionError as e:
             raise_connection_error(e)
         except RequestException as e:
-            handle_api_error(e, max_chars=self._MAX_ERROR_DETAIL_CHARS)
+            self._handle_api_error(e)
         else:
-            record_debug_telemetry(logger, method, url, response, data, req_headers)
+            self._record_success_telemetry(method, url, response, data, req_headers)
             return response
 
 
@@ -846,6 +883,9 @@ class AsyncClient(BaseClient):
 
     @staticmethod
     def _load_async_endpoint_cls() -> type[AsyncEndpoint]:
+        aep_cls: type[AsyncEndpoint] | None = globals().get("AsyncEndpoint")
+        if aep_cls is not None:
+            return aep_cls
         from mailjet_rest.endpoint import AsyncEndpoint  # ruff: ignore[import-outside-top-level]
 
         return AsyncEndpoint
@@ -1020,9 +1060,9 @@ class AsyncClient(BaseClient):
         ) as e:
             raise_connection_error(e)
         except httpx2_mod.HTTPError as e:
-            handle_api_error(e, max_chars=self._MAX_ERROR_DETAIL_CHARS)
+            self._handle_api_error(e)
         else:
-            record_debug_telemetry(logger, method, url, response, data, req_headers)
+            self._record_success_telemetry(method, url, response, data, req_headers)
             return response
 
     async def ping(self, timeout: TimeoutType = None) -> bool:

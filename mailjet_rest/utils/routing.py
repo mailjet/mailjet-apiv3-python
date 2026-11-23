@@ -187,6 +187,23 @@ def resolve_dynamic_route(
     return url, id_val, action_id
 
 
+def _append_trailing_segments(
+    url: str,
+    name: str,
+    action_parts: list[str],
+    id_val: ResourceId | None,
+    action_id: ResourceId | None,
+) -> str:
+    if id_val is not None:
+        url = f"{url}/{SecurityGuard.sanitize_segment(id_val)}"
+    if action_id is not None:
+        if name in ROUTE_MAP or len(action_parts) == 1:
+            url = f"{url}/{SecurityGuard.sanitize_segment(action_id)}"
+        else:
+            url = f"{url}/{action_id}"
+    return url
+
+
 def build_endpoint_url(
     name: str,
     name_lower: str,
@@ -196,13 +213,16 @@ def build_endpoint_url(
     raw_version: str,
     id_val: ResourceId | None = None,
     action_id: ResourceId | None = None,
+    *,
+    check_deprecation: bool = True,
 ) -> str:
     """Construct and sanitize a full Mailjet endpoint URL.
 
     Returns:
         str: Sanitized destination endpoint URL.
     """
-    emit_deprecation_if_needed(name_lower, resource_lower)
+    if check_deprecation:
+        emit_deprecation_if_needed(name_lower, resource_lower)
     version = raw_version if raw_version in {"v1", "v3", "v3.1", "v4"} else SecurityGuard.sanitize_segment(raw_version)
 
     if version == "v3" and name_lower == "templates":
@@ -226,16 +246,7 @@ def build_endpoint_url(
             action_id,
         )
 
-    if id_val is not None:
-        url = f"{url}/{SecurityGuard.sanitize_segment(id_val)}"
-
-    if action_id is not None:
-        if name in ROUTE_MAP or len(action_parts) == 1:
-            url = f"{url}/{SecurityGuard.sanitize_segment(action_id)}"
-        else:
-            url = f"{url}/{action_id}"
-
-    return url
+    return _append_trailing_segments(url, name, action_parts, id_val, action_id)
 
 
 def build_endpoint_headers(name_lower: str, custom_headers: HeadersMapping | None = None) -> RequestHeaders:

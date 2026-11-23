@@ -8,6 +8,7 @@ from mailjet_rest.utils.routing import (
     build_endpoint_headers,
     build_endpoint_url,
     cast_query_param,
+    emit_deprecation_if_needed,
     normalize_stream_filters,
     parse_stream_page,
     prepare_call_payload_and_headers,
@@ -114,7 +115,11 @@ class BaseEndpoint:
             action_id,
         )
 
+    def _check_deprecation(self) -> None:
+        emit_deprecation_if_needed(self._name_lower, self._resource_lower)
+
     def _build_url(self, id_val: ResourceId | None = None, action_id: ResourceId | None = None) -> str:
+        self._check_deprecation()
         return build_endpoint_url(
             self.name,
             self._name_lower,
@@ -124,6 +129,7 @@ class BaseEndpoint:
             self.client.config.version,
             id_val=id_val,
             action_id=action_id,
+            check_deprecation=False,
         )
 
     def _build_headers(self, custom_headers: HeadersMapping | None = None) -> RequestHeaders:
@@ -540,3 +546,65 @@ class AsyncEndpoint(BaseEndpoint):
         """
         self._validate_delete_id(id)
         return await self(method="DELETE", id=id, action_id=action_id, **kwargs)
+
+
+_LEGACY_ENDPOINT_LOADERS: dict[str, Any] = {
+    "DEPRECATION_ADVISORY": ("routes", "DEPRECATION_ADVISORY"),
+    "HttpMethod": ("types", "HttpMethod"),
+    "PayloadType": ("types", "PayloadType"),
+    "ROUTE_MAP": ("routes", "ROUTE_MAP"),
+    "SecurityGuard": ("guardrails", "SecurityGuard"),
+    "TimeoutType": ("types", "TimeoutType"),
+    "_JSON_HEADERS": ("types", "_JSON_HEADERS"),
+    "_TEXT_HEADERS": ("types", "_TEXT_HEADERS"),
+    "json": ("stdlib_json", None),
+    "warnings": ("stdlib_warnings", None),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve legacy v1.9.1 module-level attributes extracted into routing/types/routes.
+
+    Returns:
+        Any: Resolved module or symbol matching v1.9.1 ``mailjet_rest.endpoint`` attributes.
+    """
+    spec = _LEGACY_ENDPOINT_LOADERS.get(name)
+    if spec is None:
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+    source, attr = spec
+    val: Any
+    if source == "routes":
+        from mailjet_rest.routes import DEPRECATION_ADVISORY, ROUTE_MAP  # ruff: ignore[import-outside-top-level]
+
+        val = {"DEPRECATION_ADVISORY": DEPRECATION_ADVISORY, "ROUTE_MAP": ROUTE_MAP}[attr]
+    elif source == "types":
+        from mailjet_rest.types import (  # ruff: ignore[import-outside-top-level]
+            _JSON_HEADERS,
+            _TEXT_HEADERS,
+            HttpMethod,
+            PayloadType,
+            TimeoutType,
+        )
+
+        val = {
+            "HttpMethod": HttpMethod,
+            "PayloadType": PayloadType,
+            "TimeoutType": TimeoutType,
+            "_JSON_HEADERS": _JSON_HEADERS,
+            "_TEXT_HEADERS": _TEXT_HEADERS,
+        }[attr]
+    elif source == "guardrails":
+        from mailjet_rest.utils.guardrails import SecurityGuard  # ruff: ignore[import-outside-top-level]
+
+        val = SecurityGuard
+    elif source == "stdlib_json":
+        import json as stdlib_json  # ruff: ignore[import-outside-top-level]
+
+        val = stdlib_json
+    else:
+        import warnings as stdlib_warnings  # ruff: ignore[import-outside-top-level]
+
+        val = stdlib_warnings
+    globals()[name] = val
+    return val

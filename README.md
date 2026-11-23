@@ -267,6 +267,7 @@ cfg = Config(
     pool_connections=100,
     pool_maxsize=100,
     verify=True,  # or path to a custom CA bundle file
+    trust_env=False,  # set True to honor ambient HTTPS_PROXY / REQUESTS_CA_BUNDLE / ~/.netrc
     warn_unclosed=False,  # opt-in ResourceWarning on unclosed Client/AsyncClient
 )
 
@@ -932,7 +933,7 @@ When calling retired Mailjet endpoints, the SDK executes the request but emits a
 
 ## Testing & Webhook Verification
 
-Eliminate HTTP mocking boilerplate in unit tests using `MockMailjetClient`, and validate inbound webhook callbacks in constant time with replay-window enforcement:
+Eliminate HTTP mocking boilerplate in unit tests using `MockMailjetClient` (note: because `Client` and `AsyncClient` use strict `__slots__`, patch methods at the class level via `unittest.mock.patch.object(Client, "api_call", ...)` rather than assigning `client.api_call = ...` on an instance), and validate inbound webhook callbacks in constant time with replay-window enforcement:
 
 ```python
 from mailjet_rest import MockMailjetClient, verify_webhook_signature

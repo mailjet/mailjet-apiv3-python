@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import ssl
 import sys
 import warnings
@@ -210,7 +211,8 @@ def test_zero_trust_path_fail_closed_roots_components_and_audits(
     assert ("mailjet.security.path_traversal", (str(target_file.resolve()),)) in audit_calls
 
     missing_file = base_sub / "missing.txt"
-    with pytest.raises(FileNotFoundError, match=f"Attachment not found or is not a file: {missing_file.resolve()}"):
+    expected_missing = re.escape(str(missing_file.resolve()))
+    with pytest.raises(FileNotFoundError, match=f"Attachment not found or is not a file: {expected_missing}"):
         validate_attachment_path(missing_file, safe_base_dir=base_sub)
 
 
