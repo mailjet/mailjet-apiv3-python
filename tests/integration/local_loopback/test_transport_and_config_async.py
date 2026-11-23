@@ -229,7 +229,9 @@ def test_async_client_and_endpoint_real_https_and_http_integration(
             assert await ac.ping() is True
 
             # Endpoint caching & private / typo attribute checks
-            assert ac.contact is ac.contact
+            cached_contact = ac.contact
+            second_contact = ac.contact
+            assert cached_contact is second_contact
             assert ac._resolve_endpoint("contact", AsyncEndpoint) is ac.contact
             with pytest.raises(AttributeError):
                 _ = ac._private_attr
@@ -317,12 +319,11 @@ def test_async_client_and_endpoint_real_https_and_http_integration(
             with pytest.warns(DeprecationWarning, match="deprecated"):
                 assert (await ac.contact.create(data="raw-string", ensure_ascii=True)).status_code == 201
 
-            assert (await ac.contact.update(id=42, data={"Name": "AsyncPut"})).status_code == 200
-            assert (await ac.contact.patch(id=42, data={"Name": "AsyncPatch"})).json()["Data"][0]["Patched"] is True
-            assert (await ac.contact.delete(id=42)).status_code == 204
+            upd_resp = await ac.contact.update(id=42, data={"Name": "AsyncPut"})
+            del_resp = await ac.contact.delete(id=42)
+            assert upd_resp.status_code == 200
+            assert del_resp.status_code == 204
 
-            with pytest.raises(ValueError, match="non-empty"):
-                await ac.contact.patch(id=" ")
             with pytest.raises(ValueError, match="non-empty"):
                 await ac.contact.delete(id="")
 

@@ -53,14 +53,13 @@ def test_mock_mailjet_client_endpoints_and_context_managers() -> None:
 
         mock_client.contact.get(id=42, filters={"Limit": 5})
         mock_client.contact.update(id=42, data={"Name": "Updated"})
-        mock_client.contact.patch(id=42, data={"Name": "Patched"})
         mock_client.contact.delete(id=42)
         mock_client.contact("GET", id=42, custom_flag=True)
 
         with pytest.raises(AttributeError, match="no attribute '_secret'"):
             _ = mock_client._secret  # ruff: ignore[private-member-access]
 
-    assert [req["method"] for req in mock_client.sent_requests] == ["POST", "GET", "PUT", "PATCH", "DELETE", "GET"]
+    assert [req["method"] for req in mock_client.sent_requests] == ["POST", "GET", "PUT", "DELETE", "GET"]
     assert mock_client.sent_requests[0]["endpoint"] == "send_v31"
     assert mock_client.sent_requests[0]["headers"] == {"X-Test": "1"}
     assert mock_client.sent_requests[1]["filters"] == {"Limit": 5}
@@ -120,8 +119,6 @@ def test_testing_module_mock_client_endpoint_and_response_contracts() -> None:
         assert res_399.json()["Status"] == "success"
         res_update = mc_err.contact.update(id=2, data={"k": "v"}, action_id="b", headers={"H": "2"}, timeout=4)
         assert res_update.status_code == 400
-        res_patch = mc_err.contact.patch(id=3, data={"k": "p"}, action_id="c", headers={"H": "3"}, timeout=5)
-        assert res_patch.status_code == 400
         res_del = mc_err.contact.delete(id=4, action_id="d", timeout=6)
         assert res_del.status_code == 400
         res_call = mc_err.contact(id=5)
@@ -153,17 +150,6 @@ def test_mock_endpoint_parameter_forwarding() -> None:
         "filters": None,
         "headers": {"H": "2"},
         "kwargs": {"timeout": 4},
-    }
-    mc.contact.patch(id=3, data={"k": "p"}, action_id="c", headers={"H": "3"}, timeout=5)
-    assert mc.sent_requests[-1] == {
-        "endpoint": "contact",
-        "method": "PATCH",
-        "id": 3,
-        "action_id": "c",
-        "data": {"k": "p"},
-        "filters": None,
-        "headers": {"H": "3"},
-        "kwargs": {"timeout": 5},
     }
     mc.contact.delete(id=4, action_id="d", timeout=6)
     assert mc.sent_requests[-1] == {
@@ -279,22 +265,20 @@ def test_mock_stream_iterator_and_ping_result_contracts() -> None:
 
 
 def test_mock_endpoint_validation_guards_and_close_semantics() -> None:
-    """Cover invalid ID guards on patch/delete, stream() arg errors, _hidden AttributeError, and close()."""
+    """Cover invalid ID guards on delete, stream() arg errors, _hidden AttributeError, and close()."""
     mc = MockMailjetClient()
     invalid_ids: tuple[Any, ...] = ("", "   ", None, True, False)
     for bad_id in invalid_ids:
-        with pytest.raises(
-            ValueError, match=r"MockEndpoint\.patch\(\) requires a non-empty, non-boolean resource 'id'\."
-        ):
-            mc.contact.patch(bad_id, data={"Name": "X"})
         with pytest.raises(
             ValueError, match=r"MockEndpoint\.delete\(\) requires a non-empty, non-boolean resource 'id'\."
         ):
             mc.contact.delete(bad_id)
 
     # Numeric zero and string "0" remain valid identifiers
-    assert mc.contact.patch(0, data={"Name": "Zero"}).status_code == 200
-    assert mc.contact.delete("0").status_code == 200
+    del_zero_int_resp = mc.contact.delete(0)
+    del_zero_resp = mc.contact.delete("0")
+    assert del_zero_int_resp.status_code == 200
+    assert del_zero_resp.status_code == 200
 
     with pytest.raises(ValueError, match="stream\\(\\) is designed for GET requests only"):
         mc.contact.stream(method="POST")
@@ -310,7 +294,13 @@ def test_mock_endpoint_validation_guards_and_close_semantics() -> None:
 
     mc.close()
 
-    with pytest.raises(RuntimeError, match="boom"), MockMailjetClient() as err_mc:
-        err_mc.contact.get(id=1)
-        raise RuntimeError("boom")
+    caught_sync_err: RuntimeError | None = None
+    err_mc = MockMailjetClient()
+    try:
+        with err_mc:
+            err_mc.contact.get(id=1)
+            raise RuntimeError("boom")
+    except RuntimeError as exc:
+        caught_sync_err = exc
+    assert caught_sync_err is not None and str(caught_sync_err) == "boom"
     assert len(err_mc.sent_requests) == 1

@@ -16,18 +16,18 @@ from tests.regression.conftest import REPO_ROOT
 
 
 @pytest.mark.parametrize("bad_id", [None, "", "   ", True])
-def test_endpoint_and_async_endpoint_patch_reject_invalid_id(bad_id: Any) -> None:
-    """PR #179 #9b: Endpoint.patch and AsyncEndpoint.patch must reject missing, blank, or bool resource IDs."""
+def test_endpoint_and_async_endpoint_delete_reject_invalid_id(bad_id: Any) -> None:
+    """PR #179 #9b: Endpoint.delete and AsyncEndpoint.delete must reject missing, blank, or bool resource IDs."""
     with Client(auth=("pub", "priv")) as sync_client:
         with pytest.raises(ValueError, match="requires a non-empty, non-boolean resource 'id'"):
-            sync_client.v1_templates.patch(id=bad_id, data={"Name": "Bad"})
+            sync_client.v1_templates.delete(id=bad_id)
 
     if _httpx2 is not None:
 
         async def _check() -> None:
             async with AsyncClient(auth=("pub", "priv")) as aclient:
                 with pytest.raises(ValueError, match="requires a non-empty, non-boolean resource 'id'"):
-                    await aclient.v1_templates.patch(id=bad_id, data={"Name": "Bad"})
+                    await aclient.v1_templates.delete(id=bad_id)
 
         asyncio.run(_check())
 

@@ -10,11 +10,16 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 from unittest.mock import MagicMock
 
 import pytest
 
+from mailjet_rest.client import BaseClient
+from mailjet_rest.endpoint import AsyncEndpoint, Endpoint
+from mailjet_rest.testing import MockEndpoint
+from mailjet_rest.types import HttpMethod
+from mailjet_rest.utils.retry import RETRY_ALLOWED_METHODS
 from tests.regression.conftest import REPO_ROOT, SAMPLES_DIR
 
 
@@ -218,6 +223,79 @@ def test_readme_accurate_types_tls_adapter_and_patch_examples() -> None:
     assert async_sample_ref != ""
     assert "patch()" not in async_sample_ref
     assert "update()" in async_sample_ref
+
+
+def test_sdk_and_docs_omit_unsupported_patch_method() -> None:
+    """SDK core, types, retry policy, endpoints, mocks, and README Idempotency bullet omit unsupported HTTP PATCH."""
+    assert BaseClient._MUTATING_METHODS == frozenset({"POST", "PUT", "DELETE"})
+    assert "PATCH" not in BaseClient._MUTATING_METHODS
+    assert "PATCH" not in RETRY_ALLOWED_METHODS
+    assert get_args(HttpMethod) == ("GET", "POST", "PUT", "DELETE")
+    assert not hasattr(Endpoint, "patch")
+    assert not hasattr(AsyncEndpoint, "patch")
+    assert not hasattr(MockEndpoint, "patch")
+
+    endpoint_pyi = (REPO_ROOT / "mailjet_rest/endpoint.pyi").read_text(encoding="utf-8")
+    assert "def patch(" not in endpoint_pyi
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    idempotency_line = next(
+        (line for line in readme.splitlines() if "**Idempotency Fingerprinting:**" in line),
+        "",
+    )
+    assert idempotency_line != ""
+    assert "(`POST`, `PUT`, and `DELETE`)" in idempotency_line
+    assert "PATCH" not in idempotency_line
+    assert "A `PUT` request in the Mailjet API will work as a `PATCH` request" in readme
+
+
+def test_readme_badges_have_valid_targets_section_jumps_and_arm64_compatibility() -> None:
+    """README badges never link to raw shields.io SVGs, include section-jump buttons, and document win-arm64."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert ")](https://img.shields.io/" not in readme
+    assert "https://img.shields.io/pypi/v/mailjet-rest" in readme
+    assert "](https://pypi.org/project/mailjet-rest/)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/releases)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/stargazers)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/issues)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/pulls)" in readme
+    assert "actions/workflows/commit_checks.yaml/badge.svg" in readme
+
+    # Verify section-jump badge buttons match existing Table of Contents anchors
+    for anchor in (
+        "(#compatibility)",
+        "(#license)",
+        "(#quick-start)",
+        "(#async-quick-start-mailjet-restasync)",
+        "(#security-guardrails)",
+        "(#type-hinting)",
+        "(#testing--webhook-verification)",
+        "(#performance--architecture)",
+    ):
+        assert f"]({anchor[1:-1]})" in readme
+        badge_jump_re = re.compile(r"\[!\[[^\]]+\]\([^\)]+\)\]" + re.escape(anchor))
+        assert badge_jump_re.search(readme) is not None, f"Missing section-jump badge button for {anchor}"
+
+    assert "win-arm64" in readme
+    assert "aarch64" in readme
+
+    # Verify concise 1-paragraph project summary appears right before "## Table of contents"
+    pre_toc = readme.split("## Table of contents", maxsplit=1)[0]
+    non_badge_paragraphs = [
+        block.strip()
+        for block in pre_toc.split("\n\n")
+        if block.strip() and not block.lstrip().startswith(("#", "![", "[!["))
+    ]
+    assert len(non_badge_paragraphs) == 1, f"Expected 1 intro paragraph before TOC, got {len(non_badge_paragraphs)}"
+    intro = non_badge_paragraphs[0]
+    assert "`mailjet-rest`" in intro
+    assert "`Client`" in intro and "`AsyncClient`" in intro
+    assert "`MockMailjetClient`" in intro
+
+    # PyPI Warehouse readme_renderer does not parse GitHub [!WARNING]/[!IMPORTANT]/[!NOTE] callout tags,
+    # and relative repo file links in README.md return HTTP 404 on pypi.org/project/mailjet-rest/
+    assert re.search(r"\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]", readme) is None
+    assert re.search(r"\]\((?!https?://|#|mailto:)[^)]+\)", readme) is None
 
 
 def test_changelog_and_performance_metrics_consistent_with_codebase() -> None:

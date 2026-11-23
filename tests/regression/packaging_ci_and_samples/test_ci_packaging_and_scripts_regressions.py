@@ -86,8 +86,14 @@ def test_conda_meta_yaml_optional_httpx2_and_git_describe_tag() -> None:
     source_files = re.search(r"\n  source_files:\n(.*?)(?=\n  requires:)", meta, flags=re.DOTALL)
     assert source_files is not None
     sf_block = source_files.group(1)
+    assert "- pyproject.toml" in sf_block
     assert "- tests/fuzz/" in sf_block
     assert "tests/fuzz/fuzz_*.py" not in sf_block
+    assert "GIT_DESCRIBE_NUMBER" in meta
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION" in meta
+
+    manage_src = (REPO_ROOT / "manage.sh").read_text(encoding="utf-8")
+    assert "*/envs/*/bin/conda" in manage_src
 
 
 def test_conda_environment_files_clean_of_selectors_and_aligned_with_pyproject() -> None:
@@ -149,6 +155,24 @@ def test_publish_workflow_sbom_provenance_dispatch_and_wheel_manifest() -> None:
     assert "id-token: write" in build_job
     assert "attestations: write" in build_job
 
+    # publish job runs without actions/checkout (.git absent), so gh release upload MUST pass GH_REPO / --repo
+    assert "GH_REPO: ${{ github.repository }}" in publish_job
+    assert '--repo "$GH_REPO"' in publish_job
+
+    # SBOM root component must carry dynamic package version & purl
+    assert "pkg:pypi/mailjet-rest@" in build_job
+
+    # MANIFEST.in must exclude all Conda environment*.yaml files from sdist, and .gitattributes must export-ignore CI dotfiles
+    manifest_in = (REPO_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+    assert "exclude environment-fuzz.yaml" in manifest_in
+    gitattributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+    for ignored_export in (
+        ".clusterfuzzlite export-ignore",
+        ".editorconfig export-ignore",
+        ".pre-commit-config.yaml export-ignore",
+    ):
+        assert ignored_export in gitattributes
+
     # Anchored exact verification covering ALL 23 tracked mailjet_rest files
     assert "unzip -Z1" in publish_yml
     assert "grep -Fxq" in publish_yml
@@ -208,6 +232,22 @@ def test_commit_checks_runs_local_https_speedups_and_sync_only_leg() -> None:
     assert "speedups" in ci_yml
     assert "httpx2" in ci_yml
     assert "pip uninstall -y httpx2" in ci_yml or "without" in ci_yml.lower()
+
+
+def test_commit_checks_enables_native_win_arm64_and_linux_arm64_without_prism_emulation() -> None:
+    """commit_checks.yaml defines native ARM64 CI job (windows-11-arm + ubuntu-24.04-arm) with Prism guard."""
+    ci_yml = (REPO_ROOT / ".github/workflows/commit_checks.yaml").read_text(encoding="utf-8")
+    assert "arm64-native:" in ci_yml
+    assert "windows-11-arm" in ci_yml
+    assert "ubuntu-24.04-arm" in ci_yml
+    assert "architecture: 'arm64'" in ci_yml or 'architecture: "arm64"' in ci_yml
+    assert "platform.machine().upper()" in ci_yml
+    assert "ARM64" in ci_yml
+    assert "AARCH64" in ci_yml
+    # Must NOT put windows-11-arm into the py3.10..py3.15 Conda matrix (Anaconda win-arm64 starts at py>=3.12)
+    conda_matrix = re.search(r"os:\s*\[([^\]]+)\]", ci_yml)
+    assert conda_matrix is not None
+    assert "windows-11-arm" not in conda_matrix.group(1)
 
 
 def test_pyproject_ruff_includes_tests_and_mutmut_covers_security_modules() -> None:
@@ -502,3 +542,113 @@ def test_codeql_import_and_unused_global_hygiene_across_repo() -> None:
             all_findings.extend(_scan_file_codeql_hygiene(py_file))
 
     assert not all_findings, "CodeQL/Code Quality hygiene violations detected:\n" + "\n".join(all_findings)
+
+
+def _with_item_is_pytest_raises(with_stmt: ast.With | ast.AsyncWith) -> bool:
+    for item in with_stmt.items:
+        expr = item.context_expr
+        if (
+            isinstance(expr, ast.Call)
+            and isinstance(expr.func, ast.Attribute)
+            and isinstance(expr.func.value, ast.Name)
+            and expr.func.value.id == "pytest"
+            and expr.func.attr == "raises"
+        ):
+            return True
+    return False
+
+
+def _body_has_direct_unconditional_raise(stmts: list[ast.stmt]) -> bool:
+    for stmt in stmts:
+        if isinstance(stmt, ast.Raise):
+            return True
+        if isinstance(stmt, (ast.With, ast.AsyncWith)) and _body_has_direct_unconditional_raise(stmt.body):
+            return True
+    return False
+
+
+def _scan_test_file_code_scanning_hygiene(py_file: Path) -> list[str]:
+    rel = py_file.relative_to(REPO_ROOT).as_posix()
+    src = py_file.read_text(encoding="utf-8")
+    tree = ast.parse(src, filename=str(py_file))
+    issues: list[str] = []
+
+    for node in ast.walk(tree):
+        # #104: __getitem__ raising RuntimeError unconditionally
+        if isinstance(node, ast.FunctionDef) and node.name == "__getitem__":
+            issues.extend(
+                f"{rel}:{sub.lineno} py/unexpected-raise-in-special-method (__getitem__)"
+                for sub in ast.walk(node)
+                if isinstance(sub, ast.Raise)
+                and isinstance(sub.exc, ast.Call)
+                and isinstance(sub.exc.func, ast.Name)
+                and sub.exc.func.id == "RuntimeError"
+            )
+
+        # #103: identical attribute comparison (e.g. ac.contact is ac.contact)
+        if isinstance(node, ast.Compare) and len(node.comparators) == 1 and isinstance(node.left, ast.Attribute):
+            right = node.comparators[0]
+            if isinstance(right, ast.Attribute) and ast.dump(node.left) == ast.dump(right):
+                issues.append(f"{rel}:{node.lineno} py/comparison-of-identical-expressions")
+
+        # #102: ternary expression with constant condition
+        if isinstance(node, ast.IfExp) and isinstance(node.test, ast.Constant):
+            issues.append(f"{rel}:{node.lineno} py/constant-conditional-expression")
+
+        # #95-#98: .delete(...) call inside assert expression
+        if isinstance(node, ast.Assert):
+            issues.extend(
+                f"{rel}:{node.lineno} py/side-effect-in-assert (.delete)"
+                for sub in ast.walk(node.test)
+                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr == "delete"
+            )
+
+        # #99-#101: with pytest.raises(...) containing unconditional raise followed by sibling statements
+        body_lists: list[list[ast.stmt]] = []
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
+            body_lists.append(node.body)
+        for stmts in body_lists:
+            for idx, stmt in enumerate(stmts[:-1]):
+                if (
+                    isinstance(stmt, (ast.With, ast.AsyncWith))
+                    and _with_item_is_pytest_raises(stmt)
+                    and _body_has_direct_unconditional_raise(stmt.body)
+                ):
+                    issues.append(f"{rel}:{stmts[idx + 1].lineno} py/unreachable-statement after pytest.raises")
+
+    return issues
+
+
+def test_code_scanning_alerts_92_to_105_regressions() -> None:
+    """Lock remediation of Code Scanning alerts #92-#105 (CodeQL Python + Scorecard Pinned-Dependencies)."""
+    findings: list[str] = []
+    for py_file in sorted((REPO_ROOT / "tests").rglob("*.py")):
+        if "__pycache__" in py_file.parts:
+            continue
+        findings.extend(_scan_test_file_code_scanning_hygiene(py_file))
+
+    # #105: unused MappingProxyType import in test_telemetry_and_client_mutation_contracts.py
+    tele_mut_src = (REPO_ROOT / "tests/unit/clients/test_telemetry_and_client_mutation_contracts.py").read_text(
+        encoding="utf-8"
+    )
+    if "MappingProxyType" in tele_mut_src and tele_mut_src.count("MappingProxyType") == 1:
+        findings.append("tests/unit/clients/test_telemetry_and_client_mutation_contracts.py: py/unused-import")
+
+    # #94: _SecretPair sensitive-name heuristic logged directly into test_logger.info
+    servers_src = (REPO_ROOT / "tests/integration/local_loopback/_servers.py").read_text(encoding="utf-8")
+    if "class _SecretPair" in servers_src:
+        findings.append("tests/integration/local_loopback/_servers.py: _SecretPair triggers clear-text-logging taint")
+
+    # #92 & #93: OpenSSF Scorecard Pinned-Dependencies on .clusterfuzzlite/{Dockerfile,build.sh}
+    dockerfile_src = (REPO_ROOT / ".clusterfuzzlite/Dockerfile").read_text(encoding="utf-8")
+    build_sh_src = (REPO_ROOT / ".clusterfuzzlite/build.sh").read_text(encoding="utf-8")
+    cflite_reqs = REPO_ROOT / ".clusterfuzzlite/requirements.txt"
+    if "--require-hashes" not in dockerfile_src or not cflite_reqs.is_file():
+        findings.append(".clusterfuzzlite/Dockerfile: missing --require-hashes pinned requirements.txt (#92)")
+    elif "--hash=sha256:" not in cflite_reqs.read_text(encoding="utf-8"):
+        findings.append(".clusterfuzzlite/requirements.txt: missing --hash=sha256 entries (#92)")
+    build_sh_non_comment = "\n".join(line for line in build_sh_src.splitlines() if not line.lstrip().startswith("#"))
+    if re.search(r"\bpip3?\s+install\b", build_sh_non_comment) and "--require-hashes" not in build_sh_non_comment:
+        findings.append(".clusterfuzzlite/build.sh: unhashed pip install triggers PinnedDependenciesID (#93)")
+
+    assert not findings, "Code Scanning regressions (#92-#105) detected:\n" + "\n".join(findings)

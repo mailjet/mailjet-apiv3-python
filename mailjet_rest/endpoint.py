@@ -336,33 +336,6 @@ class Endpoint(BaseEndpoint):
             **kwargs,
         )
 
-    def patch(
-        self,
-        id: ResourceId,
-        data: PayloadType = None,
-        action_id: ResourceId | None = None,
-        headers: HeadersMapping | None = None,
-        ensure_ascii: bool | None = None,
-        data_encoding: str | None = None,
-        **kwargs: Any,
-    ) -> requests.Response:
-        """Perform a synchronous PATCH request to partially update a resource.
-
-        Returns:
-            requests.Response: Resulting HTTP response.
-        """
-        self._validate_required_id(id, "patch")
-        return self(
-            method="PATCH",
-            id=id,
-            data=data,
-            action_id=action_id,
-            headers=headers,
-            ensure_ascii=ensure_ascii,
-            data_encoding=data_encoding,
-            **kwargs,
-        )
-
     def delete(self, id: ResourceId, action_id: ResourceId | None = None, **kwargs: Any) -> requests.Response:
         """Perform a synchronous DELETE request to remove a resource.
 
@@ -502,33 +475,6 @@ class AsyncEndpoint(BaseEndpoint):
         """
         return await self(
             method="PUT",
-            id=id,
-            data=data,
-            action_id=action_id,
-            headers=headers,
-            ensure_ascii=ensure_ascii,
-            data_encoding=data_encoding,
-            **kwargs,
-        )
-
-    async def patch(
-        self,
-        id: ResourceId,
-        data: PayloadType = None,
-        action_id: ResourceId | None = None,
-        headers: HeadersMapping | None = None,
-        ensure_ascii: bool | None = None,
-        data_encoding: str | None = None,
-        **kwargs: Any,
-    ) -> httpx2.Response:
-        """Perform an asynchronous PATCH request to partially update a resource.
-
-        Returns:
-            httpx2.Response: Resulting HTTP response.
-        """
-        self._validate_required_id(id, "patch")
-        return await self(
-            method="PATCH",
             id=id,
             data=data,
             action_id=action_id,

@@ -21,6 +21,7 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       is_stable: ${{ steps.get_version.outputs.is_stable }}
+      is_rc: ${{ steps.get_version.outputs.is_rc }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -60,11 +61,17 @@ jobs:
 
           if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             IS_STABLE="true"
+            IS_RC="false"
+          elif [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+$ ]]; then
+            IS_STABLE="false"
+            IS_RC="true"
           else
             IS_STABLE="false"
+            IS_RC="false"
           fi
 
           echo "is_stable=$IS_STABLE" >> "$GITHUB_OUTPUT"
+          echo "is_rc=$IS_RC" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "pretend_version=$PRETEND_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -143,6 +150,16 @@ jobs:
             --of JSON \
             --output-reproducible \
             -o "sbom/mailjet-rest-${VERSION}.cdx.json"
+          python -c '
+          import json, os, pathlib
+          ver = os.environ["VERSION"]
+          sbom_path = pathlib.Path(f"sbom/mailjet-rest-{ver}.cdx.json")
+          doc = json.loads(sbom_path.read_text(encoding="utf-8"))
+          comp = doc.setdefault("metadata", {}).setdefault("component", {})
+          comp["version"] = ver
+          comp["purl"] = f"pkg:pypi/mailjet-rest@{ver}"
+          sbom_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+          '
           rm -rf .sbom-tool-venv .sbom-target-venv
 
       - name: Upload SBOM artifact
@@ -163,7 +180,10 @@ jobs:
   publish:
     name: Publish to PyPI
     needs: build
-    if: github.event_name == 'release' && !github.event.release.prerelease && needs.build.outputs.is_stable == 'true'
+    if: >-
+      github.event_name == 'release' &&
+      ((!github.event.release.prerelease && needs.build.outputs.is_stable == 'true') ||
+       (github.event.release.prerelease && needs.build.outputs.is_rc == 'true'))
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -195,5 +215,6 @@ jobs:
       - name: Attach SBOM to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" sbom/*.cdx.json --clobber
+        run: gh release upload "$RELEASE_TAG" sbom/*.cdx.json --repo "$GH_REPO" --clobber
