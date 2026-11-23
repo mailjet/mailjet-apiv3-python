@@ -8,11 +8,22 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import sys
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _default_package_dir() -> Path:
+    repo_pkg = REPO_ROOT / "mailjet_rest"
+    if repo_pkg.is_dir():
+        return repo_pkg
+    spec = importlib.util.find_spec("mailjet_rest")
+    if spec is not None and spec.origin is not None:
+        return Path(spec.origin).resolve().parent
+    return repo_pkg
 
 
 def _format_arg(arg: ast.arg, default: ast.expr | None) -> str:
@@ -353,7 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--package-dir",
         type=Path,
-        default=REPO_ROOT / "mailjet_rest",
+        default=_default_package_dir(),
         help="Path to the mailjet_rest package directory.",
     )
     args = parser.parse_args(argv)
