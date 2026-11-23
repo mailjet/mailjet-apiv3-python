@@ -1,28 +1,24 @@
-"""Strict TDD regression tests for PR #179 Issues #4, #6, #9d, and #14f."""
+"""Regression tests for libFuzzer fuzzer.dict grammar, harvest_fuzzer_dict.py, and seed_harvester.py."""
 
 from __future__ import annotations
 
 import ast
-import contextlib
+from collections import Counter
 import importlib.util
 import io
 import json
+from pathlib import Path
 import string
 import sys
-import tokenize
 import types
-import zipfile
-from collections import Counter
-from pathlib import Path
 from typing import Any
 from unittest.mock import patch
+import zipfile
 
 import pytest
 import requests
 
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-FUZZER_DICT_PATH = REPO_ROOT / "tests" / "fuzz" / "fuzzer.dict"
+from tests.regression.conftest import FUZZER_DICT_PATH, REPO_ROOT
 
 
 def _load_script(script_name: str, module_alias: str) -> Any:
@@ -34,82 +30,6 @@ def _load_script(script_name: str, module_alias: str) -> Any:
     sys.modules[module_alias] = module
     spec.loader.exec_module(module)
     return module
-
-
-def _ensure_atheris_stub() -> tuple[Any, bool]:
-    """Install a deterministic FuzzedDataProvider stub if atheris is unavailable."""
-    if "atheris" in sys.modules:
-        return sys.modules["atheris"], False
-
-    stub = types.ModuleType("atheris")
-
-    class _StubFDP:
-        def __init__(self, data: bytes) -> None:
-            self._data = data
-            self._offset = 0
-
-        def _next_byte(self) -> int:
-            if not self._data:
-                return 0
-            val = self._data[self._offset % len(self._data)]
-            self._offset += 1
-            return val
-
-        def ConsumeIntInRange(self, low: int, high: int) -> int:
-            span = max(1, high - low + 1)
-            return low + (self._next_byte() % span)
-
-        def ConsumeInt(self, n: int) -> int:
-            return self._next_byte() % max(1, n)
-
-        def ConsumeBool(self) -> bool:
-            return (self._next_byte() & 1) == 1
-
-        def ConsumeBytes(self, count: int) -> bytes:
-            return self._data[:count]
-
-        def ConsumeUnicodeNoSurrogates(self, count: int) -> str:
-            return self._data.decode("utf-8", errors="ignore")[:count]
-
-        def ConsumeFloat(self) -> float:
-            return float(self._next_byte()) / 10.0
-
-        def ConsumeFloatInRange(self, low: float, high: float) -> float:
-            span = max(0.0, high - low)
-            return low + (self._next_byte() / 255.0) * span
-
-        def PickValueInList(self, items: Any) -> Any:
-            seq = list(items)
-            return seq[self._next_byte() % len(seq)]
-
-    stub.FuzzedDataProvider = _StubFDP  # type: ignore[attr-defined]
-    stub.instrument_imports = lambda **_kwargs: contextlib.nullcontext()  # type: ignore[attr-defined]
-    stub.instrument_all = lambda: None  # type: ignore[attr-defined]
-    stub.Setup = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
-    stub.Fuzz = lambda: None  # type: ignore[attr-defined]
-    sys.modules["atheris"] = stub
-    return stub, True
-
-
-def _load_fuzz_module(filename: str, alias: str) -> Any:
-    fuzz_path = REPO_ROOT / "tests" / "fuzz" / filename
-    spec = importlib.util.spec_from_file_location(alias, fuzz_path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[alias] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _cleanup_async_fuzz_module(mod: Any, alias: str) -> None:
-    loop = getattr(mod, "_loop", None)
-    for attr in ("_base_async_client", "_aclient"):
-        client_obj = getattr(mod, attr, None)
-        if client_obj is not None and loop is not None and not loop.is_closed():
-            loop.run_until_complete(client_obj.aclose())
-    if loop is not None and not loop.is_closed():
-        loop.close()
-    sys.modules.pop(alias, None)
 
 
 def _libfuzzer_parse_one_dict_entry(line: str) -> bytes | None:
@@ -381,6 +301,48 @@ def test_harvest_fuzzer_dict_shares_unified_unprocessed_fetch_helper() -> None:
     )
 
 
+def test_harvest_fuzzer_dict_allows_actions_githubusercontent_redirect_without_token_leak() -> None:
+    """PR #179 harvest_fuzzer_dict: allow 302 redirects to *.actions.githubusercontent.com without leaking Auth."""
+    harvester = _load_script("harvest_fuzzer_dict.py", "harvest_v2_redirect")
+
+    with pytest.raises(ValueError, match="Disallowed GitHub log URL"):
+        harvester._build_validated_github_url("https://actions.githubusercontent.com/foo")
+    with pytest.raises(ValueError, match="Disallowed GitHub log URL"):
+        harvester._build_validated_github_url("http://results-receiver.actions.githubusercontent.com/foo")
+
+    seen_calls: list[tuple[str, dict[str, str]]] = []
+    redirect_url = "https://results-receiver.actions.githubusercontent.com/rest/runs/1/logs?sig=xyz"
+
+    def _fake_get(url: str, *, headers: dict[str, str], **_kwargs: Any) -> Any:
+        seen_calls.append((url, dict(headers)))
+        if url.startswith("https://api.github.com/"):
+            return types.SimpleNamespace(
+                status_code=302,
+                headers={"Location": redirect_url},
+                content=b"",
+                close=lambda: None,
+            )
+        return types.SimpleNamespace(
+            status_code=200,
+            headers={},
+            content=b"zip-bytes",
+            close=lambda: None,
+        )
+
+    with patch.object(harvester.requests, "get", side_effect=_fake_get):
+        status, body, _ = harvester._github_https_get(
+            "https://api.github.com/repos/mailjet/mailjet-apiv3-python/actions/jobs/1/logs",
+            "dummy-token-for-redirect-test",
+        )
+
+    assert status == 200
+    assert body == b"zip-bytes"
+    assert len(seen_calls) == 2
+    assert seen_calls[0][1].get("Authorization") == "Bearer dummy-token-for-redirect-test"
+    assert seen_calls[1][0] == redirect_url
+    assert "Authorization" not in seen_calls[1][1]
+
+
 # ==========================================
 # Issue #6 — seed_harvester.py Redaction, Safety & Cleanup
 # ==========================================
@@ -574,250 +536,3 @@ def test_harvest_live_crud_lifecycles_uses_v4_delete_and_independent_suppress(tm
             seed_harvester.harvest_live_crud_lifecycles(sess3, writer_3, timeout=5.0)
 
     assert not list((tmp_path / "case3" / "fuzz_async_endpoint").glob("*lifecycle_contact_delete*.seed"))
-
-
-# ==========================================
-# Issue #14f — Fuzz Target Fixes
-# ==========================================
-
-
-def test_fuzz_client_uses_real_attach_methods_gates_5mb_and_reuses_client() -> None:
-    """PR #179 #14f: fuzz_client calls attach_file/attach_inline, gates >5MB branch to ~1%, and reuses Client."""
-    src = (REPO_ROOT / "tests" / "fuzz" / "fuzz_client.py").read_text(encoding="utf-8")
-    assert "add_attachment" not in src
-    assert "attach_file" in src
-    assert "attach_inline" in src
-    assert "ConsumeIntInRange(0, 99) == 0" in src
-
-    tree = ast.parse(src)
-    test_one_input = next(
-        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "TestOneInput"
-    )
-    has_module_level_client = any(
-        isinstance(node, (ast.Assign, ast.AnnAssign))
-        and any(
-            isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id == "Client"
-            for call in ast.walk(node)
-        )
-        for node in tree.body
-    )
-    assert has_module_level_client, "fuzz_client must reuse a module-level Client"
-
-    client_with_blocks = [
-        node
-        for node in ast.walk(test_one_input)
-        if isinstance(node, ast.With)
-        and any(
-            isinstance(item.context_expr, ast.Call)
-            and isinstance(item.context_expr.func, ast.Name)
-            and item.context_expr.func.id == "Client"
-            for item in node.items
-        )
-    ]
-    assert not client_with_blocks, (
-        "TestOneInput must not rebuild Client TLS sessions inside a `with Client(...)` per iteration"
-    )
-
-    _, injected = _ensure_atheris_stub()
-    alias = "fuzz_client_under_test"
-    try:
-        mod = _load_fuzz_module("fuzz_client.py", alias)
-        for seed in (b"short", bytes([3]) + b"sender@example.com_fuzz_payload_padding_0123456789"):
-            mod.TestOneInput(seed)
-    finally:
-        mod_obj = sys.modules.pop(alias, None)
-        if mod_obj is not None and getattr(mod_obj, "_base_client", None) is not None:
-            mod_obj._base_client.close()
-        if injected:
-            sys.modules.pop("atheris", None)
-
-
-def test_fuzz_builder_seeds_example_com_and_smoke() -> None:
-    """PR #179 #14f: fuzz_builder seeds @example.com senders and runs clean smoke passes without AttributeError traps."""
-    src = (REPO_ROOT / "tests" / "fuzz" / "fuzz_builder.py").read_text(encoding="utf-8")
-    assert "@example.com" in src
-
-    _, injected = _ensure_atheris_stub()
-    alias = "fuzz_builder_under_test"
-    try:
-        mod = _load_fuzz_module("fuzz_builder.py", alias)
-        mod.TestOneInput(b"short")
-        for b0 in range(10):
-            mod.TestOneInput(bytes([b0]) + b"fuzz_builder_padding_0123456789abcdef")
-    finally:
-        sys.modules.pop(alias, None)
-        if injected:
-            sys.modules.pop("atheris", None)
-
-
-def test_fuzz_async_client_reraises_unexpected_gather_exceptions() -> None:
-    """PR #179 #14f: fuzz_async_client must inspect gather results and re-raise unexpected exceptions."""
-    _, injected = _ensure_atheris_stub()
-    alias = "fuzz_async_client_under_test"
-    mod: Any = None
-    try:
-        mod = _load_fuzz_module("fuzz_async_client.py", alias)
-        base_client: Any = mod._base_async_client
-        if base_client is None:
-            pytest.skip("httpx2 not installed")
-        assert base_client is not None
-
-        async def _boom(*_args: Any, **_kwargs: Any) -> Any:
-            raise KeyError("unexpected gather crash")
-
-        # Mode 3 triggers asyncio.gather when ConsumeIntInRange(0, 3) == 3 (byte 0 % 4 == 3).
-        with patch.object(type(base_client.contact), "get", side_effect=_boom):
-            with pytest.raises(RuntimeError, match="UNHANDLED CRASH"):
-                mod.TestOneInput(bytes([3]) + b"gather_mode_case")
-    finally:
-        if mod is not None:
-            _cleanup_async_fuzz_module(mod, alias)
-        if injected:
-            sys.modules.pop("atheris", None)
-
-
-def test_fuzz_async_evil_server_does_not_swallow_raw_httpx2_or_json_errors() -> None:
-    """PR #179 #14f: fuzz_async_evil_server uses contextlib.aclosing and does not swallow raw httpx2/JSON errors."""
-    src = (REPO_ROOT / "tests" / "fuzz" / "fuzz_async_evil_server.py").read_text(encoding="utf-8")
-    assert "aclosing" in src
-
-    _, injected = _ensure_atheris_stub()
-    alias = "fuzz_async_evil_server_under_test"
-    mod: Any = None
-    try:
-        mod = _load_fuzz_module("fuzz_async_evil_server.py", alias)
-        if mod._aclient is None or mod.httpx2 is None:
-            pytest.skip("httpx2 not installed")
-
-        async def _leak_httpx2(*_args: Any, **_kwargs: Any) -> Any:
-            raise mod.httpx2.HTTPError("raw transport leaked")
-
-        async def _leak_json(*_args: Any, **_kwargs: Any) -> Any:
-            raise json.JSONDecodeError("raw json leaked", "{", 1)
-
-        with patch.object(type(mod._aclient), "api_call", side_effect=_leak_httpx2):
-            with pytest.raises(RuntimeError, match="CRITICAL"):
-                mod.TestOneInput(b"\x01" * 24)
-
-        with patch.object(type(mod._aclient), "api_call", side_effect=_leak_json):
-            with pytest.raises(RuntimeError, match="CRITICAL"):
-                mod.TestOneInput(b"\x01" * 24)
-
-        # Normal evil responses must still be handled cleanly via ApiError/MailjetApiError.
-        for b0 in (0, 1, 2):
-            mod.TestOneInput(bytes([b0]) + b"evil_server_fuzz_padding_0123456789")
-    finally:
-        if mod is not None:
-            _cleanup_async_fuzz_module(mod, alias)
-        if injected:
-            sys.modules.pop("atheris", None)
-
-
-def test_fuzz_webhooks_checks_valid_hmac_roundtrip_and_empty_secret() -> None:
-    """PR #179 #14f: fuzz_webhooks asserts valid HMAC-SHA256 returns True (false-rejection check) & handles empty secret."""
-    _, injected = _ensure_atheris_stub()
-    alias = "fuzz_webhooks_under_test"
-    try:
-        mod = _load_fuzz_module("fuzz_webhooks.py", alias)
-
-        # Mode 0 with empty/whitespace secret must be handled cleanly via ValueError.
-        mod.TestOneInput(bytes([0]) + b"   \x00\x00\x00\x00\x00")
-
-        # Mode 1 must fail with AssertionError if verify_webhook_signature falsely rejects a valid digest.
-        # Under _StubFDP, byte 0=1 selects mode=1 and trailing 0xff bytes yield delta=-245, max_age=255 (within window).
-        valid_window_seed = bytes([1]) + b"\xff" * 31
-        with patch.object(mod, "verify_webhook_signature", return_value=False):
-            with pytest.raises(AssertionError):
-                mod.TestOneInput(valid_window_seed)
-
-        # Real verify_webhook_signature succeeds cleanly on mode 1.
-        mod.TestOneInput(valid_window_seed)
-    finally:
-        sys.modules.pop(alias, None)
-        if injected:
-            sys.modules.pop("atheris", None)
-
-
-def test_fuzz_jitter_retry_asserts_math_isfinite() -> None:
-    """PR #179 #14f: fuzz_jitter_retry rejects non-finite NaN/inf delays on compute_retry_delay & parse_retry_after_http_date."""
-    _, injected = _ensure_atheris_stub()
-    alias = "fuzz_jitter_retry_under_test"
-    try:
-        mod = _load_fuzz_module("fuzz_jitter_retry.py", alias)
-
-        # Byte 0=200 => total_retries=199, byte 2=0 => num_errors=0 so Retry-After paths always execute.
-        jitter_seed = bytes([200, 1, 0, 0, 0, 0, 0, 0])
-        with patch.object(mod, "compute_retry_delay", return_value=float("nan")):
-            with pytest.raises(RuntimeError, match="non-finite|finite|NaN|CRASH"):
-                mod.TestOneInput(jitter_seed)
-
-        with patch.object(mod, "parse_retry_after_http_date", return_value=float("nan")):
-            with pytest.raises(RuntimeError, match="non-finite|finite|NaN|CRASH"):
-                mod.TestOneInput(jitter_seed)
-    finally:
-        sys.modules.pop(alias, None)
-        if injected:
-            sys.modules.pop("atheris", None)
-
-
-def test_all_fuzz_targets_document_empty_except_pass_handlers() -> None:
-    """CodeQL #85/#86 (py/empty-except): every except ...: pass in tests/fuzz/fuzz_*.py must include a rationale comment."""
-    uncommented: list[str] = []
-    for fuzz_file in sorted((REPO_ROOT / "tests" / "fuzz").glob("fuzz_*.py")):
-        source = fuzz_file.read_text(encoding="utf-8")
-        comment_lines = {
-            tok.start[0]
-            for tok in tokenize.generate_tokens(io.StringIO(source).readline)
-            if tok.type == tokenize.COMMENT
-        }
-        tree = ast.parse(source, filename=str(fuzz_file))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ExceptHandler) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
-                end_line = node.end_lineno or node.lineno
-                has_comment = any(node.lineno <= ln <= end_line for ln in comment_lines)
-                if not has_comment:
-                    uncommented.append(f"{fuzz_file.name}:{node.lineno}")
-
-    assert not uncommented, f"Empty except...pass handlers missing explanatory comments: {uncommented}"
-
-
-def test_harvest_fuzzer_dict_allows_actions_githubusercontent_redirect_without_token_leak() -> None:
-    """PR #179 harvest_fuzzer_dict: allow 302 redirects to *.actions.githubusercontent.com without leaking Auth."""
-    harvester = _load_script("harvest_fuzzer_dict.py", "harvest_v2_redirect")
-
-    with pytest.raises(ValueError, match="Disallowed GitHub log URL"):
-        harvester._build_validated_github_url("https://actions.githubusercontent.com/foo")
-    with pytest.raises(ValueError, match="Disallowed GitHub log URL"):
-        harvester._build_validated_github_url("http://results-receiver.actions.githubusercontent.com/foo")
-
-    seen_calls: list[tuple[str, dict[str, str]]] = []
-    redirect_url = "https://results-receiver.actions.githubusercontent.com/rest/runs/1/logs?sig=xyz"
-
-    def _fake_get(url: str, *, headers: dict[str, str], **_kwargs: Any) -> Any:
-        seen_calls.append((url, dict(headers)))
-        if url.startswith("https://api.github.com/"):
-            return types.SimpleNamespace(
-                status_code=302,
-                headers={"Location": redirect_url},
-                content=b"",
-                close=lambda: None,
-            )
-        return types.SimpleNamespace(
-            status_code=200,
-            headers={},
-            content=b"zip-bytes",
-            close=lambda: None,
-        )
-
-    with patch.object(harvester.requests, "get", side_effect=_fake_get):
-        status, body, _ = harvester._github_https_get(
-            "https://api.github.com/repos/mailjet/mailjet-apiv3-python/actions/jobs/1/logs",
-            "dummy-token-for-redirect-test",
-        )
-
-    assert status == 200
-    assert body == b"zip-bytes"
-    assert len(seen_calls) == 2
-    assert seen_calls[0][1].get("Authorization") == "Bearer dummy-token-for-redirect-test"
-    assert seen_calls[1][0] == redirect_url
-    assert "Authorization" not in seen_calls[1][1]

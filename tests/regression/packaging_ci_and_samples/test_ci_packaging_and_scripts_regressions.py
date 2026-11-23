@@ -1,20 +1,18 @@
-"""Strict TDD regression suite for PR #179 findings (#5, #8, #13, #14d-e, #14g)."""
+"""Regression tests for CI workflows, Conda/wheel packaging, ClusterFuzzLite, scripts, and stubs."""
 
 from __future__ import annotations
 
-import ast
-import importlib
-import inspect
+import importlib.util
 import os
 import re
 import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
+
+from tests.regression.conftest import REPO_ROOT
 
 
 if sys.version_info >= (3, 11):
@@ -24,174 +22,6 @@ else:  # pragma: no cover - Python 3.10 fallback
         import tomli as tomllib
     except ModuleNotFoundError:
         tomllib = None  # type: ignore[assignment]
-
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SAMPLES_DIR = REPO_ROOT / "samples"
-SAMPLE_SCRIPTS = sorted(p for p in SAMPLES_DIR.glob("*.py") if p.name != "__init__.py")
-
-
-def _clean_credential_env(**overrides: str) -> dict[str, str]:
-    env = os.environ.copy()
-    for key in ("MJ_APIKEY_PUBLIC", "MJ_APIKEY_PRIVATE", "MJ_CONTENT_TOKEN"):
-        env.pop(key, None)
-    env["PYTHONPATH"] = str(REPO_ROOT)
-    env.update(overrides)
-    return env
-
-
-# ==========================================
-# Issue #5: Sample Scripts Startup, Content API & Webhooks Hygiene
-# ==========================================
-
-
-@pytest.mark.parametrize("script_path", SAMPLE_SCRIPTS, ids=[p.stem for p in SAMPLE_SCRIPTS])
-def test_sample_module_imports_cleanly_without_credentials(script_path: Path) -> None:
-    """Every samples/*.py module imports cleanly with zero credentials set."""
-    mod_name = f"samples.{script_path.stem}"
-    proc = subprocess.run(
-        [sys.executable, "-c", "import importlib, sys; importlib.import_module(sys.argv[1])", mod_name],
-        cwd=str(REPO_ROOT),
-        env=_clean_credential_env(),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert proc.returncode == 0, f"Importing {mod_name} failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-
-
-@pytest.mark.parametrize("script_path", SAMPLE_SCRIPTS, ids=[p.stem for p in SAMPLE_SCRIPTS])
-def test_sample_script_executes_directly_without_credentials(script_path: Path, tmp_path: Path) -> None:
-    """Executing every samples/*.py directly exits 0 cleanly even from an unrelated cwd without credentials."""
-    env = os.environ.copy()
-    for key in ("MJ_APIKEY_PUBLIC", "MJ_APIKEY_PRIVATE", "MJ_CONTENT_TOKEN", "PYTHONPATH"):
-        env.pop(key, None)
-
-    proc = subprocess.run(
-        [sys.executable, str(script_path)],
-        cwd=str(tmp_path),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert proc.returncode == 0, (
-        f"Executing {script_path.name} failed (rc={proc.returncode}):\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-    )
-    assert "Traceback" not in proc.stderr
-
-
-def test_content_api_sample_imports_with_token_only_and_avoids_name_error_and_secret_leak() -> None:
-    """content_api_sample supports token-only imports, optional client injection, and never logs bearer_token[:10]."""
-    sample_path = SAMPLES_DIR / "content_api_sample.py"
-    source = sample_path.read_text(encoding="utf-8")
-
-    # Never log token prefix (CWE-532)
-    assert "bearer_token[:10]" not in source
-    assert "bearer_token[:" not in source
-
-    # Token-only environment import must not crash requiring MJ_APIKEY_PUBLIC/PRIVATE
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "import importlib, sys; importlib.import_module(sys.argv[1])",
-            "samples.content_api_sample",
-        ],
-        cwd=str(REPO_ROOT),
-        env=_clean_credential_env(MJ_CONTENT_TOKEN="dummy_content_token_value"),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert proc.returncode == 0, f"Import with MJ_CONTENT_TOKEN failed:\n{proc.stderr}"
-
-    mod: Any = importlib.import_module("samples.content_api_sample")
-    assert hasattr(mod, "_get_content_client")
-    assert callable(mod._get_content_client)
-
-    mock_client = MagicMock()
-    for fn_name in (
-        "generate_token",
-        "upload_image",
-        "list_v1_templates",
-        "publish_template_contents",
-        "unlock_template_contents",
-        "get_image_by_type",
-    ):
-        fn = getattr(mod, fn_name)
-        sig = inspect.signature(fn)
-        assert "client" in sig.parameters, f"{fn_name} must accept optional client parameter"
-
-    mod.generate_token(client=mock_client)
-    mod.upload_image(client=mock_client)
-    mod.list_v1_templates(client=mock_client)
-    mod.publish_template_contents(123, client=mock_client)
-    mod.unlock_template_contents(123, client=mock_client)
-    mod.get_image_by_type(456, client=mock_client)
-    assert mock_client.tokens.create.called
-    assert mock_client.data_images.create.called
-    assert mock_client.v1_templates.get.called
-    assert mock_client.template_contents_publish.create.called
-    assert mock_client.template_contents_unlock.create.called
-    assert mock_client.data_images_by_type.get.called
-
-
-def test_webhooks_sample_clean_of_harness_constant_and_runs_offline_demo() -> None:
-    """webhooks_sample must not leak MAX_HOOK_OUTPUT_CHARS and verify_webhook_demo runs offline."""
-    sample_path = SAMPLES_DIR / "webhooks_sample.py"
-    source = sample_path.read_text(encoding="utf-8")
-    assert "MAX_HOOK_OUTPUT_CHARS" not in source
-
-    mod: Any = importlib.import_module("samples.webhooks_sample")
-    assert not hasattr(mod, "MAX_HOOK_OUTPUT_CHARS")
-    assert mod.verify_webhook_demo() is True
-
-    proc = subprocess.run(
-        [sys.executable, str(sample_path)],
-        cwd=str(REPO_ROOT),
-        env=_clean_credential_env(),
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert proc.returncode == 0
-    assert "verify_webhook_demo: True" in proc.stdout
-
-
-def test_new_sample_imports_contacts_sample_from_unrelated_cwd(tmp_path: Path) -> None:
-    """new_sample resolves samples.contacts_sample without ModuleNotFoundError from any cwd."""
-    script_path = SAMPLES_DIR / "new_sample.py"
-    env = os.environ.copy()
-    for key in ("MJ_APIKEY_PUBLIC", "MJ_APIKEY_PRIVATE", "MJ_CONTENT_TOKEN", "PYTHONPATH"):
-        env.pop(key, None)
-
-    proc = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import importlib.util, sys; "
-                "spec = importlib.util.spec_from_file_location('new_sample', sys.argv[1]); "
-                "mod = importlib.util.module_from_spec(spec); "
-                "spec.loader.exec_module(mod); "
-                "fn = mod._load_edit_contact_data(); "
-                "assert callable(fn)"
-            ),
-            str(script_path),
-        ],
-        cwd=str(tmp_path),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert proc.returncode == 0, f"new_sample import loader failed:\n{proc.stderr}"
 
 
 # ==========================================
@@ -360,7 +190,7 @@ def test_manage_sh_and_gitignore_hardening() -> None:
 
 
 # ==========================================
-# Issue #14d-e, #14g: CI Matrix, Ruff/Mutmut Config, Docs & Metrics
+# Issue #14d-e, #14g: CI Matrix, Ruff/Mutmut Config, Scripts & Stubs
 # ==========================================
 
 
@@ -394,70 +224,6 @@ def test_pyproject_ruff_includes_tests_and_mutmut_covers_security_modules() -> N
         "mailjet_rest/utils/telemetry.py",
     }
     assert required_mutmut <= only_mutate
-
-
-def test_readme_accurate_types_tls_adapter_and_patch_examples() -> None:
-    """README.md avoids SendV3Payload typo, raw HTTPAdapter TLS stripping, and invalid contact.patch."""
-    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    assert "SendV3Payload" not in readme
-    assert "from requests.adapters import HTTPAdapter" not in readme
-    assert re.search(r"(?<!Secure)HTTPAdapter\(", readme) is None
-    assert "SecureHTTPAdapter" in readme
-    assert "Config(max_retries=" in readme
-    assert "mailjet.contact.patch(" not in readme
-    assert "v1_templates.patch(" in readme
-
-    async_sample_ref = next(
-        (line for line in readme.splitlines() if "samples/async_client_sample.py" in line),
-        "",
-    )
-    assert async_sample_ref != ""
-    assert "patch()" not in async_sample_ref
-    assert "update()" in async_sample_ref
-
-
-def test_changelog_and_performance_metrics_consistent_with_codebase() -> None:
-    """CHANGELOG.md and PERFORMANCE.md reflect actual types.py counts, slotscheck counts, and post-fix timings."""
-    types_src = (REPO_ROOT / "mailjet_rest/types.py").read_text(encoding="utf-8")
-    tree = ast.parse(types_src)
-    alias_count = sum(
-        1
-        for node in tree.body
-        if isinstance(node, ast.AnnAssign) and getattr(node.annotation, "id", None) == "TypeAlias"
-    )
-    td_count = sum(1 for node in tree.body if isinstance(node, ast.ClassDef))
-    assert alias_count == 18
-    assert td_count == 17
-
-    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    performance = (REPO_ROOT / "PERFORMANCE.md").read_text(encoding="utf-8")
-
-    assert f"`{alias_count}` type aliases" in changelog
-    assert f"`{td_count}` OpenAPI `TypedDict`" in changelog
-    assert "`53` classes" in changelog
-    assert "`53` classes scanned across `20` modules" in performance
-
-    # Stale pre-Issue-#10 slowdown metrics must be updated
-    assert "`635.2 ns`" not in performance
-    assert "`10.08 µs`" not in performance
-
-
-def test_smoke_readme_runner_executes_under_cp1252_encoding(tmp_path: Path) -> None:
-    """samples/smoke_readme_runner.py must run under Windows cp1252 stdout encoding without UnicodeEncodeError."""
-    env = _clean_credential_env(PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
-    env.pop("PYTHONPATH", None)
-    proc = subprocess.run(
-        [sys.executable, str(SAMPLES_DIR / "smoke_readme_runner.py")],
-        cwd=str(tmp_path),
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="cp1252",
-        timeout=20,
-        check=False,
-    )
-    assert proc.returncode == 0, f"smoke_readme_runner failed under cp1252:\nSTDERR:\n{proc.stderr}"
-    assert "UnicodeEncodeError" not in proc.stderr
 
 
 def test_manage_sh_fuzz_all_launches_all_fuzzers_by_default_and_honors_fuzz_jobs(tmp_path: Path) -> None:
@@ -558,3 +324,57 @@ def test_manage_sh_fuzz_all_launches_all_fuzzers_by_default_and_honors_fuzz_jobs
     )
     assert proc_c.returncode != 0
     assert "FUZZ_JOBS must be a positive integer" in (proc_c.stdout + proc_c.stderr)
+
+
+# ==========================================
+# Issue #12d: Stub Generation AST Extraction
+# ==========================================
+
+
+def test_check_stubs_extracts_classvars_all_and_overloads_from_ast(tmp_path: Path) -> None:
+    """PR #179 #12d: check_stubs.py must extract BaseClient ClassVars, __all__, reserved_attrs, and @overload from AST."""
+    script_path = REPO_ROOT / "scripts" / "check_stubs.py"
+    spec = importlib.util.spec_from_file_location("check_stubs_under_test", script_path)
+    assert spec is not None and spec.loader is not None
+    check_stubs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(check_stubs)
+
+    pkg_dir = Path(check_stubs._default_package_dir()).resolve()
+    client_stub = (pkg_dir / "client.pyi").read_text(encoding="utf-8")
+    for class_var in ("_TRANSIENT_STATUS_CODES", "_MAX_RETRY_DELAY", "_RETRY_ALLOWED_METHODS"):
+        assert f"{class_var}: ClassVar[" in client_stub
+
+    # Dynamic AST test on an isolated temporary package copy
+    pkg_copy = tmp_path / "mailjet_rest"
+    pkg_copy.mkdir()
+    for fname in ("client.py", "endpoint.py", "routes.py"):
+        (pkg_copy / fname).write_text((pkg_dir / fname).read_text(encoding="utf-8"), encoding="utf-8")
+
+    # Inject an extra ClassVar + @overload method + updated __all__ export into copied client.py
+    copied_client = (pkg_copy / "client.py").read_text(encoding="utf-8")
+    copied_client = copied_client.replace(
+        '"parse_response",\n]',
+        '"parse_response",\n    "_ExtraStubExport",\n]',
+    )
+    copied_client = copied_client.replace(
+        "_RETRY_STRATEGY: ClassVar[JitterRetry] = DEFAULT_RETRY_STRATEGY",
+        "_RETRY_STRATEGY: ClassVar[JitterRetry] = DEFAULT_RETRY_STRATEGY\n    _AST_PROBE_VAR: ClassVar[int] = 42",
+    )
+    copied_client = copied_client.replace(
+        "    def ping(self, timeout: TimeoutType = None) -> bool:",
+        "    @overload\n"
+        "    def overloaded_probe(self, x: int) -> int: ...\n"
+        "    @overload\n"
+        "    def overloaded_probe(self, x: str) -> str: ...\n"
+        "    def overloaded_probe(self, x: int | str) -> int | str:\n"
+        "        return x\n\n"
+        "    def ping(self, timeout: TimeoutType = None) -> bool:",
+    )
+    (pkg_copy / "client.py").write_text(copied_client, encoding="utf-8")
+
+    generated = check_stubs.render_client_stub(pkg_copy)
+    assert "_AST_PROBE_VAR: ClassVar[int]" in generated
+    assert '"_ExtraStubExport",' in generated
+    assert "@overload\n    def overloaded_probe(self, x: int) -> int: ..." in generated
+    assert "@overload\n    def overloaded_probe(self, x: str) -> str: ..." in generated
+    assert "def overloaded_probe(self, x: int | str)" not in generated
