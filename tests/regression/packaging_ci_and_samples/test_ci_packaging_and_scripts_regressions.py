@@ -210,6 +210,22 @@ def test_commit_checks_runs_local_https_speedups_and_sync_only_leg() -> None:
     assert "pip uninstall -y httpx2" in ci_yml or "without" in ci_yml.lower()
 
 
+def test_commit_checks_enables_native_win_arm64_and_linux_arm64_without_prism_emulation() -> None:
+    """commit_checks.yaml defines native ARM64 CI job (windows-11-arm + ubuntu-24.04-arm) with Prism guard."""
+    ci_yml = (REPO_ROOT / ".github/workflows/commit_checks.yaml").read_text(encoding="utf-8")
+    assert "arm64-native:" in ci_yml
+    assert "windows-11-arm" in ci_yml
+    assert "ubuntu-24.04-arm" in ci_yml
+    assert "architecture: 'arm64'" in ci_yml or 'architecture: "arm64"' in ci_yml
+    assert "platform.machine().upper()" in ci_yml
+    assert "ARM64" in ci_yml
+    assert "AARCH64" in ci_yml
+    # Must NOT put windows-11-arm into the py3.10..py3.15 Conda matrix (Anaconda win-arm64 starts at py>=3.12)
+    conda_matrix = re.search(r"os:\s*\[([^\]]+)\]", ci_yml)
+    assert conda_matrix is not None
+    assert "windows-11-arm" not in conda_matrix.group(1)
+
+
 def test_pyproject_ruff_includes_tests_and_mutmut_covers_security_modules() -> None:
     """pyproject.toml lints tests/ with Ruff and mutmut covers client + security utilities."""
     if tomllib is None:
