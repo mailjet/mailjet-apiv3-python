@@ -150,6 +150,16 @@ jobs:
             --of JSON \
             --output-reproducible \
             -o "sbom/mailjet-rest-${VERSION}.cdx.json"
+          python -c '
+          import json, os, pathlib
+          ver = os.environ["VERSION"]
+          sbom_path = pathlib.Path(f"sbom/mailjet-rest-{ver}.cdx.json")
+          doc = json.loads(sbom_path.read_text(encoding="utf-8"))
+          comp = doc.setdefault("metadata", {}).setdefault("component", {})
+          comp["version"] = ver
+          comp["purl"] = f"pkg:pypi/mailjet-rest@{ver}"
+          sbom_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+          '
           rm -rf .sbom-tool-venv .sbom-target-venv
 
       - name: Upload SBOM artifact
@@ -205,5 +215,6 @@ jobs:
       - name: Attach SBOM to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$RELEASE_TAG" sbom/*.cdx.json --clobber
+        run: gh release upload "$RELEASE_TAG" sbom/*.cdx.json --repo "$GH_REPO" --clobber

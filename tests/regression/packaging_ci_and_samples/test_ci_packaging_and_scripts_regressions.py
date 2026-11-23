@@ -155,6 +155,24 @@ def test_publish_workflow_sbom_provenance_dispatch_and_wheel_manifest() -> None:
     assert "id-token: write" in build_job
     assert "attestations: write" in build_job
 
+    # publish job runs without actions/checkout (.git absent), so gh release upload MUST pass GH_REPO / --repo
+    assert "GH_REPO: ${{ github.repository }}" in publish_job
+    assert '--repo "$GH_REPO"' in publish_job
+
+    # SBOM root component must carry dynamic package version & purl
+    assert "pkg:pypi/mailjet-rest@" in build_job
+
+    # MANIFEST.in must exclude all Conda environment*.yaml files from sdist, and .gitattributes must export-ignore CI dotfiles
+    manifest_in = (REPO_ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+    assert "exclude environment-fuzz.yaml" in manifest_in
+    gitattributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+    for ignored_export in (
+        ".clusterfuzzlite export-ignore",
+        ".editorconfig export-ignore",
+        ".pre-commit-config.yaml export-ignore",
+    ):
+        assert ignored_export in gitattributes
+
     # Anchored exact verification covering ALL 23 tracked mailjet_rest files
     assert "unzip -Z1" in publish_yml
     assert "grep -Fxq" in publish_yml

@@ -12,3 +12,6 @@
 .gitattributes export-ignore
 .gitignore export-ignore
 .github export-ignore
+.clusterfuzzlite export-ignore
+.editorconfig export-ignore
+.pre-commit-config.yaml export-ignore
