@@ -209,9 +209,20 @@ fuzz_all() {
     local -a pids=()
     local -a all_pids=()
     local -a active_pids=()
-    local max_jobs="${FUZZ_JOBS:-3}"
+    local default_jobs
+    default_jobs="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+    local max_jobs="${FUZZ_JOBS:-${default_jobs}}"
+    if [[ ! "${max_jobs}" =~ ^[1-9][0-9]*$ ]]; then
+        error "FUZZ_JOBS must be a positive integer (got '${max_jobs}')."
+        return 1
+    fi
+    local total_fuzzers="${#fuzzers[@]}"
+    info "Launching ${total_fuzzers} fuzzers (max parallel jobs: ${max_jobs}; set FUZZ_JOBS=<n> to override)..."
+
     local fuzzer pid
+    local idx=0
     for fuzzer in "${fuzzers[@]}"; do
+        idx=$((idx + 1))
         while [[ "${#pids[@]}" -ge "${max_jobs}" ]]; do
             active_pids=()
             for pid in "${pids[@]}"; do
@@ -232,7 +243,7 @@ fuzz_all() {
         local fuzzer_corpus="${root_dir}/${corpus_dir}/${fuzzer_name}"
 
         mkdir -p -- "${fuzzer_work_dir}" "${fuzzer_corpus}"
-        echo -e "Running fuzzer: ${fuzzer_name} (Logs: logs/${fuzzer_name}/fuzz_output.log)"
+        echo -e "[${idx}/${total_fuzzers}] Running fuzzer: ${fuzzer_name} (Logs: logs/${fuzzer_name}/fuzz_output.log)"
 
         (
             cd -- "${fuzzer_work_dir}"

@@ -52,6 +52,7 @@ def TestOneInput(data: bytes) -> None:
                 try:
                     verify_webhook_signature(payload, "0" * 64, raw_secret)
                 except ValueError:
+                    # Expected rejection when fuzzed webhook signing secret is empty or invalid.
                     pass
                 else:
                     msg = "Empty or whitespace webhook_secret must raise ValueError"
