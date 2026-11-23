@@ -46,8 +46,7 @@ test:
     - .clusterfuzzlite/build.sh
     - scripts/
     - tests/__init__.py
-    - tests/fuzz/fuzz_*.py
-    - tests/fuzz/fuzzer.dict
+    - tests/fuzz/
     - tests/unit/
   requires:
     - httpx2 >=2.0.0

@@ -83,6 +83,12 @@ def test_conda_meta_yaml_optional_httpx2_and_git_describe_tag() -> None:
     assert test_requires is not None
     assert "httpx2 >=2.0.0" in test_requires.group(1)
 
+    source_files = re.search(r"\n  source_files:\n(.*?)(?=\n  requires:)", meta, flags=re.DOTALL)
+    assert source_files is not None
+    sf_block = source_files.group(1)
+    assert "- tests/fuzz/" in sf_block
+    assert "tests/fuzz/fuzz_*.py" not in sf_block
+
 
 def test_conda_environment_files_clean_of_selectors_and_aligned_with_pyproject() -> None:
     """environment*.yaml omit broken conda-build selectors and match pyproject.toml dependency floors."""
