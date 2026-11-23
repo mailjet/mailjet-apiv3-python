@@ -292,6 +292,11 @@ def test_readme_badges_have_valid_targets_section_jumps_and_arm64_compatibility(
     assert "`Client`" in intro and "`AsyncClient`" in intro
     assert "`MockMailjetClient`" in intro
 
+    # PyPI Warehouse readme_renderer does not parse GitHub [!WARNING]/[!IMPORTANT]/[!NOTE] callout tags,
+    # and relative repo file links in README.md return HTTP 404 on pypi.org/project/mailjet-rest/
+    assert re.search(r"\[!(?:NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]", readme) is None
+    assert re.search(r"\]\((?!https?://|#|mailto:)[^)]+\)", readme) is None
+
 
 def test_changelog_and_performance_metrics_consistent_with_codebase() -> None:
     """CHANGELOG.md and PERFORMANCE.md reflect actual types.py counts, slotscheck counts, and post-fix timings."""

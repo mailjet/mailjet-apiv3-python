@@ -217,8 +217,7 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
     print(result.status_code)
 ```
 
-> [!WARNING]
-> **Resource Management:** If you choose not to use the context manager, you **must** manually call `mailjet.close()` (or `await mailjet.aclose()` for `AsyncClient`) when your application shuts down to release the underlying sockets.
+> **Warning — Resource Management:** If you choose not to use the context manager, you **must** manually call `mailjet.close()` (or `await mailjet.aclose()` for `AsyncClient`) when your application shuts down to release the underlying sockets.
 
 ### Async Quick Start (`mailjet-rest[async]`)
 
@@ -264,7 +263,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-See [samples/async_client_sample.py](samples/async_client_sample.py) for `ping()`, `update()`, `available_endpoints`, and `async for ... in client.contact.stream()` pagination.
+See [samples/async_client_sample.py](https://github.com/mailjet/mailjet-apiv3-python/blob/master/samples/async_client_sample.py) for `ping()`, `update()`, `available_endpoints`, and `async for ... in client.contact.stream()` pagination.
 
 ### Advanced Configuration
 
@@ -441,7 +440,7 @@ mailjet.send.create(data=payload)
 The Mailjet SDK `v1.6.0+` has been heavily optimized for high-concurrency and memory-constrained environments (like AWS Lambda).
 It utilizes `__slots__` for memory density, immutable `MappingProxyType` headers for zero-allocation merging, and O(1) dynamic endpoint caching.
 
-For a detailed breakdown of our nanosecond routing benchmarks and instructions on how to profile the SDK, please read our [Performance & Architecture Guide](PERFORMANCE.md).
+For a detailed breakdown of our nanosecond routing benchmarks and instructions on how to profile the SDK, please read our [Performance & Architecture Guide](https://github.com/mailjet/mailjet-apiv3-python/blob/master/PERFORMANCE.md).
 
 ## Security Guardrails
 
@@ -457,7 +456,7 @@ Additional built-in protections:
 - **Secret Obfuscation (CWE-316):** Utilizes a custom `SecretAuth` transport adapter and `RedactingFilter` to strictly prevent API credentials from leaking in tracebacks, logs, or memory dumps.
 - **Punycode IDN Support:** Automatically normalizes Internationalized Domain Names (IDNs) in sender and recipient addresses to prevent Homograph attacks.
 
-See our [SECURITY.md](SECURITY.md) for our vulnerability disclosure policy and supported versions.
+See our [SECURITY.md](https://github.com/mailjet/mailjet-apiv3-python/blob/master/SECURITY.md) for our vulnerability disclosure policy and supported versions.
 
 ### Local-First Validation (Fail-Fast)
 
@@ -529,8 +528,7 @@ with Client(auth=(api_key, api_secret)) as mailjet:
 
 ### Full list of supported endpoints
 
-> [!IMPORTANT]\
-> This is a full list of supported endpoints this wrapper provides [samples](samples)
+> **Important:** Full runnable code examples for every supported endpoint are available in [`samples/`](https://github.com/mailjet/mailjet-apiv3-python/tree/master/samples).
 
 ### Executable README (Smoke Test)
 
@@ -640,8 +638,7 @@ with Client(auth=(api_key, api_secret), version="v3.1") as mailjet:
 
 ### Standard REST Actions (GET, POST, PUT, DELETE)
 
-> [!NOTE]\
-> All examples in this section assume that you have already opened a session using the context manager, for example: with Client(auth=(api_key, api_secret)) as mailjet:.
+> **Note:** All examples in this section assume that you have already opened a session using the context manager, for example: `with Client(auth=(api_key, api_secret)) as mailjet:`.
 
 #### POST (Create)
 
