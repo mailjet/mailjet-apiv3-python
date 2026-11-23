@@ -20,6 +20,8 @@
 [![Performance: Slotted Core](https://img.shields.io/badge/Performance-Slotted%20Core-d97706.svg)](#performance--architecture)
 [![Endpoints: 89 Routes](https://img.shields.io/badge/Endpoints-89%20Routes-4f46e5.svg)](#full-list-of-supported-endpoints)
 
+**Production-grade, strictly typed Python SDK for the Mailjet Email, Contacts, Statistics, and Content APIs (`v3`, `v3.1`, `v1`, `v4`).** Built on a lightweight `__slots__` core with PEP 562 lazy imports for instant cold starts, `mailjet-rest` combines pooled synchronous `Client` execution and native HTTP/2 `AsyncClient` concurrency with full PEP 561 IDE autocompletion across all 89 endpoints, automatic SHA-256 `Idempotency-Key` fingerprinting, full-jitter retries, TLS 1.2+ and SSRF security guardrails, constant-time webhook signature verification, and a zero-network `MockMailjetClient` for effortless testing.
+
 ## Table of contents
 
 - [Overview](#overview)

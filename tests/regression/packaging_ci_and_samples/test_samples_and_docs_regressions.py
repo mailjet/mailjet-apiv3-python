@@ -279,6 +279,19 @@ def test_readme_badges_have_valid_targets_section_jumps_and_arm64_compatibility(
     assert "win-arm64" in readme
     assert "aarch64" in readme
 
+    # Verify concise 1-paragraph project summary appears right before "## Table of contents"
+    pre_toc = readme.split("## Table of contents", maxsplit=1)[0]
+    non_badge_paragraphs = [
+        block.strip()
+        for block in pre_toc.split("\n\n")
+        if block.strip() and not block.lstrip().startswith(("#", "![", "[!["))
+    ]
+    assert len(non_badge_paragraphs) == 1, f"Expected 1 intro paragraph before TOC, got {len(non_badge_paragraphs)}"
+    intro = non_badge_paragraphs[0]
+    assert "`mailjet-rest`" in intro
+    assert "`Client`" in intro and "`AsyncClient`" in intro
+    assert "`MockMailjetClient`" in intro
+
 
 def test_changelog_and_performance_metrics_consistent_with_codebase() -> None:
     """CHANGELOG.md and PERFORMANCE.md reflect actual types.py counts, slotscheck counts, and post-fix timings."""
