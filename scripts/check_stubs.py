@@ -8,11 +8,23 @@ from __future__ import annotations
 
 import argparse
 import ast
+import importlib.util
 import sys
+from operator import itemgetter
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _default_package_dir() -> Path:
+    repo_pkg = REPO_ROOT / "mailjet_rest"
+    if repo_pkg.is_dir():
+        return repo_pkg
+    spec = importlib.util.find_spec("mailjet_rest")
+    if spec is not None and spec.origin is not None:
+        return Path(spec.origin).resolve().parent
+    return repo_pkg
 
 
 def _format_arg(arg: ast.arg, default: ast.expr | None) -> str:
@@ -24,7 +36,19 @@ def _format_arg(arg: ast.arg, default: ast.expr | None) -> str:
     return text
 
 
-def _format_signature(node: ast.FunctionDef) -> str:
+def _is_async_generator(node: ast.AsyncFunctionDef) -> bool:
+    stack: list[ast.AST] = list(node.body)
+    while stack:
+        stmt = stack.pop()
+        if isinstance(stmt, (ast.Yield, ast.YieldFrom)):
+            return True
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(stmt))
+    return False
+
+
+def _format_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
     args = node.args
     parts: list[str] = []
 
@@ -48,7 +72,8 @@ def _format_signature(node: ast.FunctionDef) -> str:
         parts.append(f"**{_format_arg(args.kwarg, None)}")
 
     ret = f" -> {ast.unparse(node.returns)}" if node.returns is not None else ""
-    return f"def {node.name}({', '.join(parts)}){ret}: ..."
+    prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) and not _is_async_generator(node) else "def"
+    return f"{prefix} {node.name}({', '.join(parts)}){ret}: ..."
 
 
 def _extract_route_names(routes_source: str) -> list[str]:
@@ -77,24 +102,124 @@ def _find_class(tree: ast.Module, class_name: str) -> ast.ClassDef:
     raise RuntimeError(msg)
 
 
-def _find_top_function(tree: ast.Module, func_name: str) -> ast.FunctionDef:
+def _is_overload_decorator(dec: ast.expr) -> bool:
+    return (isinstance(dec, ast.Name) and dec.id == "overload") or (
+        isinstance(dec, ast.Attribute) and dec.attr == "overload"
+    )
+
+
+def _extract_all_exports(tree: ast.Module) -> list[str]:
     for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name == func_name:
-            return node
-    msg = f"Function {func_name!r} not found in AST"
+        targets: list[ast.expr] = []
+        value: ast.expr | None = None
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+            value = node.value
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+            value = node.value
+        if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets) and isinstance(
+            value, (ast.List, ast.Tuple)
+        ):
+            return [elt.value for elt in value.elts if isinstance(elt, ast.Constant) and isinstance(elt.value, str)]
+    msg = "Unable to locate __all__ exports in module AST"
     raise RuntimeError(msg)
 
 
+def _format_all_block(exports: list[str]) -> list[str]:
+    if len(exports) <= 3:
+        rendered = ", ".join(f'"{name}"' for name in exports)
+        return [f"__all__ = [{rendered}]"]
+    lines = ["__all__ = ["]
+    lines.extend(f'    "{name}",' for name in exports)
+    lines.append("]")
+    return lines
+
+
+def _extract_class_annassigns(cls_node: ast.ClassDef, type_aliases: dict[str, str] | None = None) -> list[str]:
+    entries: list[tuple[int, str, str]] = []
+    for item in cls_node.body:
+        if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+            ann = ast.unparse(item.annotation)
+            if type_aliases and ann in type_aliases:
+                ann = type_aliases[ann]
+            name = item.target.id
+            rank = 0 if "ClassVar[" in ann else 1
+            entries.append((rank, name, f"    {name}: {ann}"))
+    entries.sort(key=itemgetter(0, 1))
+    return [line for _, _, line in entries]
+
+
+def _extract_reserved_attrs(*classes: ast.ClassDef) -> set[str]:
+    reserved: set[str] = {"__getattr__"}
+    for cls_node in classes:
+        for item in cls_node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and not item.name.startswith("_"):
+                reserved.add(item.name)
+            elif (
+                isinstance(item, ast.AnnAssign)
+                and isinstance(item.target, ast.Name)
+                and not item.target.id.startswith("_")
+            ):
+                reserved.add(item.target.id)
+    return reserved
+
+
 def _format_class_methods(cls_node: ast.ClassDef) -> list[str]:
+    overloaded = {
+        item.name
+        for item in cls_node.body
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and any(_is_overload_decorator(dec) for dec in item.decorator_list)
+    }
     lines: list[str] = []
     for item in cls_node.body:
-        if not isinstance(item, ast.FunctionDef):
+        if not isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if item.name in {"__repr__", "__str__"}:
+            continue
+        has_overload = any(_is_overload_decorator(dec) for dec in item.decorator_list)
+        if item.name in overloaded and not has_overload:
             continue
         lines.extend(f"    @{ast.unparse(dec)}" for dec in item.decorator_list)
         lines.append(f"    {_format_signature(item)}")
     return lines
+
+
+def _format_top_functions(tree: ast.Module, func_names: tuple[str, ...]) -> list[str]:
+    overloaded = {
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in func_names
+        and any(_is_overload_decorator(dec) for dec in node.decorator_list)
+    }
+    lines: list[str] = []
+    for func_name in func_names:
+        matched = [
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name
+        ]
+        if not matched:
+            msg = f"Function {func_name!r} not found in AST"
+            raise RuntimeError(msg)
+        for node in matched:
+            has_overload = any(_is_overload_decorator(dec) for dec in node.decorator_list)
+            if func_name in overloaded and not has_overload:
+                continue
+            lines.extend(f"@{ast.unparse(dec)}" for dec in node.decorator_list)
+            lines.append(_format_signature(node))
+    return lines
+
+
+def _tree_has_overloads(tree: ast.Module) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and any(
+            _is_overload_decorator(dec) for dec in node.decorator_list
+        ):
+            return True
+    return False
 
 
 def render_endpoint_stub(package_dir: Path) -> str:
@@ -104,29 +229,55 @@ def render_endpoint_stub(package_dir: Path) -> str:
         str: Formatted PEP 484 stub source for `mailjet_rest/endpoint.py`.
     """
     tree = ast.parse((package_dir / "endpoint.py").read_text(encoding="utf-8"))
+    base_cls = _find_class(tree, "BaseEndpoint")
     ep_cls = _find_class(tree, "Endpoint")
+    async_ep_cls = _find_class(tree, "AsyncEndpoint")
+    exports = _extract_all_exports(tree)
+    typing_names = "Any, ClassVar, overload" if _tree_has_overloads(tree) else "Any, ClassVar"
 
     lines = [
         "# Generated by scripts/check_stubs.py --write. Do not edit manually.",
-        "from collections.abc import Generator, Mapping",
-        "from typing import Any, ClassVar",
+        "from collections.abc import AsyncGenerator, Generator",
+        f"from typing import {typing_names}",
         "",
+        "import httpx2",
         "import requests",
         "",
-        "from mailjet_rest.client import Client",
-        "from mailjet_rest.types import HttpMethod, PayloadType, TimeoutType",
+        "from mailjet_rest.client import AsyncClient, Client",
+        "from mailjet_rest.types import (",
+        "    HeadersMapping,",
+        "    HttpMethod,",
+        "    PayloadType,",
+        "    QueryFilters,",
+        "    RequestHeaders,",
+        "    ResourceId,",
+        "    TimeoutType,",
+        ")",
         "",
-        "class Endpoint:",
-        "    MAX_LIMIT: ClassVar[int]",
-        "    client: Client",
-        "    name: str",
-        "    _name_lower: str",
-        "    _resource_lower: str",
-        "    _action_parts: list[str]",
+        *_format_all_block(exports),
+        "",
+        "class BaseEndpoint:",
+        *_extract_class_annassigns(base_cls),
+        *_format_class_methods(base_cls),
+        "",
+        "class Endpoint(BaseEndpoint):",
+        *_extract_class_annassigns(ep_cls, {"_SyncClientProtocol": "Client"}),
+        *_format_class_methods(ep_cls),
+        "",
+        "class AsyncEndpoint(BaseEndpoint):",
+        *_extract_class_annassigns(async_ep_cls, {"_AsyncClientProtocol": "AsyncClient"}),
+        *_format_class_methods(async_ep_cls),
+        "",
     ]
-    lines.extend(_format_class_methods(ep_cls))
-    lines.append("")
     return "\n".join(lines)
+
+
+def _format_route_properties(routes: list[str], reserved_attrs: set[str], endpoint_cls_name: str) -> list[str]:
+    lines: list[str] = []
+    for route in routes:
+        if route not in reserved_attrs and route.isidentifier():
+            lines.extend(("    @property", f"    def {route}(self) -> {endpoint_cls_name}: ..."))
+    return lines
 
 
 def render_client_stub(package_dir: Path) -> str:
@@ -138,26 +289,31 @@ def render_client_stub(package_dir: Path) -> str:
     tree = ast.parse((package_dir / "client.py").read_text(encoding="utf-8"))
     routes = _extract_route_names((package_dir / "routes.py").read_text(encoding="utf-8"))
 
-    jitter_cls = _find_class(tree, "JitterRetry")
+    base_client_cls = _find_class(tree, "BaseClient")
     client_cls = _find_class(tree, "Client")
-    parse_response_fn = _find_top_function(tree, "parse_response")
-    logging_handler_fn = _find_top_function(tree, "logging_handler")
+    async_client_cls = _find_class(tree, "AsyncClient")
+    exports = _extract_all_exports(tree)
+    reserved_attrs = _extract_reserved_attrs(base_client_cls, client_cls, async_client_cls)
+    typing_names = (
+        "Any, ClassVar, NoReturn, TypeVar, overload"
+        if _tree_has_overloads(tree)
+        else "Any, ClassVar, NoReturn, TypeVar"
+    )
 
     lines = [
         "# Generated by scripts/check_stubs.py --write. Do not edit manually.",
         "import logging",
         "import sys",
         "import threading",
-        "from collections.abc import Mapping",
+        "from collections.abc import Callable, Mapping",
         "from types import TracebackType",
-        "from typing import Any, ClassVar, NoReturn",
+        f"from typing import {typing_names}",
         "",
+        "import httpx2",
         "import requests",
-        "from requests.exceptions import RequestException",
-        "from urllib3.util.retry import Retry",
         "",
         "from mailjet_rest.config import Config as Config",
-        "from mailjet_rest.endpoint import Endpoint as Endpoint",
+        "from mailjet_rest.endpoint import AsyncEndpoint as AsyncEndpoint, BaseEndpoint as BaseEndpoint, Endpoint as Endpoint",
         "from mailjet_rest.errors import (",
         "    ActionDeniedError as ActionDeniedError,",
         "    ApiError as ApiError,",
@@ -170,66 +326,47 @@ def render_client_stub(package_dir: Path) -> str:
         "    TimeoutError as TimeoutError,",
         "    ValidationError as ValidationError,",
         ")",
-        "from mailjet_rest.types import HttpMethod, PayloadType, TimeoutType",
+        "from mailjet_rest.types import (",
+        "    AuthCredentials,",
+        "    CertConfig,",
+        "    HeadersMapping,",
+        "    HttpMethod,",
+        "    PayloadType,",
+        "    QueryFilters,",
+        "    RequestHeaders,",
+        "    TimeoutType,",
+        ")",
         "from mailjet_rest.utils.guardrails import SecretAuth",
+        "from mailjet_rest.utils.retry import JitterRetry as JitterRetry",
         "",
         "if sys.version_info >= (3, 11):",
         "    from typing import Self",
         "else:",
         "    from typing_extensions import Self",
         "",
-        "__all__ = [",
-        '    "ActionDeniedError",',
-        '    "ApiError",',
-        '    "ApiRateLimitError",',
-        '    "AuthorizationError",',
-        '    "Client",',
-        '    "Config",',
-        '    "CriticalApiError",',
-        '    "DoesNotExistError",',
-        '    "Endpoint",',
-        '    "MailjetApiError",',
-        '    "MailjetAuthError",',
-        '    "TimeoutError",',
-        '    "ValidationError",',
-        '    "logging_handler",',
-        '    "parse_response",',
-        "]",
+        *_format_all_block(exports),
         "",
+        '_EndpointT = TypeVar("_EndpointT", bound=BaseEndpoint)',
+        "_httpx2: Any",
         "logger: logging.Logger",
         "",
-        "class JitterRetry(Retry):",
+        "class BaseClient:",
+        *_extract_class_annassigns(base_client_cls),
+        *_format_class_methods(base_client_cls),
+        "",
+        "class Client(BaseClient):",
+        *_extract_class_annassigns(client_cls),
+        *_format_class_methods(client_cls),
+        *_format_route_properties(routes, reserved_attrs, "Endpoint"),
+        "",
+        "class AsyncClient(BaseClient):",
+        *_extract_class_annassigns(async_client_cls),
+        *_format_class_methods(async_client_cls),
+        *_format_route_properties(routes, reserved_attrs, "AsyncEndpoint"),
+        "",
+        *_format_top_functions(tree, ("parse_response", "logging_handler")),
+        "",
     ]
-    lines.extend(_format_class_methods(jitter_cls))
-    lines.extend(
-        [
-            "",
-            "class Client:",
-            "    _MUTATING_METHODS: ClassVar[frozenset[str]]",
-            "    _RETRY_STRATEGY: ClassVar[JitterRetry]",
-            "    _closed: bool",
-            "    _endpoint_cache: dict[str, Endpoint]",
-            "    _lock: threading.RLock",
-            "    _session: requests.Session | None",
-            "    auth: str | SecretAuth | None",
-            "    config: Config",
-        ]
-    )
-
-    reserved_attrs = {"__getattr__", "api_call", "auth", "close", "config", "session"}
-    lines.extend(_format_class_methods(client_cls))
-    for route in routes:
-        if route not in reserved_attrs and route.isidentifier():
-            lines.extend(("    @property", f"    def {route}(self) -> Endpoint: ..."))
-
-    lines.extend(
-        [
-            "",
-            _format_signature(parse_response_fn),
-            _format_signature(logging_handler_fn),
-            "",
-        ]
-    )
     return "\n".join(lines)
 
 
@@ -275,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--package-dir",
         type=Path,
-        default=REPO_ROOT / "mailjet_rest",
+        default=_default_package_dir(),
         help="Path to the mailjet_rest package directory.",
     )
     args = parser.parse_args(argv)

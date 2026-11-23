@@ -1,19 +1,20 @@
 name: mailjet-dev
 channels:
   - defaults
-  - conda-forge
 dependencies:
-  - python >=3.10
+  # conda in defaults does not support Python 3.15 yet
+  - python >=3.10,<3.15
   # build & host deps
   - pip
   - setuptools-scm
   # PyPI publishing only (modern PEP 517 package builder)
   - python-build
   # runtime deps
+  - httpx2 >=2.0.0
   - requests >=2.33.0
-  - typing-extensions>=4.7.1  # [py<311]
+  - typing-extensions >=4.7.1
   # tests
-  - coverage >=4.5.4
+  - coverage >=7.16.2
   - hypothesis
   - pyfakefs
   - pytest >=9.0.3
@@ -23,7 +24,6 @@ dependencies:
   - responses
   # linters, formatters & typing (Aligned with pre-commit-config.yaml)
   - mypy
-  - pyright
   - ruff
   - types-requests
   # other
@@ -37,8 +37,10 @@ dependencies:
       # Optional: requires Clang/libFuzzer; install via: pip install -e ".[fuzzing]"
       # - atheris
       - bandit
+      - orjson >=3.10.0
       - pip-audit
-      - scalene >=1.3.16
+      - pyright
+      - scalene >=2.4.0
       - slotscheck
       - snakeviz
       - typos

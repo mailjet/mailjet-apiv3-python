@@ -6,6 +6,9 @@ from types import MappingProxyType
 from typing import Final, NamedTuple
 
 
+__all__ = ["DEPRECATION_ADVISORY", "ROUTE_MAP", "Route", "RouteMapType"]
+
+
 class Route(NamedTuple):
     """Named tuple descriptor mapping localized API boundaries.
 
@@ -37,6 +40,7 @@ DEPRECATION_ADVISORY: Final[MappingProxyType[str, str]] = MappingProxyType(
         "domainstatistics": "statistics_recipientEsp",
         "graphstatistics": "statcounters",
         "liststatistics": "statcounters",
+        "messagesentstatistics": "statcounters",
         "messagestatistics": "statcounters",
         "openstatistics": "statcounters",
         "senderstatistics": "statcounters",
@@ -53,6 +57,7 @@ _ROUTE_MAP: RouteMapType = {
     # Send Emails & Batching
     # ==========================================
     "send": Route(None, "send"),
+    "send_v31": Route("v3.1", "send"),
     "batch": Route(None, "batch"),
     "batchjob": Route(None, "REST/batchjob"),
     "batchjob_csverror": Route(None, "DATA/batchjob/{id}/CSVError/text:csv"),
@@ -80,6 +85,7 @@ _ROUTE_MAP: RouteMapType = {
     # Contacts
     # ==========================================
     "contact": Route(None, "REST/contact"),
+    "contacts": Route("v4", "contacts"),
     "contactdata": Route(None, "REST/contactdata"),
     "contactmetadata": Route(None, "REST/contactmetadata"),
     "contactslist": Route(None, "REST/contactslist"),
@@ -121,11 +127,15 @@ _ROUTE_MAP: RouteMapType = {
     # ==========================================
     "template": Route(None, "REST/template"),
     "templates": Route(None, "REST/templates"),
+    "v1_templates": Route("v1", "REST/templates"),
     "template_detailcontent": Route(None, "REST/template/{id}/detailcontent"),
     "template_update": Route(None, "REST/template/{id}"),
     "templates_contents": Route(None, "REST/templates/{id}/contents"),
     "template_contents": Route("v1", "REST/templates/{id}/contents"),
     "template_content_by_type": Route("v1", "REST/templates/{id}/contents/types/{action_id}"),
+    "template_contents_lock": Route("v1", "REST/templates/{id}/contents/lock"),
+    "template_contents_publish": Route("v1", "REST/templates/{id}/contents/publish"),
+    "template_contents_unlock": Route("v1", "REST/templates/{id}/contents/unlock"),
     # ==========================================
     # Active Statistics
     # ==========================================
@@ -170,6 +180,7 @@ _ROUTE_MAP: RouteMapType = {
     "labels": Route("v1", "REST/labels"),
     "images": Route("v1", "REST/images"),
     "data_images": Route("v1", "data/images"),
+    "data_images_by_type": Route("v1", "data/images/{id}/{action_id}"),
 }
 
 ROUTE_MAP: Final[MappingProxyType[str, Route]] = MappingProxyType(_ROUTE_MAP)

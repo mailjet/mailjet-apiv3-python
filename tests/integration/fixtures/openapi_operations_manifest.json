@@ -1,0 +1,2345 @@
+{
+  "deprecation_advisory_count": 19,
+  "openapi_mailjet_count": 99,
+  "openapi_mailjet_paths": {
+    "/v3.1/send": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/apikey": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/apikey/{apikey_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "apikey_ID"
+      ]
+    },
+    "/v3/REST/apikeytotals": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/bouncestatistics": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/bouncestatistics/{message_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "message_ID"
+      ]
+    },
+    "/v3/REST/campaign": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/campaign/{campaign_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "campaign_ID"
+      ]
+    },
+    "/v3/REST/campaigndraft": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/campaigndraft/{draft_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "draft_ID"
+      ]
+    },
+    "/v3/REST/campaigndraft/{draft_ID}/detailcontent": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": [
+        "draft_ID"
+      ]
+    },
+    "/v3/REST/campaigndraft/{draft_ID}/schedule": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "path_params": [
+        "draft_ID"
+      ]
+    },
+    "/v3/REST/campaigndraft/{draft_ID}/send": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "draft_ID"
+      ]
+    },
+    "/v3/REST/campaigndraft/{draft_ID}/status": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "draft_ID"
+      ]
+    },
+    "/v3/REST/campaigndraft/{draft_ID}/test": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "draft_ID"
+      ]
+    },
+    "/v3/REST/campaigngraphstatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/campaigngraphstatistics/{campaign_ID}": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "campaign_ID"
+      ]
+    },
+    "/v3/REST/campaignoverview": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/campaignoverview/{ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "ID"
+      ]
+    },
+    "/v3/REST/campaignstatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/campaignstatistics/{campaign_ID}": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "campaign_ID"
+      ]
+    },
+    "/v3/REST/clickstatistics": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contact": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contact/managemanycontacts": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contact/managemanycontacts/{job_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "job_ID"
+      ]
+    },
+    "/v3/REST/contact/{contact_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "contact_ID"
+      ]
+    },
+    "/v3/REST/contact/{contact_ID}/getcontactslists": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "contact_ID"
+      ]
+    },
+    "/v3/REST/contact/{contact_ID}/managecontactslists": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "contact_ID"
+      ]
+    },
+    "/v3/REST/contactdata": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contactdata/{contact_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "contact_ID"
+      ]
+    },
+    "/v3/REST/contactfilter": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contactfilter/{contactfilter_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "contactfilter_ID"
+      ]
+    },
+    "/v3/REST/contactmetadata": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contactmetadata/{contactmetadata_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "contactmetadata_ID"
+      ]
+    },
+    "/v3/REST/contactslist": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contactslist/{list_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "list_ID"
+      ]
+    },
+    "/v3/REST/contactslist/{list_ID}/importlist": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "list_ID"
+      ]
+    },
+    "/v3/REST/contactslist/{list_ID}/importlist/{job_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "list_ID",
+        "job_ID"
+      ]
+    },
+    "/v3/REST/contactslist/{list_ID}/managecontact": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "list_ID"
+      ]
+    },
+    "/v3/REST/contactslist/{list_ID}/managemanycontacts": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "list_ID"
+      ]
+    },
+    "/v3/REST/contactslist/{list_ID}/managemanycontacts/{job_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "list_ID",
+        "job_ID"
+      ]
+    },
+    "/v3/REST/contactslist/{list_ID}/verify": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "list_ID"
+      ]
+    },
+    "/v3/REST/contactslist/{list_ID}/verify/{job_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "list_ID",
+        "job_ID"
+      ]
+    },
+    "/v3/REST/contactslistsignup": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contactslistsignup/{signuprequest_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "signuprequest_ID"
+      ]
+    },
+    "/v3/REST/contactstatistics": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/contactstatistics/{contact_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "contact_ID"
+      ]
+    },
+    "/v3/REST/csvimport": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/csvimport/{importjob_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "importjob_ID"
+      ]
+    },
+    "/v3/REST/dns": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/dns/{dns_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "dns_ID"
+      ]
+    },
+    "/v3/REST/dns/{dns_ID}/check": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "dns_ID"
+      ]
+    },
+    "/v3/REST/domainstatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/eventcallbackurl": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/eventcallbackurl/{url_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "url_ID"
+      ]
+    },
+    "/v3/REST/graphstatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/listrecipient": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/listrecipient/{listrecipient_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "listrecipient_ID"
+      ]
+    },
+    "/v3/REST/listrecipientstatistics": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/listrecipientstatistics/{listrecipient_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "listrecipient_ID"
+      ]
+    },
+    "/v3/REST/liststatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/liststatistics/{list_ID}": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "list_ID"
+      ]
+    },
+    "/v3/REST/message": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/message/{message_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "message_ID"
+      ]
+    },
+    "/v3/REST/messagehistory/{message_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "message_ID"
+      ]
+    },
+    "/v3/REST/messageinformation": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/messageinformation/{message_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "message_ID"
+      ]
+    },
+    "/v3/REST/messagestatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/messagestatistics/{message_ID}": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "message_ID"
+      ]
+    },
+    "/v3/REST/metasender": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/metasender/{metasender_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "metasender_ID"
+      ]
+    },
+    "/v3/REST/myprofile": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/newsletter": {
+      "deprecated_methods": [
+        "get",
+        "post"
+      ],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/newsletter/{newsletter_ID}": {
+      "deprecated_methods": [
+        "get",
+        "put"
+      ],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "newsletter_ID"
+      ]
+    },
+    "/v3/REST/newsletter/{newsletter_ID}/detailcontent": {
+      "deprecated_methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "path_params": [
+        "newsletter_ID"
+      ]
+    },
+    "/v3/REST/newsletter/{newsletter_ID}/schedule": {
+      "deprecated_methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "path_params": [
+        "newsletter_ID"
+      ]
+    },
+    "/v3/REST/newsletter/{newsletter_ID}/send": {
+      "deprecated_methods": [
+        "post"
+      ],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "newsletter_ID"
+      ]
+    },
+    "/v3/REST/newsletter/{newsletter_ID}/status": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "newsletter_ID"
+      ]
+    },
+    "/v3/REST/newsletter/{newsletter_ID}/test": {
+      "deprecated_methods": [
+        "post"
+      ],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "newsletter_ID"
+      ]
+    },
+    "/v3/REST/openinformation": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/openinformation/{message_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "message_ID"
+      ]
+    },
+    "/v3/REST/openstatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/parseroute": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/parseroute/{parseroute_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "parseroute_ID"
+      ]
+    },
+    "/v3/REST/sender": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/sender/{sender_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "sender_ID"
+      ]
+    },
+    "/v3/REST/sender/{sender_ID}/validate": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "sender_ID"
+      ]
+    },
+    "/v3/REST/senderstatistics": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/senderstatistics/{sender_ID}": {
+      "deprecated_methods": [
+        "get"
+      ],
+      "methods": [
+        "get"
+      ],
+      "path_params": [
+        "sender_ID"
+      ]
+    },
+    "/v3/REST/statcounters": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/statistics/link-click": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/statistics/recipient-esp": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/template": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/template/{template_ID}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "template_ID"
+      ]
+    },
+    "/v3/REST/template/{template_ID}/detailcontent": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post",
+        "put"
+      ],
+      "path_params": [
+        "template_ID"
+      ]
+    },
+    "/v3/REST/toplinkclicked": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/user": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": []
+    },
+    "/v3/REST/useragentstatistics": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v3/send": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": []
+    }
+  },
+  "openapi_passport_count": 15,
+  "openapi_passport_paths": {
+    "/v1/REST/images": {
+      "deprecated_methods": [],
+      "methods": [
+        "get"
+      ],
+      "path_params": []
+    },
+    "/v1/REST/images/{id}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/REST/labels": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v1/REST/labels/{id}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/REST/templates": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v1/REST/templates/{id}": {
+      "deprecated_methods": [],
+      "methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/REST/templates/{id}/contents": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/REST/templates/{id}/contents/lock": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/REST/templates/{id}/contents/publish": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/REST/templates/{id}/contents/types/{content_type}": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "put"
+      ],
+      "path_params": [
+        "id",
+        "content_type"
+      ]
+    },
+    "/v1/REST/templates/{id}/contents/unlock": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/REST/tokens": {
+      "deprecated_methods": [],
+      "methods": [
+        "get",
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v1/REST/tokens/{id}": {
+      "deprecated_methods": [],
+      "methods": [
+        "put"
+      ],
+      "path_params": [
+        "id"
+      ]
+    },
+    "/v1/data/images": {
+      "deprecated_methods": [],
+      "methods": [
+        "post"
+      ],
+      "path_params": []
+    },
+    "/v1/data/images/{id}/{image_content_type}": {
+      "deprecated_methods": [],
+      "methods": [
+        "put"
+      ],
+      "path_params": [
+        "id",
+        "image_content_type"
+      ]
+    }
+  },
+  "route_contracts": {
+    "apikey": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/apikey",
+        "/v3/REST/apikey/{apikey_ID}"
+      ],
+      "path": "REST/apikey",
+      "supported_methods": [
+        "get",
+        "post",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "apikeyaccess": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "REST/apikeyaccess",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "apikeytotals": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/apikeytotals"
+      ],
+      "path": "REST/apikeytotals",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "batch": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "batch",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "batchjob": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "REST/batchjob",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "batchjob_csverror": {
+      "default_content_type": "text/csv",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "DATA/batchjob/{id}/CSVError/text:csv",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "bouncestatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/bouncestatistics",
+        "/v3/REST/bouncestatistics/{message_ID}"
+      ],
+      "path": "REST/bouncestatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaign": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaign",
+        "/v3/REST/campaign/{campaign_ID}"
+      ],
+      "path": "REST/campaign",
+      "supported_methods": [
+        "get",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaigndraft": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaigndraft",
+        "/v3/REST/campaigndraft/{draft_ID}"
+      ],
+      "path": "REST/campaigndraft",
+      "supported_methods": [
+        "get",
+        "post",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaigndraft_detailcontent": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaigndraft/{draft_ID}/detailcontent"
+      ],
+      "path": "REST/campaigndraft/{id}/detailcontent",
+      "supported_methods": [
+        "get",
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaigndraft_schedule": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaigndraft/{draft_ID}/schedule"
+      ],
+      "path": "REST/campaigndraft/{id}/schedule",
+      "supported_methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaigndraft_send": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaigndraft/{draft_ID}/send"
+      ],
+      "path": "REST/campaigndraft/{id}/send",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaigndraft_status": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaigndraft/{draft_ID}/status"
+      ],
+      "path": "REST/campaigndraft/{id}/status",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaigndraft_test": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaigndraft/{draft_ID}/test"
+      ],
+      "path": "REST/campaigndraft/{id}/test",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaigngraphstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/campaigngraphstatistics",
+        "/v3/REST/campaigngraphstatistics/{campaign_ID}"
+      ],
+      "path": "REST/campaigngraphstatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "campaignoverview": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/campaignoverview",
+        "/v3/REST/campaignoverview/{ID}"
+      ],
+      "path": "REST/campaignoverview",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "campaignstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/campaignstatistics",
+        "/v3/REST/campaignstatistics/{campaign_ID}"
+      ],
+      "path": "REST/campaignstatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "clickstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/clickstatistics"
+      ],
+      "path": "REST/clickstatistics",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contact": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contact",
+        "/v3/REST/contact/{contact_ID}"
+      ],
+      "path": "REST/contact",
+      "supported_methods": [
+        "get",
+        "post",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contact_getcontactslists": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contact/{contact_ID}/getcontactslists"
+      ],
+      "path": "REST/contact/{id}/getcontactslists",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contact_managecontactslists": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contact/{contact_ID}/managecontactslists"
+      ],
+      "path": "REST/contact/{id}/managecontactslists",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contact_managemanycontacts": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contact/managemanycontacts",
+        "/v3/REST/contact/managemanycontacts/{job_ID}"
+      ],
+      "path": "REST/contact/managemanycontacts",
+      "supported_methods": [
+        "post",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactdata": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactdata",
+        "/v3/REST/contactdata/{contact_ID}"
+      ],
+      "path": "REST/contactdata",
+      "supported_methods": [
+        "get",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactfilter": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactfilter",
+        "/v3/REST/contactfilter/{contactfilter_ID}"
+      ],
+      "path": "REST/contactfilter",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactmetadata": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactmetadata",
+        "/v3/REST/contactmetadata/{contactmetadata_ID}"
+      ],
+      "path": "REST/contactmetadata",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contacts": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "contacts",
+      "supported_methods": [
+        "delete"
+      ],
+      "tier": "A_active",
+      "version": "v4"
+    },
+    "contactslist": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactslist",
+        "/v3/REST/contactslist/{list_ID}"
+      ],
+      "path": "REST/contactslist",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactslist_csvdata": {
+      "default_content_type": "text/plain",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "DATA/contactslist/{id}/CSVData/text:plain",
+      "supported_methods": [
+        "get",
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactslist_importlist": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactslist/{list_ID}/importlist",
+        "/v3/REST/contactslist/{list_ID}/importlist/{job_ID}"
+      ],
+      "path": "REST/contactslist/{id}/importlist",
+      "supported_methods": [
+        "post",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactslist_managecontact": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactslist/{list_ID}/managecontact"
+      ],
+      "path": "REST/contactslist/{id}/managecontact",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactslist_managemanycontacts": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactslist/{list_ID}/managemanycontacts",
+        "/v3/REST/contactslist/{list_ID}/managemanycontacts/{job_ID}"
+      ],
+      "path": "REST/contactslist/{id}/managemanycontacts",
+      "supported_methods": [
+        "post",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactslist_verify": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactslist/{list_ID}/verify",
+        "/v3/REST/contactslist/{list_ID}/verify/{job_ID}"
+      ],
+      "path": "REST/contactslist/{id}/verify",
+      "supported_methods": [
+        "post",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactslistsignup": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactslistsignup",
+        "/v3/REST/contactslistsignup/{signuprequest_ID}"
+      ],
+      "path": "REST/contactslistsignup",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "contactstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/contactstatistics",
+        "/v3/REST/contactstatistics/{contact_ID}"
+      ],
+      "path": "REST/contactstatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "csvimport": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/csvimport",
+        "/v3/REST/csvimport/{importjob_ID}"
+      ],
+      "path": "REST/csvimport",
+      "supported_methods": [
+        "post",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "data_images": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/data/images"
+      ],
+      "path": "data/images",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "data_images_by_type": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/data/images/{id}/{image_content_type}"
+      ],
+      "path": "data/images/{id}/{action_id}",
+      "supported_methods": [
+        "put"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "dns": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/dns",
+        "/v3/REST/dns/{dns_ID}"
+      ],
+      "path": "REST/dns",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "dns_check": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/dns/{dns_ID}/check"
+      ],
+      "path": "REST/dns/{id}/check",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "domainstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statistics_recipientEsp",
+      "openapi_paths": [
+        "/v3/REST/domainstatistics"
+      ],
+      "path": "REST/domainstatistics",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "eventcallbackurl": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/eventcallbackurl",
+        "/v3/REST/eventcallbackurl/{url_ID}"
+      ],
+      "path": "REST/eventcallbackurl",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "geostatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "REST/geostatistics",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "graphstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/graphstatistics"
+      ],
+      "path": "REST/graphstatistics",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "images": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/images",
+        "/v1/REST/images/{id}"
+      ],
+      "path": "REST/images",
+      "supported_methods": [
+        "get",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "labels": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/labels",
+        "/v1/REST/labels/{id}"
+      ],
+      "path": "REST/labels",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "listrecipient": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/listrecipient",
+        "/v3/REST/listrecipient/{listrecipient_ID}"
+      ],
+      "path": "REST/listrecipient",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "listrecipientstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/listrecipientstatistics",
+        "/v3/REST/listrecipientstatistics/{listrecipient_ID}"
+      ],
+      "path": "REST/listrecipientstatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "liststatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/liststatistics",
+        "/v3/REST/liststatistics/{list_ID}"
+      ],
+      "path": "REST/liststatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "message": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/message",
+        "/v3/REST/message/{message_ID}"
+      ],
+      "path": "REST/message",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "messagehistory": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/messagehistory/{message_ID}"
+      ],
+      "path": "REST/messagehistory",
+      "supported_methods": [
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "messageinformation": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/messageinformation",
+        "/v3/REST/messageinformation/{message_ID}"
+      ],
+      "path": "REST/messageinformation",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "messagesentstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [],
+      "path": "REST/messagesentstatistics",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "C_server_retired",
+      "version": null
+    },
+    "messagestate": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [],
+      "path": "REST/messagestate",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "messagestatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/messagestatistics",
+        "/v3/REST/messagestatistics/{message_ID}"
+      ],
+      "path": "REST/messagestatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "metasender": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/metasender",
+        "/v3/REST/metasender/{metasender_ID}"
+      ],
+      "path": "REST/metasender",
+      "supported_methods": [
+        "get",
+        "post",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "myprofile": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/myprofile"
+      ],
+      "path": "REST/myprofile",
+      "supported_methods": [
+        "get",
+        "put"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "newsletter": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "campaigndraft",
+      "openapi_paths": [
+        "/v3/REST/newsletter",
+        "/v3/REST/newsletter/{newsletter_ID}"
+      ],
+      "path": "REST/newsletter",
+      "supported_methods": [
+        "get",
+        "post",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "newsletter_detailcontent": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "campaigndraft_detailcontent",
+      "openapi_paths": [
+        "/v3/REST/newsletter/{newsletter_ID}/detailcontent"
+      ],
+      "path": "REST/newsletter/{id}/detailcontent",
+      "supported_methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "newsletter_schedule": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "campaigndraft_schedule",
+      "openapi_paths": [
+        "/v3/REST/newsletter/{newsletter_ID}/schedule"
+      ],
+      "path": "REST/newsletter/{id}/schedule",
+      "supported_methods": [
+        "delete",
+        "get",
+        "post",
+        "put"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "newsletter_send": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "campaigndraft_send",
+      "openapi_paths": [
+        "/v3/REST/newsletter/{newsletter_ID}/send"
+      ],
+      "path": "REST/newsletter/{id}/send",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "newsletter_status": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "campaigndraft_status",
+      "openapi_paths": [
+        "/v3/REST/newsletter/{newsletter_ID}/status"
+      ],
+      "path": "REST/newsletter/{id}/status",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "newsletter_test": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "campaigndraft_test",
+      "openapi_paths": [
+        "/v3/REST/newsletter/{newsletter_ID}/test"
+      ],
+      "path": "REST/newsletter/{id}/test",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "openinformation": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/openinformation",
+        "/v3/REST/openinformation/{message_ID}"
+      ],
+      "path": "REST/openinformation",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "openstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/openstatistics"
+      ],
+      "path": "REST/openstatistics",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "parseroute": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/parseroute",
+        "/v3/REST/parseroute/{parseroute_ID}"
+      ],
+      "path": "REST/parseroute",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "send": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/send"
+      ],
+      "path": "send",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "send_v31": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3.1/send"
+      ],
+      "path": "send",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": "v3.1"
+    },
+    "sender": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/sender",
+        "/v3/REST/sender/{sender_ID}"
+      ],
+      "path": "REST/sender",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "sender_validate": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/sender/{sender_ID}/validate"
+      ],
+      "path": "REST/sender/{id}/validate",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "senderstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "statcounters",
+      "openapi_paths": [
+        "/v3/REST/senderstatistics",
+        "/v3/REST/senderstatistics/{sender_ID}"
+      ],
+      "path": "REST/senderstatistics",
+      "supported_methods": [
+        "get",
+        "get(id)"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "statcounters": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/statcounters"
+      ],
+      "path": "REST/statcounters",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "statistics_linkClick": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/statistics/link-click"
+      ],
+      "path": "REST/statistics/link-click",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "statistics_recipientEsp": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/statistics/recipient-esp"
+      ],
+      "path": "REST/statistics/recipient-esp",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "template": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/template",
+        "/v3/REST/template/{template_ID}"
+      ],
+      "path": "REST/template",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "template_content_by_type": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/templates/{id}/contents/types/{content_type}"
+      ],
+      "path": "REST/templates/{id}/contents/types/{action_id}",
+      "supported_methods": [
+        "get",
+        "put"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "template_contents": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/templates/{id}/contents"
+      ],
+      "path": "REST/templates/{id}/contents",
+      "supported_methods": [
+        "get",
+        "post"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "template_contents_lock": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/templates/{id}/contents/lock"
+      ],
+      "path": "REST/templates/{id}/contents/lock",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "template_contents_publish": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/templates/{id}/contents/publish"
+      ],
+      "path": "REST/templates/{id}/contents/publish",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "template_contents_unlock": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/templates/{id}/contents/unlock"
+      ],
+      "path": "REST/templates/{id}/contents/unlock",
+      "supported_methods": [
+        "post"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "template_detailcontent": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/template/{template_ID}/detailcontent"
+      ],
+      "path": "REST/template/{id}/detailcontent",
+      "supported_methods": [
+        "get",
+        "post",
+        "put"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "template_update": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "template.update(id=...)",
+      "openapi_paths": [
+        "/v3/REST/template/{template_ID}"
+      ],
+      "path": "REST/template/{id}",
+      "supported_methods": [
+        "delete",
+        "get",
+        "put"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "templates": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/templates",
+        "/v1/REST/templates/{id}"
+      ],
+      "path": "REST/templates",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "templates_contents": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "template_detailcontent (v3) or template_contents (v1)",
+      "openapi_paths": [
+        "/v1/REST/templates/{id}/contents"
+      ],
+      "path": "REST/templates/{id}/contents",
+      "supported_methods": [
+        "get",
+        "post"
+      ],
+      "tier": "B_deprecated_active",
+      "version": null
+    },
+    "tokens": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/tokens",
+        "/v1/REST/tokens/{id}"
+      ],
+      "path": "REST/tokens",
+      "supported_methods": [
+        "get",
+        "post",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "toplinkclicked": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/toplinkclicked"
+      ],
+      "path": "REST/toplinkclicked",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "user": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/user"
+      ],
+      "path": "REST/user",
+      "supported_methods": [
+        "get",
+        "put"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "useragentstatistics": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v3/REST/useragentstatistics"
+      ],
+      "path": "REST/useragentstatistics",
+      "supported_methods": [
+        "get"
+      ],
+      "tier": "A_active",
+      "version": null
+    },
+    "v1_templates": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": null,
+      "openapi_paths": [
+        "/v1/REST/templates",
+        "/v1/REST/templates/{id}"
+      ],
+      "path": "REST/templates",
+      "supported_methods": [
+        "get",
+        "post",
+        "delete(id)",
+        "get(id)",
+        "put(id)"
+      ],
+      "tier": "A_active",
+      "version": "v1"
+    },
+    "webhook": {
+      "default_content_type": "application/json",
+      "deprecated_replacement": "eventcallbackurl",
+      "openapi_paths": [],
+      "path": "REST/webhook",
+      "supported_methods": [
+        "get",
+        "post",
+        "put",
+        "delete"
+      ],
+      "tier": "C_server_retired",
+      "version": null
+    }
+  },
+  "route_map_count": 89,
+  "schema_version": 1
+}
