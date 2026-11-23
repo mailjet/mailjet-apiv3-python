@@ -249,6 +249,37 @@ def test_sdk_and_docs_omit_unsupported_patch_method() -> None:
     assert "A `PUT` request in the Mailjet API will work as a `PATCH` request" in readme
 
 
+def test_readme_badges_have_valid_targets_section_jumps_and_arm64_compatibility() -> None:
+    """README badges never link to raw shields.io SVGs, include section-jump buttons, and document win-arm64."""
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert ")](https://img.shields.io/" not in readme
+    assert "https://img.shields.io/pypi/v/mailjet-rest" in readme
+    assert "](https://pypi.org/project/mailjet-rest/)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/releases)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/stargazers)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/issues)" in readme
+    assert "](https://github.com/mailjet/mailjet-apiv3-python/pulls)" in readme
+    assert "actions/workflows/commit_checks.yaml/badge.svg" in readme
+
+    # Verify section-jump badge buttons match existing Table of Contents anchors
+    for anchor in (
+        "(#compatibility)",
+        "(#license)",
+        "(#quick-start)",
+        "(#async-quick-start-mailjet-restasync)",
+        "(#security-guardrails)",
+        "(#type-hinting)",
+        "(#testing--webhook-verification)",
+        "(#performance--architecture)",
+    ):
+        assert f"]({anchor[1:-1]})" in readme
+        badge_jump_re = re.compile(r"\[!\[[^\]]+\]\([^\)]+\)\]" + re.escape(anchor))
+        assert badge_jump_re.search(readme) is not None, f"Missing section-jump badge button for {anchor}"
+
+    assert "win-arm64" in readme
+    assert "aarch64" in readme
+
+
 def test_changelog_and_performance_metrics_consistent_with_codebase() -> None:
     """CHANGELOG.md and PERFORMANCE.md reflect actual types.py counts, slotscheck counts, and post-fix timings."""
     types_src = (REPO_ROOT / "mailjet_rest/types.py").read_text(encoding="utf-8")
