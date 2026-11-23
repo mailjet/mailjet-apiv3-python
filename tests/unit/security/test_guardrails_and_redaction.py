@@ -1,17 +1,26 @@
 # pyright: reportIndexIssue=false
-"""Unit tests for the guardrails.py security module."""
+"""Unit tests for SecurityGuard, RedactingFilter, SSRF, header/path/multipart guardrails."""
 
 from __future__ import annotations
 
+import io
+import ipaddress
 import logging
+import sys
 import tempfile
+import types
+import warnings
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from types import MappingProxyType
+from typing import Any, NamedTuple
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
+from mailjet_rest.client import Client
+from mailjet_rest.utils.filesystem_security import validate_attachment_path, validate_multipart_files
 from mailjet_rest.utils.guardrails import (
     RedactingFilter,
     SecretAuth,
@@ -486,3 +495,322 @@ class TestSecurityGuard:
         with pytest.raises(ValueError, match="Path traversal attempt"):
             SecurityGuard.sanitize_segment("..")
         mock_audit.assert_called_with("mailjet.security.path_traversal", "..")
+
+
+def test_redacting_filter_fast_path_and_secret_scrubbing() -> None:
+    """RedactingFilter skips regex compilation on clean messages and scrubs secrets when present."""
+    flt = RedactingFilter()
+    clean_record = logging.LogRecord("mailjet_rest", logging.INFO, "", 0, "Sent campaign batch 42", (), None)
+
+    with patch("mailjet_rest.utils.guardrails._get_secret_pattern", side_effect=AssertionError("should skip regex")):
+        assert flt.filter(clean_record) is True
+    assert clean_record.msg == "Sent campaign batch 42"
+
+    secret_record = logging.LogRecord(
+        "mailjet_rest",
+        logging.INFO,
+        "",
+        0,
+        "Using Authorization: Bearer supersecret99",
+        (),
+        None,
+    )
+    assert flt.filter(secret_record) is True
+    assert "supersecret99" not in str(secret_record.msg)
+    assert "********" in str(secret_record.msg)
+
+
+def test_filesystem_security_bytes_oserror_and_multipart_edges(tmp_path: Path) -> None:
+    """Cover bytes NUL rejection, inspect OSError, and non-standard multipart specs."""
+    sample = tmp_path / "attach.txt"
+    sample.write_text("ok", encoding="utf-8")
+
+    assert validate_attachment_path(bytes(sample), safe_base_dir=tmp_path) == sample.resolve()  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="Null byte"):
+        validate_attachment_path(b"/tmp/evil\x00.txt")  # type: ignore[arg-type]
+
+    with patch.object(Path, "resolve", side_effect=RuntimeError("symlink loop")):
+        with pytest.raises(ValueError, match="Invalid attachment path"):
+            validate_attachment_path(sample)
+
+    with patch.object(Path, "exists", side_effect=OSError("io failure")):
+        with pytest.raises(ValueError, match="Cannot inspect attachment path"):
+            validate_attachment_path(sample, safe_base_dir=tmp_path)
+
+    # None, non-collection, malformed entry, and None/int fields in multipart spec
+    validate_multipart_files(None, header_sanitizer=dict)
+    validate_multipart_files(123, header_sanitizer=dict)
+    validate_multipart_files(["bad-entry", ("file", (None, b"abc", None, {"X-A": "1"}))], header_sanitizer=dict)
+    validate_multipart_files([(123, (123, b"abc"))], header_sanitizer=dict)
+
+
+def test_redacting_filter_deep_types_recursion_and_failsafe() -> None:
+    """Cover NamedTuple, model_dump, __dict__, slotted __str__, failing __str__, sets, depth limit, and failsafe."""
+    flt = RedactingFilter()
+
+    class _CredTuple(NamedTuple):
+        api_key: str
+        note: str
+
+    class _ModelObj:
+        def model_dump(self) -> dict[str, str]:
+            return {"api_secret": "dump_secret", "Authorization": "Bearer dump_tok_99"}  # pragma: allowlist secret
+
+    class _DictObj:
+        def __init__(self) -> None:
+            self.token = "dict_tok_88"
+            self.ok = 42
+
+    class _SlottedStrObj:
+        __slots__ = ()
+
+        def __str__(self) -> str:
+            return "Authorization: Bearer slotted_tok_77"
+
+    class _BadStrObj:
+        __slots__ = ()
+
+        def __str__(self) -> str:
+            raise ValueError("cannot stringify")
+
+    named = _CredTuple("Authorization: Bearer abc_secret", "token=def_secret")
+    redacted_named = flt._deep_redact(named)
+    assert isinstance(redacted_named, _CredTuple)
+    assert tuple(redacted_named) == ("Authorization: Bearer ********", "token=********")
+
+    model_res = flt._deep_redact(_ModelObj())
+    assert model_res["api_secret"] == "********"
+    assert model_res["Authorization"] == "********"
+
+    dict_res = flt._deep_redact(_DictObj())
+    assert dict_res["token"] == "********"
+    assert dict_res["ok"] == 42
+
+    assert flt._deep_redact(_SlottedStrObj()) == "Authorization: Bearer ********"
+    assert flt._deep_redact(_BadStrObj()) == ""
+
+    nested_sets = flt._deep_redact([{"Authorization: Bearer x1"}, frozenset({"Authorization: Bearer x2"})])
+    assert isinstance(nested_sets, list)
+    assert "Authorization: Bearer ********" in nested_sets[0]
+    assert "Authorization: Bearer ********" in nested_sets[1]
+
+    deep = {"a": {"b": {"c": {"d": {"e": {"f": "secret"}}}}}}
+    assert flt._deep_redact(deep)["a"]["b"]["c"]["d"]["e"] == "[MAX_DEPTH_REACHED]"
+
+    rec = logging.LogRecord("mailjet_rest", logging.ERROR, "", 0, "failed", (), None)
+    rec.exc_text = "api_secret=topsecret_val"
+    rec.exc_info = ()  # type: ignore[assignment]
+    flt.filter(rec)
+    assert "topsecret_val" not in (rec.exc_text or "")
+    assert "********" in (rec.exc_text or "")
+
+    with patch("mailjet_rest.utils.guardrails._get_secret_pattern", side_effect=RuntimeError("regex error")):
+        assert flt._redact_str("Bearer secret") == "[REDACTION_FAILED_UNSAFE_STRING]"
+
+    clean_rec = logging.LogRecord("mailjet_rest", logging.INFO, "", 0, "clean", (), None)
+    assert flt.filter(clean_rec) is True
+
+    faulty_record = logging.LogRecord("mailjet_rest", logging.INFO, "", 0, "token=abc", (), None)
+    with patch.object(flt, "_redact_str", side_effect=RuntimeError("unexpected")):
+        assert flt.filter(faulty_record) is True
+
+
+def test_security_guard_validation_orjson_fallback_and_idn_edges(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cover audit hook, target URL without base, proxy edges, orjson paths, timeout overflow, and IDNA errors."""
+    with patch("sys.audit") as mock_audit:
+        with Client(auth=("pub_key", "priv_key"), enable_security_audit=True) as audited:
+            assert audited.config.enable_security_audit is True
+        mock_audit.assert_any_call("mailjet.security.audit_enabled")
+
+    SecurityGuard.validate_target_url("https://api.mailjet.com/v3/send", base_api_url=None)
+    with pytest.raises(ValueError, match="forbidden control characters"):
+        SecurityGuard.validate_target_url(
+            "https://api.mailjet.com/v3/send\x00bad",
+            base_api_url="https://api.mailjet.com/",
+        )
+
+    assert SecurityGuard.sanitize_log_trace("") == ""
+    assert SecurityGuard.sanitize_segment(None) == ""
+    with pytest.raises(ValueError, match="Excessive URL encoding"):
+        SecurityGuard.sanitize_segment("%2525252e")
+    with pytest.raises(ValueError, match="Template injection"):
+        SecurityGuard.sanitize_segment("abc{{1+1}}")
+    with pytest.raises(ValueError, match="XSS attempt"):
+        SecurityGuard.sanitize_segment("<script>alert(1)<svg>")
+
+    with pytest.raises(TypeError, match="Invalid proxy URL type"):
+        SecurityGuard.check_request_security({"proxies": {"https": 123}})
+    with pytest.raises(ValueError, match="forbidden control characters"):
+        SecurityGuard.check_request_security({"proxies": "https://proxy.local:8080\x00"})
+    with pytest.warns(UserWarning, match="Unencrypted HTTP proxy"):
+        SecurityGuard.check_request_security({"proxies": "http://proxy.local"})
+    # Host:port without scheme does not raise or warn
+    with warnings.catch_warnings(record=True) as no_warn:
+        warnings.simplefilter("always", UserWarning)
+        SecurityGuard.check_request_security({"proxies": "proxy.local:8080"})
+    assert not no_warn
+
+    fake_orjson = types.SimpleNamespace(OPT_SORT_KEYS=1)
+
+    def _orjson_dumps(obj: Any, *, option: int, default: Any) -> bytes:
+        assert option == 1
+        assert callable(default)
+        if any(isinstance(k, int) for k in obj):
+            raise TypeError("dict key must be str")
+        return b'{"ok":1}'
+
+    fake_orjson.dumps = _orjson_dumps
+    monkeypatch.setattr("mailjet_rest.utils.guardrails._orjson", fake_orjson)
+    assert SecurityGuard._canonical_json_bytes({"ok": 1}) == b'{"ok":1}'
+    fallback = SecurityGuard._canonical_json_bytes({1: "one"})
+    assert fallback == b'{"1":"one"}'
+
+    with pytest.raises(ValueError, match="out of range"):
+        SecurityGuard._validate_scalar_timeout(10**400)
+    with pytest.warns(DeprecationWarning, match="infinite socket blocking"):
+        with pytest.raises(TypeError, match="valid numeric values"):
+            SecurityGuard.validate_timeout((None, 5.0))  # type: ignore[arg-type]
+    with patch.object(SecurityGuard, "_validate_scalar_timeout", side_effect=OverflowError("huge")):
+        with pytest.raises(ValueError, match="out of range"):
+            SecurityGuard.validate_timeout(5)
+
+    assert SecurityGuard.normalize_domain("") == ""
+    with pytest.raises(ValueError, match="Invalid IDN"):
+        SecurityGuard.normalize_domain("a" * 64 + ".example.com")
+    with pytest.raises(ValueError, match="Invalid IDN"):
+        SecurityGuard.normalize_domain("user@..invalid")
+    assert SecurityGuard.normalize_domain("sub.EXAMPLE.com") == "sub.example.com"
+
+
+def test_ssrf_post_init_mutation_and_redirect_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Post-init api_url SSRF mutation and allow_redirects=True are blocked."""
+    client = Client(auth=("pub_key", "priv_key"))
+    client.config.api_url = "https://evil.example.com/"
+    with pytest.raises(ValueError, match="not permitted"):
+        client.api_call("GET", "https://evil.example.com/v3/REST/contact")
+
+    clean_client = Client(auth=("pub_key", "priv_key"))
+    with pytest.raises(ValueError, match="Redirects are strictly disabled"):
+        clean_client.api_call("GET", "https://api.mailjet.com/v3/REST/contact", allow_redirects=True)
+
+    with pytest.raises(ValueError, match="Redirects are strictly disabled"):
+        clean_client._execute_request(
+            "GET", "https://api.mailjet.com/v3/REST/contact", {}, None, None, 10, allow_redirects=True
+        )
+
+    redirect_resp = requests.Response()
+    redirect_resp.status_code = 302
+    monkeypatch.setattr(clean_client.session, "request", MagicMock(return_value=redirect_resp))
+
+    with patch("sys.audit") as mock_audit:
+        res = clean_client._execute_request("GET", "https://api.mailjet.com/v3/REST/contact", {}, None, None, 10)
+        assert res.status_code == 302
+        mock_audit.assert_any_call(
+            "mailjet.security.unexpected_redirect", "https://api.mailjet.com/v3/REST/contact", 302
+        )
+
+
+def test_redacting_filter_exc_info_exc_text_and_sensitive_keys() -> None:
+    """RedactingFilter scrubs exception info, exc_text, dict keys, and extra fields."""
+    flt = RedactingFilter()
+    try:
+        raise RuntimeError("boom Authorization: Bearer super_secret_token_99")
+    except RuntimeError:
+        exc_info = sys.exc_info()
+
+    record = logging.LogRecord("test", logging.ERROR, "mod.py", 10, "failed", (), exc_info)
+    record.api_secret = "raw_unprefixed_secret_value"  # type: ignore[attr-defined]
+    record.extra_payload = {"password": "my_db_password", "enabled": True, "nullable": None}  # type: ignore[attr-defined]
+
+    flt.filter(record)
+    assert record.exc_info is None
+    assert record.exc_text is not None
+    assert "super_secret_token_99" not in record.exc_text
+    assert "********" in record.exc_text
+    assert getattr(record, "api_secret") == "********"
+    assert getattr(record, "extra_payload")["password"] == "********"
+    assert getattr(record, "extra_payload")["enabled"] is True
+    assert getattr(record, "extra_payload")["nullable"] is None
+
+
+def test_normalize_domain_ascii_fast_path_and_bounds() -> None:
+    """Verify OPT-08 ASCII fast path, lowercase normalization, and RFC 1035 label bounds."""
+    assert SecurityGuard.normalize_domain("User@Example.COM") == "User@example.com"
+    assert SecurityGuard.normalize_domain("sub.MAILJET.com") == "sub.mailjet.com"
+    assert SecurityGuard.normalize_domain("info@münchen.de") == "info@xn--mnchen-3ya.de"
+
+    with pytest.raises(ValueError, match="Invalid IDN in email"):
+        SecurityGuard.normalize_domain("user@" + ("a" * 64) + ".com")
+    with pytest.raises(ValueError, match="Invalid IDN"):
+        SecurityGuard.normalize_domain(".".join(["a" * 50] * 6))
+
+
+def test_per_call_url_ssrf_userinfo_and_zone_id_blocked() -> None:
+    """INV-25 / CAND-INV-38: Block SSRF, userinfo authority confusion, control chars, and zone IDs on api_call."""
+    metadata_ip = str(ipaddress.IPv4Address((169 << 24) | (254 << 16) | (169 << 8) | 254))
+    scheme_user = "https://user"
+    bad_urls = (
+        "https://evil.example/steal",
+        f"http://{metadata_ip}/latest/meta-data/",
+        f"{scheme_user}:placeholder@api.mailjet.com/v3/send",
+        "https://api.mailjet.com/v3/send\nX-Injected: 1",
+        "https://[fe80::1%eth0]/v3/send",
+        "",
+    )
+    with Client(auth=("pub_key", "priv_key")) as client:
+        for bad_url in bad_urls:
+            with pytest.raises(ValueError, match=r"Security Alert \(CWE-918\)"):
+                client.api_call("GET", bad_url)
+
+
+def test_header_control_chars_bearer_bidi_and_proxy_guards() -> None:
+    """INV-26 / CAND-INV-37: Block NUL/C1 headers, BiDi/whitespace tokens, and unsafe str/mapping proxies."""
+    for bad_hdr in ("ok\x00nul", "ok\x1fctrl", "ok\x85nel"):
+        with pytest.raises(ValueError, match="CRLF injection detected in header"):
+            SecurityGuard.sanitize_headers({"X-Test": bad_hdr})
+    assert SecurityGuard.sanitize_headers({"X-Test": "ok\twith\ttab"}) == {"X-Test": "ok\twith\ttab"}
+
+    with pytest.raises(TypeError, match="Invalid header name type"):
+        SecurityGuard.sanitize_headers({123: "val"})  # type: ignore[dict-item]
+    with pytest.raises(TypeError, match="Invalid header value type"):
+        SecurityGuard.sanitize_headers({"X-Test": 123})  # type: ignore[dict-item]
+
+    with pytest.raises(ValueError, match="Auth credentials contain forbidden control characters"):
+        SecurityGuard.validate_and_coerce_auth("tok\r\nen")
+    for bad_tok in ("tok en", "tok\ten", "tok\u202een", "tok\u200ben"):
+        with pytest.raises(ValueError, match="invalid whitespace or control characters"):
+            SecurityGuard.validate_and_coerce_auth(bad_tok)
+
+    with pytest.warns(UserWarning, match="Unencrypted HTTP proxy detected"):
+        SecurityGuard.check_request_security({"proxies": "http://proxy.internal:8080"})
+    with warnings.catch_warnings(record=True) as https_warn:
+        warnings.simplefilter("always", UserWarning)
+        SecurityGuard.check_request_security({"proxies": MappingProxyType({"https": "https://proxy.internal:8443"})})
+    assert not https_warn
+
+    for bad_proxy in ("file:///etc/passwd", "gopher://127.0.0.1:70/_1", "https://proxy.internal:8080\r\n"):
+        with pytest.raises(ValueError):
+            SecurityGuard.check_request_security({"proxies": bad_proxy})
+    with pytest.raises(TypeError, match="Invalid 'proxies' type"):
+        SecurityGuard.check_request_security({"proxies": ["http://proxy.internal:8080"]})
+
+
+def test_multipart_files_crlf_nul_guard() -> None:
+    """CAND-INV-51: Reject CRLF or NUL characters in multipart field names, filenames, MIME types, and headers."""
+    safe_files = {"attachment": ("report.csv", io.BytesIO(b"a,b\n1,2\n"), "text/csv", {"X-Part": "1"})}
+    SecurityGuard.validate_multipart_files(safe_files)
+
+    malicious_specs: tuple[Any, ...] = (
+        {"field\r\nname": ("report.csv", b"data", "text/csv")},
+        {"attachment": ("bad\r\nfilename.txt", b"data", "text/plain")},
+        {"attachment": ("bad\x00.txt", b"data", "text/plain")},
+        [("attachment", (b"raw\n.txt", b"data", "text/plain"))],
+        {"attachment": ("ok.txt", b"data", "text/plain\r\nX-Injected: 1")},
+    )
+    for bad_files in malicious_specs:
+        with pytest.raises(ValueError, match="Multipart file .* forbidden CRLF or NUL"):
+            SecurityGuard.validate_multipart_files(bad_files)
+
+    with pytest.raises(ValueError, match="CRLF injection detected in header"):
+        SecurityGuard.validate_multipart_files({"attachment": ("ok.txt", b"data", "text/plain", {"X-Bad": "a\x00b"})})

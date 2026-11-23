@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import ast
-from pathlib import Path
+import importlib.util
 import shutil
+from pathlib import Path
 
 import mailjet_rest
 import scripts.check_stubs as check_stubs
@@ -68,3 +69,22 @@ def test_client_stub_exposes_every_route_map_property() -> None:
     ep_tree = ast.parse(ep_stub)
     ep_classes = {node.name for node in ep_tree.body if isinstance(node, ast.ClassDef)}
     assert {"BaseEndpoint", "Endpoint", "AsyncEndpoint"} <= ep_classes
+
+
+def test_wave6_routes_declared_in_client_pyi_stubs() -> None:
+    """Confirm every new route is declared on both Client and AsyncClient in client.pyi."""
+    spec = importlib.util.find_spec("mailjet_rest")
+    assert spec is not None and spec.origin is not None
+    stub_text = (Path(spec.origin).resolve().parent / "client.pyi").read_text(encoding="utf-8")
+    new_routes = (
+        "send_v31",
+        "contacts",
+        "v1_templates",
+        "template_contents_lock",
+        "template_contents_publish",
+        "template_contents_unlock",
+        "data_images_by_type",
+    )
+    for route in new_routes:
+        assert f"def {route}(self) -> Endpoint: ..." in stub_text
+        assert f"def {route}(self) -> AsyncEndpoint: ..." in stub_text

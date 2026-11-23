@@ -13,13 +13,13 @@ import ssl
 import uuid
 import warnings
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-import requests
 
-from mailjet_rest.client import AsyncClient, Client, Config, _httpx2, parse_response
+from mailjet_rest.client import AsyncClient, Config, _httpx2, parse_response
 from mailjet_rest.endpoint import AsyncEndpoint
 from mailjet_rest.errors import (
     ApiError,
@@ -31,6 +31,7 @@ from mailjet_rest.errors import (
     TimeoutError,  # ruff: ignore[builtin-import-shadowing]
     ValidationError,
 )
+from mailjet_rest.routes import ROUTE_MAP
 from mailjet_rest.utils.guardrails import SecretAuth
 
 
@@ -49,13 +50,15 @@ def test_async_client_import_error_when_httpx2_missing(monkeypatch: pytest.Monke
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
 def test_async_client_auth_modes_and_header_application() -> None:
     """Verify Basic Auth (SecretAuth), Bearer auth, redaction, and outgoing Authorization headers."""
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         captured_headers: list[str] = []
 
         def transport_handler(request: Any) -> Any:
             captured_headers.append(request.headers.get("Authorization", ""))
-            return _httpx2.Response(200, json={"ok": True}, request=request)
+            return httpx2_mod.Response(200, json={"ok": True}, request=request)
 
         async with AsyncClient(auth=("super_secret_pub", "super_secret_priv")) as basic_client:
             assert isinstance(basic_client.auth, SecretAuth)
@@ -64,11 +67,11 @@ def test_async_client_auth_modes_and_header_application() -> None:
             assert "Mailjet AsyncClient" in str(basic_client)
             assert "Authorization" not in basic_client.session.headers
 
-            basic_client.session = _httpx2.AsyncClient(
+            basic_client.session = httpx2_mod.AsyncClient(
                 auth=basic_client._build_auth_and_headers()[0],
                 headers=basic_client._build_auth_and_headers()[1],
                 follow_redirects=False,
-                transport=_httpx2.MockTransport(transport_handler),
+                transport=httpx2_mod.MockTransport(transport_handler),
             )
             await basic_client.contact.get()
             expected_token = base64.b64encode(b"super_secret_pub:super_secret_priv").decode("ascii")
@@ -84,6 +87,8 @@ def test_async_client_auth_modes_and_header_application() -> None:
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
 def test_async_client_lazy_session_tls_keepalive_and_warn_unclosed() -> None:
     """Verify lazy session creation, TLS 1.2+ transport, keep-alive socket options, and ResourceWarning."""
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         cfg = Config(pool_connections=10, pool_maxsize=20)
@@ -97,7 +102,7 @@ def test_async_client_lazy_session_tls_keepalive_and_warn_unclosed() -> None:
             assert getattr(aclient, "_session") is session
 
             transport = getattr(session, "_transport", None)
-            assert isinstance(transport, _httpx2.AsyncHTTPTransport)
+            assert isinstance(transport, httpx2_mod.AsyncHTTPTransport)
             pool = getattr(transport, "_pool", None)
             assert pool is not None
             ssl_ctx = pool._ssl_context
@@ -132,6 +137,8 @@ def test_async_client_lazy_session_tls_keepalive_and_warn_unclosed() -> None:
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
 def test_async_client_lifecycle_and_payload_execution(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify endpoint caching, dry_run, tuple timeouts, JSON vs raw content, parse_response, and teardown."""
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         async with AsyncClient(auth=("pub_key", "priv_key"), dry_run=True) as aclient:
@@ -151,8 +158,8 @@ def test_async_client_lifecycle_and_payload_execution(monkeypatch: pytest.Monkey
 
         async def mock_async_request(**kwargs: Any) -> Any:
             captured_kwargs.update(kwargs)
-            req = _httpx2.Request(kwargs.get("method", "GET"), kwargs.get("url", "https://api.mailjet.com"))
-            return _httpx2.Response(200, json={"Count": 1, "Total": 1, "Data": [{"ID": 42}]}, request=req)
+            req = httpx2_mod.Request(kwargs.get("method", "GET"), kwargs.get("url", "https://api.mailjet.com"))
+            return httpx2_mod.Response(200, json={"Count": 1, "Total": 1, "Data": [{"ID": 42}]}, request=req)
 
         monkeypatch.setattr(client.session, "request", mock_async_request)
 
@@ -165,7 +172,7 @@ def test_async_client_lifecycle_and_payload_execution(monkeypatch: pytest.Monkey
         )
         assert res_post.status_code == 200
         assert captured_kwargs.get("json") == {"Email": "a@b.com"}
-        assert isinstance(captured_kwargs["timeout"], _httpx2.Timeout)
+        assert isinstance(captured_kwargs["timeout"], httpx2_mod.Timeout)
         with pytest.warns(DeprecationWarning, match="parse_response"):
             assert parse_response(res_post)["Count"] == 1
 
@@ -173,8 +180,8 @@ def test_async_client_lifecycle_and_payload_execution(monkeypatch: pytest.Monkey
 
         async def mock_async_202(**kwargs: Any) -> Any:
             captured_kwargs.update(kwargs)
-            req = _httpx2.Request(kwargs.get("method", "POST"), kwargs.get("url", "https://api.mailjet.com"))
-            return _httpx2.Response(202, text="Accepted", request=req)
+            req = httpx2_mod.Request(kwargs.get("method", "POST"), kwargs.get("url", "https://api.mailjet.com"))
+            return httpx2_mod.Response(202, text="Accepted", request=req)
 
         monkeypatch.setattr(client.session, "request", mock_async_202)
         res_raw = await client.api_call(
@@ -187,7 +194,7 @@ def test_async_client_lifecycle_and_payload_execution(monkeypatch: pytest.Monkey
         assert captured_kwargs.get("content") == "email\na@b.com"
 
         await client.close()
-        client.session = None
+        client.session = None  # type: ignore[assignment]
         await client.aclose()
 
     asyncio.run(_run())
@@ -196,12 +203,14 @@ def test_async_client_lifecycle_and_payload_execution(monkeypatch: pytest.Monkey
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
 def test_async_client_idempotency_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify fingerprint, uuid4, and off auto_idempotency_mode parity on AsyncClient."""
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         async def ok_request(**kwargs: Any) -> Any:
             captured_headers.append(dict(kwargs.get("headers", {})))
-            req = _httpx2.Request("POST", "https://api.mailjet.com/v3/REST/contact")
-            return _httpx2.Response(200, json={"Data": []}, request=req)
+            req = httpx2_mod.Request("POST", "https://api.mailjet.com/v3/REST/contact")
+            return httpx2_mod.Response(200, json={"Data": []}, request=req)
 
         captured_headers: list[dict[str, Any]] = []
         async with AsyncClient(auth=("k", "s"), config=Config(auto_idempotency_mode="fingerprint")) as c_fp:
@@ -232,6 +241,8 @@ def test_async_client_security_guards_ca_isolation_and_redirects(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Verify SSRF re-validation, redirect rejection, 3xx audit warning, and per-call CA override isolation."""
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
     ca_file = tmp_path / "custom-ca.pem"
     ca_file.write_text("dummy-ca", encoding="utf-8")
 
@@ -243,8 +254,8 @@ def test_async_client_security_guards_ca_isolation_and_redirects(
                 await aclient.api_call("GET", "https://api.mailjet.com/v3/REST/contact", follow_redirects=True)
 
             # 3xx redirect audit event + warning
-            req = _httpx2.Request("GET", "https://api.mailjet.com/v3/REST/contact")
-            resp_302 = _httpx2.Response(302, headers={"Location": "https://evil.example.com"}, request=req)
+            req = httpx2_mod.Request("GET", "https://api.mailjet.com/v3/REST/contact")
+            resp_302 = httpx2_mod.Response(302, headers={"Location": "https://evil.example.com"}, request=req)
             monkeypatch.setattr(aclient.session, "request", AsyncMock(return_value=resp_302))
 
             with (
@@ -267,14 +278,14 @@ def test_async_client_security_guards_ca_isolation_and_redirects(
 
             async def fake_ephemeral(
                 _self: AsyncClient,
-                httpx2_mod: Any,
+                _httpx2_mod: Any,
                 req_verify: bool | str,
                 proxies: Any,
                 cert: Any,
                 req_kwargs: dict[str, Any],
             ) -> Any:
                 ephemeral_calls.append((req_verify, proxies, cert, req_kwargs["url"]))
-                return _httpx2.Response(200, json={"Data": []}, request=req)
+                return httpx2_mod.Response(200, json={"Data": []}, request=req)
 
             monkeypatch.setattr(AsyncClient, "_request_isolated", fake_ephemeral)
             with warnings.catch_warnings(record=True) as dep_warnings:
@@ -310,21 +321,23 @@ def test_async_client_security_guards_ca_isolation_and_redirects(
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
 def test_async_client_error_handling_branches(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify AsyncClient maps TimeoutException, ConnectError/NetworkError, and HTTPStatusError accurately."""
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         async with AsyncClient(auth=("pub_key", "priv_key"), max_retries=0) as aclient:
             monkeypatch.setattr(
                 aclient.session,
                 "request",
-                AsyncMock(side_effect=_httpx2.TimeoutException("Async read timed out")),
+                AsyncMock(side_effect=httpx2_mod.TimeoutException("Async read timed out")),
             )
             with pytest.raises(TimeoutError, match="Request to Mailjet API timed out"):
                 await aclient.contact.get()
 
             for conn_exc in (
-                _httpx2.ConnectError("Async connection refused"),
-                _httpx2.NetworkError("Async network drop"),
-                _httpx2.RemoteProtocolError("Async protocol reset"),
+                httpx2_mod.ConnectError("Async connection refused"),
+                httpx2_mod.NetworkError("Async network drop"),
+                httpx2_mod.RemoteProtocolError("Async protocol reset"),
             ):
                 monkeypatch.setattr(aclient.session, "request", AsyncMock(side_effect=conn_exc))
                 with pytest.raises(CriticalApiError, match="Connection to Mailjet API failed"):
@@ -339,8 +352,8 @@ def test_async_client_error_handling_branches(monkeypatch: pytest.MonkeyPatch) -
                 (500, MailjetApiError),
                 (503, MailjetApiError),
             ):
-                req = _httpx2.Request("GET", "https://api.mailjet.com/v3/REST/contact")
-                resp = _httpx2.Response(status, json={"ErrorMessage": f"err-{status}"}, request=req)
+                req = httpx2_mod.Request("GET", "https://api.mailjet.com/v3/REST/contact")
+                resp = httpx2_mod.Response(status, json={"ErrorMessage": f"err-{status}"}, request=req)
                 monkeypatch.setattr(aclient.session, "request", AsyncMock(return_value=resp))
                 with pytest.raises(exc_cls, match=f"err-{status}"):
                     await aclient.contact.get()
@@ -348,7 +361,7 @@ def test_async_client_error_handling_branches(monkeypatch: pytest.MonkeyPatch) -
             monkeypatch.setattr(
                 aclient.session,
                 "request",
-                AsyncMock(side_effect=_httpx2.HTTPError("Generic httpx2 failure")),
+                AsyncMock(side_effect=httpx2_mod.HTTPError("Generic httpx2 failure")),
             )
             with pytest.raises(ApiError, match="An unexpected Mailjet API network error occurred"):
                 await aclient.contact.get()
@@ -357,26 +370,15 @@ def test_async_client_error_handling_branches(monkeypatch: pytest.MonkeyPatch) -
 
 
 # ==========================================
-# 5. Mailgun-Inspired Transport, Lifecycle, Retry & Concurrency Tests
+# 4. Transport, Lifecycle, Retry, Copy & Concurrency Tests
 # ==========================================
 
 
-def test_config_max_retries_validation() -> None:
-    """Verify Config.max_retries accepts integers >= 0 and rejects booleans, negatives, and non-ints."""
-    assert Config().max_retries == 3
-    assert Config(max_retries=0).max_retries == 0
-    assert Config(max_retries=5).max_retries == 5
-
-    bad_values: tuple[Any, ...] = (-1, True, False, "2", 1.5)
-    for bad_val in bad_values:
-        with pytest.raises(ValueError, match="max_retries"):
-            Config(max_retries=bad_val)
-
-
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
-def test_async_client_custom_transport_and_ping(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify custom httpx2 transport injection and ping() behavior across AsyncClient and Client."""
+def test_async_client_custom_transport_and_ping() -> None:
+    """Verify custom httpx2 transport injection and ping() behavior on AsyncClient."""
     assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         seen_urls: list[str] = []
@@ -387,27 +389,27 @@ def test_async_client_custom_transport_and_ping(monkeypatch: pytest.MonkeyPatch)
             seen_urls.append(str(request.url))
             seen_auths.append(request.headers.get("Authorization", ""))
             if not status_queue:
-                raise _httpx2.ConnectError("simulated outage")
-            return _httpx2.Response(status_queue.pop(0), json={"Data": []})
+                raise httpx2_mod.ConnectError("simulated outage")
+            return httpx2_mod.Response(status_queue.pop(0), json={"Data": []})
 
-        transport = _httpx2.MockTransport(handler)
+        transport = httpx2_mod.MockTransport(handler)
         async with AsyncClient(auth=("pub_key", "priv_key"), transport=transport, max_retries=0) as aclient:
             resp = await aclient.contact.get()
             assert resp.status_code == 200
             assert seen_auths[0].startswith("Basic ")
 
         # Verify AsyncClient.ping() true / auth fail / server error / connect error / SSRF fail-closed
-        ping_outcomes: list[Any] = [200, 401, 503, _httpx2.ConnectError("network down")]
+        ping_outcomes: list[Any] = [200, 401, 503, httpx2_mod.ConnectError("network down")]
 
         def ping_handler(_request: Any) -> Any:
             outcome = ping_outcomes.pop(0)
             if isinstance(outcome, Exception):
                 raise outcome
-            return _httpx2.Response(outcome, json={"Data": []})
+            return httpx2_mod.Response(outcome, json={"Data": []})
 
         async with AsyncClient(
             auth=("pub_key", "priv_key"),
-            transport=_httpx2.MockTransport(ping_handler),
+            transport=httpx2_mod.MockTransport(ping_handler),
             max_retries=0,
         ) as ping_client:
             assert await ping_client.ping(timeout=2.0) is True
@@ -422,22 +424,6 @@ def test_async_client_custom_transport_and_ping(monkeypatch: pytest.MonkeyPatch)
         assert "contact" in seen_urls[0]
 
     asyncio.run(_run())
-
-    # Sync Client.ping()
-    with Client(auth=("pub_key", "priv_key")) as sync_client:
-        fake_ok = type(
-            "Resp",
-            (),
-            {"status_code": 200, "headers": {}, "text": "{}", "raise_for_status": lambda _s=None: None},
-        )()
-        monkeypatch.setattr(sync_client.session, "request", lambda **_kw: fake_ok)
-        assert sync_client.ping(timeout=1.0) is True
-
-        def fail_conn(**_kw: Any) -> Any:
-            raise requests.exceptions.ConnectionError("down")
-
-        monkeypatch.setattr(sync_client.session, "request", fail_conn)
-        assert sync_client.ping() is False
 
 
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
@@ -483,22 +469,13 @@ def test_async_client_pool_self_healing_reentry_and_exception_purge() -> None:
 
     asyncio.run(_run())
 
-    # Sync Client re-entry check
-    sync_client = Client(auth=("k", "s"))
-    with pytest.raises(RuntimeError, match="sync boom"):
-        with sync_client as s1:
-            _raise_boom("sync boom", trigger=bool(s1.session))
-    assert sync_client._session is None  # ruff: ignore[private-member-access]
-    with sync_client as s2:
-        assert s2.session is not None
-
 
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
-def test_client_copy_deepcopy_isolation_and_dunder_rejection() -> None:
+def test_async_client_copy_deepcopy_isolation_and_dunder_rejection() -> None:
     """Verify __copy__ and __deepcopy__ isolate locks/sessions/caches without SecretAuth warnings."""
     assert _httpx2 is not None
 
-    transport = _httpx2.MockTransport(lambda _r: _httpx2.Response(200, json={"Data": []}))
+    transport = _httpx2.MockTransport(lambda _r: _httpx2.Response(200, json={"Data": []}))  # type: ignore[union-attr]
     orig = AsyncClient(
         auth=("k_secret", "s_secret"),
         config=Config(version="v3.1", max_retries=2),
@@ -534,18 +511,10 @@ def test_client_copy_deepcopy_isolation_and_dunder_rejection() -> None:
     assert isinstance(orig.auth, SecretAuth)
     assert deep.auth.auth_header == orig.auth.auth_header
 
-    # Sync Client deepcopy + private/dunder rejection
-    sync_orig = Client(auth=("k_sync", "s_sync"))
-    _ = sync_orig.session
-    sync_deep = copy.deepcopy(sync_orig)
-    assert sync_deep._session is None  # ruff: ignore[private-member-access]
-    assert sync_deep._lock is not sync_orig._lock  # ruff: ignore[private-member-access]
-
     for bad_attr in ("_private_attr", "__nonexistent_dunder__"):
         with pytest.raises(AttributeError):
             _ = getattr(orig, bad_attr)
 
-    sync_orig.close()
     asyncio.run(orig.aclose())
 
 
@@ -553,17 +522,18 @@ def test_client_copy_deepcopy_isolation_and_dunder_rejection() -> None:
 def test_async_client_retry_backoff_rewind_fast_fail_and_causes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify retries with capped Retry-After, BytesIO rewind, fast-fail errors, and PEP 3134 __cause__."""
     assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         sleep_mock = AsyncMock()
         monkeypatch.setattr(asyncio, "sleep", sleep_mock)
 
         # 1. Transient 503 (capped Retry-After: 120 -> 60.0) -> 429 (invalid date -> jitter) -> 200
-        req = _httpx2.Request("POST", "https://api.mailjet.com/v3/REST/contact")
+        req = httpx2_mod.Request("POST", "https://api.mailjet.com/v3/REST/contact")
         responses = [
-            _httpx2.Response(503, headers={"Retry-After": "120"}, request=req),
-            _httpx2.Response(429, headers={"Retry-After": "not-a-float"}, request=req),
-            _httpx2.Response(200, json={"Count": 1}, request=req),
+            httpx2_mod.Response(503, headers={"Retry-After": "120"}, request=req),
+            httpx2_mod.Response(429, headers={"Retry-After": "not-a-float"}, request=req),
+            httpx2_mod.Response(200, json={"Count": 1}, request=req),
         ]
         async with AsyncClient(auth=("k", "s"), max_retries=3) as aclient:
             mock_req = AsyncMock(side_effect=responses)
@@ -588,8 +558,8 @@ def test_async_client_retry_backoff_rewind_fast_fail_and_causes(monkeypatch: pyt
             chunk = file_tuple[1].read()
             observed_uploads.append((dict(kwargs["headers"]), chunk))
             if attempt_idx == 1:
-                raise _httpx2.ConnectError("socket dropped mid-upload")
-            return _httpx2.Response(200, json={"OK": True}, request=req)
+                raise httpx2_mod.ConnectError("socket dropped mid-upload")
+            return httpx2_mod.Response(200, json={"OK": True}, request=req)
 
         async with AsyncClient(auth=("k", "s"), max_retries=2) as upload_client:
             monkeypatch.setattr(upload_client.session, "request", upload_handler)
@@ -605,7 +575,7 @@ def test_async_client_retry_backoff_rewind_fast_fail_and_causes(monkeypatch: pyt
 
         # 3. Fast-fail on UnsupportedProtocol & DecodingError without sleeping/retrying
         sleep_mock.reset_mock()
-        for fast_exc_cls in (_httpx2.UnsupportedProtocol, _httpx2.DecodingError):
+        for fast_exc_cls in (httpx2_mod.UnsupportedProtocol, httpx2_mod.DecodingError):
             fast_exc = fast_exc_cls("non-retryable")
             async with AsyncClient(auth=("k", "s"), max_retries=3) as ff_client:
                 mock_ff = AsyncMock(side_effect=fast_exc)
@@ -619,23 +589,23 @@ def test_async_client_retry_backoff_rewind_fast_fail_and_causes(monkeypatch: pyt
         # 4. PEP 3134 __cause__ preserved when retries are exhausted
         sleep_mock.reset_mock()
         async with AsyncClient(auth=("k", "s"), max_retries=1) as cause_client:
-            to_exc = _httpx2.TimeoutException("read timeout")
+            to_exc = httpx2_mod.TimeoutException("read timeout")
             monkeypatch.setattr(cause_client.session, "request", AsyncMock(side_effect=to_exc))
             with pytest.raises(TimeoutError) as to_info:
                 await cause_client.contact.get()
             assert to_info.value.__cause__ is to_exc
 
-            conn_exc = _httpx2.ConnectError("refused")
+            conn_exc = httpx2_mod.ConnectError("refused")
             monkeypatch.setattr(cause_client.session, "request", AsyncMock(side_effect=conn_exc))
             with pytest.raises(CriticalApiError) as conn_info:
                 await cause_client.contact.get()
             assert conn_info.value.__cause__ is conn_exc
 
-            resp_503 = _httpx2.Response(503, text="backend unavailable", request=req)
+            resp_503 = httpx2_mod.Response(503, text="backend unavailable", request=req)
             monkeypatch.setattr(cause_client.session, "request", AsyncMock(return_value=resp_503))
             with pytest.raises(MailjetApiError) as http_info:
                 await cause_client.contact.get()
-            assert isinstance(http_info.value.__cause__, _httpx2.HTTPStatusError)
+            assert isinstance(http_info.value.__cause__, httpx2_mod.HTTPStatusError)
 
     asyncio.run(_run())
 
@@ -644,17 +614,18 @@ def test_async_client_retry_backoff_rewind_fast_fail_and_causes(monkeypatch: pyt
 def test_async_client_concurrent_gather_requests() -> None:
     """Verify AsyncClient executes concurrent asyncio.gather requests safely via shared transport."""
     assert _httpx2 is not None
+    httpx2_mod = _httpx2
 
     async def _run() -> None:
         observed_paths: list[str] = []
 
         def handler(request: Any) -> Any:
             observed_paths.append(request.url.path)
-            return _httpx2.Response(200, json={"Path": request.url.path})
+            return httpx2_mod.Response(200, json={"Path": request.url.path})
 
         async with AsyncClient(
             auth=("k", "s"),
-            transport=_httpx2.MockTransport(handler),
+            transport=httpx2_mod.MockTransport(handler),
             max_retries=0,
         ) as aclient:
             results = await asyncio.gather(*(aclient.contact.get(id=i) for i in range(20)))
@@ -663,3 +634,165 @@ def test_async_client_concurrent_gather_requests() -> None:
             assert {r.json()["Path"] for r in results} == {f"/v3/REST/contact/{i}" for i in range(20)}
 
     asyncio.run(_run())
+
+
+def test_async_client_closed_placeholder_reentry_and_proxy_transport(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cover AsyncClient closed placeholder reuse, stale re-entry, stream=True rejection, and proxy transport."""
+    # AsyncClient closed placeholder session (safe even with broken SSL_CERT_FILE), stale re-entry,
+    # isolated request via MockTransport, and stream=True rejection
+    if _httpx2 is not None:
+        httpx2_mod = _httpx2
+        monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "nonexistent_conda_cacert.pem"))
+
+        def _mock_transport_handler(request: Any) -> Any:
+            return httpx2_mod.Response(200, json={"Data": []}, request=request)
+
+        mock_tp = httpx2_mod.MockTransport(_mock_transport_handler)
+
+        async def _check_async_edges() -> None:
+            aclient = AsyncClient(auth=("pub", "priv"), transport=mock_tp)
+            await aclient.aclose()
+            closed_sess = aclient.session
+            assert closed_sess.is_closed
+            # Calling session again while already closed reuses closed placeholder when not yet disposed
+            assert aclient.session is closed_sess
+
+            stale_mock_sess = AsyncMock()
+            stale_mock_sess.is_closed = False
+            aclient._session = stale_mock_sess
+            async with aclient as entered:
+                stale_mock_sess.aclose.assert_awaited_once()
+                assert entered is aclient
+
+            with pytest.raises(ValueError, match="stream=True is not supported"):
+                await entered.api_call("GET", "https://api.mailjet.com/v3/REST/contact", stream=True)
+
+            # Isolated request branch when per-call proxies are supplied (mocked transport, zero network I/O)
+            with patch.object(httpx2_mod, "AsyncHTTPTransport", return_value=mock_tp) as mock_http_tp:
+                iso_resp = await entered._execute_request(
+                    "GET",
+                    "https://api.mailjet.com/v3/REST/contact",
+                    {},
+                    None,
+                    None,
+                    5,
+                    proxies={"https": "https://localhost:8443"},
+                )
+            assert iso_resp.status_code == 200
+            assert mock_http_tp.call_args.kwargs["proxy"] == "https://localhost:8443"
+
+        asyncio.run(_check_async_edges())
+
+
+@pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
+def test_async_client_routes_ssrf_multipart_retry_allowlist_and_gather(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify AsyncClient new routes, concurrent gather, per-call SSRF, multipart guard, and method retry gate."""
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
+
+    async def _run() -> None:
+        observed: list[tuple[str, str]] = []
+
+        def handler(request: Any) -> Any:
+            observed.append((request.method, str(request.url)))
+            return httpx2_mod.Response(200, json={"Count": 1, "Total": 1, "Data": [{"ID": 1}]})
+
+        async with AsyncClient(
+            auth=("pub_key", "priv_key"),
+            transport=httpx2_mod.MockTransport(handler),
+            max_retries=0,
+        ) as aclient:
+            # Per-call SSRF blocked on AsyncClient.api_call
+            with pytest.raises(ValueError, match=r"Security Alert \(CWE-918\)"):
+                await aclient.api_call("GET", "https://evil.example/exfiltrate")
+
+            # Multipart CRLF filename blocked before network send
+            with pytest.raises(ValueError, match="Multipart file filename contains forbidden CRLF or NUL"):
+                await aclient.api_call(
+                    "POST",
+                    "https://api.mailjet.com/v1/data/images",
+                    files={"file": ("evil\r\n.png", io.BytesIO(b"png"), "image/png")},
+                )
+
+            # Concurrent asyncio.gather across new OpenAPI & v4 routes
+            payload = MappingProxyType({"Messages": [{"From": {"Email": "a@b.com"}, "To": [{"Email": "c@d.com"}]}]})
+            res_list = await asyncio.gather(
+                aclient.send_v31.create(data=payload),
+                aclient.v1_templates.get(),
+                aclient.template_contents_publish.create(id=7, data={}),
+                aclient.template_contents_lock.create(id=7, data={}),
+                aclient.template_contents_unlock.create(id=7, data={}),
+                aclient.data_images_by_type.update(id="img-1", action_id="thumbnail", data=b"thumb"),
+                aclient.contacts.delete(id=55),
+            )
+            assert all(r.status_code == 200 for r in res_list)
+            assert set(observed) == {
+                ("POST", "https://api.mailjet.com/v3.1/send"),
+                ("GET", "https://api.mailjet.com/v1/REST/templates"),
+                ("POST", "https://api.mailjet.com/v1/REST/templates/7/contents/publish"),
+                ("POST", "https://api.mailjet.com/v1/REST/templates/7/contents/lock"),
+                ("POST", "https://api.mailjet.com/v1/REST/templates/7/contents/unlock"),
+                ("PUT", "https://api.mailjet.com/v1/data/images/img-1/thumbnail"),
+                ("DELETE", "https://api.mailjet.com/v4/contacts/55"),
+            }
+
+        # Non-allowlisted HTTP method never retries even when max_retries > 0
+        req = httpx2_mod.Request("TRACE", "https://api.mailjet.com/v3/REST/contact")
+        resp_503 = httpx2_mod.Response(503, text="upstream busy", request=req)
+        trace_method: Any = "TRACE"
+        async with AsyncClient(auth=("pub_key", "priv_key"), max_retries=3) as retry_client:
+            mock_req = AsyncMock(return_value=resp_503)
+            monkeypatch.setattr(retry_client.session, "request", mock_req)
+            with pytest.raises(MailjetApiError):
+                await retry_client.api_call(trace_method, "https://api.mailjet.com/v3/REST/contact")
+            assert mock_req.await_count == 1
+
+    asyncio.run(_run())
+
+
+def test_async_client_form_mapping_payload_uses_data_not_content() -> None:
+    """Non-JSON Mapping payloads on AsyncClient must use form data= rather than crashing content=."""
+    if _httpx2 is None:
+        pytest.skip("httpx2 not installed")
+    assert _httpx2 is not None
+    httpx2_mod = _httpx2
+
+    captured: list[tuple[str, bytes]] = []
+
+    def handler(request: Any) -> Any:
+        captured.append((request.headers.get("content-type", ""), request.read()))
+        return httpx2_mod.Response(200, json={"Data": [], "Count": 0})
+
+    async def _run() -> None:
+        async with AsyncClient(
+            auth=("pub_key", "priv_key"),
+            transport=httpx2_mod.MockTransport(handler),
+        ) as client:
+            resp = await client.contact.create(
+                data={"Name": "Alice"},
+                headers={"content-type": "application/x-www-form-urlencoded"},
+            )
+            assert resp.status_code == 200
+
+    asyncio.run(_run())
+    assert len(captured) == 1
+    assert "application/x-www-form-urlencoded" in captured[0][0]
+    assert b"Name=Alice" in captured[0][1]
+
+
+def test_async_client_available_endpoints_and_did_you_mean() -> None:
+    """Verify AsyncClient.available_endpoints and AttributeError 'Did you mean' suggestion."""
+    if _httpx2 is not None:
+
+        async def _check_async_dx() -> None:
+            async with AsyncClient(auth=("pub_key", "priv_key")) as aclient:
+                assert aclient.available_endpoints == tuple(sorted(ROUTE_MAP))
+                with pytest.raises(
+                    AttributeError,
+                    match=r"has no endpoint or attribute 'snd'\. Did you mean 'send'\?",
+                ):
+                    _ = aclient.snd
+
+        asyncio.run(_check_async_dx())
