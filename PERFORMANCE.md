@@ -22,7 +22,7 @@ We implemented `__slots__` across the core `Client`, `Config`, and `Endpoint` in
 
 ### 3. Allocation Avoidance & Cold-Boot Optimization
 
-- **Zero-Allocation Headers:** We use `types.MappingProxyType` for global constants (e.g., `_JSON_HEADERS`). The SDK avoids creating brand-new dictionaries from scratch for every single API call, unpacking these immutable proxies directly.
+- **Zero-Allocation Headers:** We use `types.MappingProxyType` for global constants (`_JSON_HEADERS`, `_TEXT_HEADERS`, and `_CSV_HEADERS`). The SDK avoids creating brand-new dictionaries from scratch for every single API call, unpacking these immutable proxies directly.
 - **Optimized Imports:** By replacing module-level regular expression compilation (`re.compile`) with native string methods, cold-boot initialization time has been optimized, making the SDK highly suitable for Serverless/Lambda environments.
 - *Optimization Note:* Deferring redundant allocations and streaming constant proxies directly on the hot path keeps CPU caches warm and minimizes allocation footprints.
 
@@ -84,6 +84,24 @@ Version 1.9.0 introduces route deprecation advisories, dynamic stream parameter 
 | **Idempotency Fingerprint Hashing** | ~2.98 µs          | **~2.99 µs**             | **Stable**                            |
 
 *Note: Benchmarks measure network-isolated internal overhead using mocked `responses`. Testing hardware: Apple M4 Pro, Darwin-CPython-3.12-64bit.*
+
+### v1.9.1 vs. Current (`wave-6-async-client` / Unreleased)
+
+The post-`1.9.1` architecture (`Wave 3`–`Wave 6` + `MOD-03`/`MOD-06`) adds `AsyncClient`/`AsyncEndpoint` (`httpx2>=2.0.0`), `MockMailjetClient`/`verify_webhook_signature`, PEP 562 lazy top-level exports, `__slots__` across `33` classes (`53` classes scanned across `20` modules via `slotscheck`), lazy `asyncio`/`HTMLParser` loading, zero-allocation `scheme://authority/` SSRF prefix fast-paths, O(1) cached `__getattr__` route lookup before lazy `Endpoint` import, O(1) UTF-8 char-length bounds in `MessageBuilder`, and module-level `_deep_strip_volatile()` (eliminating `~185 KiB` cyclic-closure retention).
+
+| Metric                                                   | Baseline (`v1.9.1`)           | Current (`wave-6-async-client`)  | Delta / Notes                                                       |
+| :------------------------------------------------------- | :---------------------------- | :------------------------------- | :------------------------------------------------------------------ |
+| **Cold-Boot Profiler (`test_boot.py`)**                  | `0.248 s` (`220,116` calls)   | **`0.181 s` (`207,131` calls)**  | **`-27.0%` profiler time, `-5.9%` calls**                           |
+| **Cold-Boot Wall-Clock (`test_boot.py`)**                | `0.3383 s`                    | **`0.2503 s`**                   | **`-26.0%` faster subprocess boot**                                 |
+| **Sync Client Init `httpx2` Imports**                    | `0`                           | **`0`**                          | PEP 562 lazy exports isolate async deps                             |
+| **Client Instance `__dict__`**                           | Present (`48 B` + `__dict__`) | **Eliminated (`__slots__`)**     | Zero per-instance `__dict__` allocation                             |
+| **Routing Speed (`test_client_routing_speed`)**          | `365.2 ns` (`2.74M ops/s`)    | **`298.4 ns` (`3.35M ops/s`)**   | **`-18.3%` faster** via O(1) pre-lock `_endpoint_cache` hit         |
+| **Message Builder (`test_message_builder_performance`)** | `3.22 µs` (`310.1K ops/s`)    | **`6.57 µs` (`152.2K ops/s`)**   | Includes RFC 8058, fast-path CID & `102 KB` char-bound check        |
+| **Idempotency Fingerprint Hashing**                      | `9.68 µs` (`103.3K ops/s`)    | `10.57 µs` (`94.6K ops/s`)       | Method/URL/SandboxMode scoped + cycle-free `_deep_strip_volatile()` |
+| **Request Cycle (`test_request_cycle_performance`)**     | `461.9 µs` (`2,164.9 ops/s`)  | **`428.5 µs` (`2,334.0 ops/s`)** | **`-7.2%` faster** with per-call SSRF & header guardrails           |
+| **Concurrent Sync Throughput**                           | `36.95 ms` (`27.06 ops/s`)    | **`33.09 ms` (`30.22 ops/s`)**   | **`+11.7%` faster** concurrent execution                            |
+
+*Note: Head-to-head measurements on Linux CPython 3.15.2 via `tests/test_boot.py` and `pytest tests/test_perf.py --benchmark-only` (network-isolated mocked `responses`). Quality & security gates verified alongside benchmarks: `99.38%` branch coverage (`>= 93%` gate), `30` Atheris fuzzers (`21.39M` units / `2,716`-entry `fuzzer.dict`), and `87.3%` `mutmut` mutation score (`2,346/2,688`).*
 
 ______________________________________________________________________
 
