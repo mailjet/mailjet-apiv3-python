@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import re
@@ -378,3 +379,101 @@ def test_check_stubs_extracts_classvars_all_and_overloads_from_ast(tmp_path: Pat
     assert "@overload\n    def overloaded_probe(self, x: int) -> int: ..." in generated
     assert "@overload\n    def overloaded_probe(self, x: str) -> str: ..." in generated
     assert "def overloaded_probe(self, x: int | str)" not in generated
+
+
+# ==========================================
+# CodeQL & Code Quality Bot Hygiene Gate (PR #179)
+# ==========================================
+
+
+def _extract_module_all_exports(tree: ast.Module) -> set[str]:
+    exports: set[str] = set()
+    for stmt in tree.body:
+        target_names: list[str] = []
+        value: ast.expr | None = None
+        if isinstance(stmt, ast.Assign):
+            target_names = [t.id for t in stmt.targets if isinstance(t, ast.Name)]
+            value = stmt.value
+        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+            target_names = [stmt.target.id]
+            value = stmt.value
+        if "__all__" in target_names and isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+            for elt in value.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                    exports.add(elt.value)
+    return exports
+
+
+def _assigned_module_level_globals(stmt: ast.stmt) -> list[tuple[str, int]]:
+    if isinstance(stmt, ast.Assign):
+        return [(target.id, stmt.lineno) for target in stmt.targets if isinstance(target, ast.Name)]
+    if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+        ann = stmt.annotation
+        if isinstance(ann, ast.Name) and ann.id == "TypeAlias":
+            return []
+        if stmt.value is not None:
+            return [(stmt.target.id, stmt.lineno)]
+    return []
+
+
+def _scan_file_codeql_hygiene(py_file: Path) -> list[str]:
+    rel = py_file.relative_to(REPO_ROOT).as_posix()
+    src = py_file.read_text(encoding="utf-8")
+    lines = src.splitlines()
+    tree = ast.parse(src, filename=str(py_file))
+
+    imported_modules: dict[str, int] = {}
+    import_from_modules: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imported_modules.setdefault(alias.name, node.lineno)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            import_from_modules.setdefault(node.module, node.lineno)
+    findings: list[str] = [
+        f"{rel}:{imported_modules[mod_name]} & :{import_from_modules[mod_name]} py/import-and-import-from ({mod_name})"
+        for mod_name in sorted(set(imported_modules) & set(import_from_modules))
+    ]
+
+    if py_file.name != "__init__.py":
+        exports = _extract_module_all_exports(tree)
+        loaded_names = {
+            node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)
+        }
+        for stmt in tree.body:
+            for name, lineno in _assigned_module_level_globals(stmt):
+                if (
+                    name in exports
+                    or name == "_"
+                    or "unused" in name.lower()
+                    or name == "pytestmark"
+                    or (name.startswith("__") and name.endswith("__"))
+                ):
+                    continue
+                if name not in loaded_names:
+                    findings.append(f"{rel}:{lineno} py/unused-global-variable ({name})")
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ExceptHandler) and len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
+            end_line = getattr(node.body[0], "end_lineno", node.body[0].lineno)
+            snippet = "\n".join(lines[max(0, node.lineno - 1) : end_line])
+            if "#" not in snippet:
+                findings.append(f"{rel}:{node.lineno} py/empty-except (missing comment)")
+
+    return findings
+
+
+def test_codeql_import_and_unused_global_hygiene_across_repo() -> None:
+    """PR #179 bot gate: forbid py/import-and-import-from, py/unused-global-variable, and commentless py/empty-except."""
+    scan_roots = ("mailjet_rest", "tests", "scripts", "samples")
+    all_findings: list[str] = []
+    for root_name in scan_roots:
+        root_dir = REPO_ROOT / root_name
+        if not root_dir.is_dir():
+            continue
+        for py_file in sorted(root_dir.rglob("*.py")):
+            if "__pycache__" in py_file.parts:
+                continue
+            all_findings.extend(_scan_file_codeql_hygiene(py_file))
+
+    assert not all_findings, "CodeQL/Code Quality hygiene violations detected:\n" + "\n".join(all_findings)

@@ -5,11 +5,9 @@
 from __future__ import annotations
 
 import asyncio
-import datetime as dt
 import email.utils
 import io
 import logging
-import types
 import warnings
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -317,7 +315,7 @@ def test_errors_exact_extraction_truncation_and_defaults() -> None:
     assert extract_error_detail(resp_non_json, "gateway down") == ": gateway down"
     assert extract_error_detail(resp_non_json, "") == ""
 
-    bare_resp = types.SimpleNamespace(
+    bare_resp = SimpleNamespace(
         status_code=500,
         json=lambda: (_ for _ in ()).throw(ValueError("not json")),
     )
@@ -400,8 +398,8 @@ def test_retry_budget_ceiling_http_date_and_error_log_sanitization(caplog: pytes
     with pytest.raises(ValueError, match="max_retries"):
         Config(max_retries=21)
 
-    future_dt = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=300)
-    past_dt = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=60)
+    future_dt = datetime.now(timezone.utc) + timedelta(seconds=300)
+    past_dt = datetime.now(timezone.utc) - timedelta(seconds=60)
     assert BaseClient._compute_retry_delay(0, email.utils.format_datetime(future_dt)) == 60.0
     assert BaseClient._compute_retry_delay(0, email.utils.format_datetime(past_dt)) == 0.0
 
@@ -505,7 +503,7 @@ def test_retry_jitter_stream_pointers_and_async_retries_mutants() -> None:
     assert getattr(no_closed, "pos") == 0
 
     # run_async_with_retries negative retries & non-retryable method
-    fake_httpx2 = types.SimpleNamespace(
+    fake_httpx2 = SimpleNamespace(
         TimeoutException=type("T", (Exception,), {}),
         NetworkError=type("N", (Exception,), {}),
         RemoteProtocolError=type("R", (Exception,), {}),
@@ -593,7 +591,7 @@ def test_errors_and_retry_details_mutants(caplog: pytest.LogCaptureFixture) -> N
     class _DExc(Exception):
         pass
 
-    fake_httpx2 = types.SimpleNamespace(
+    fake_httpx2 = SimpleNamespace(
         TimeoutException=_TExc,
         NetworkError=_NExc,
         RemoteProtocolError=_RExc,
@@ -634,7 +632,7 @@ def test_errors_and_retry_details_mutants(caplog: pytest.LogCaptureFixture) -> N
             resp_429 = MagicMock(status_code=429, headers={"retry-after": "12"}, is_closed=False)
             resp_429.aclose = AsyncMock(side_effect=RuntimeError("ignore close err"))
             return resp_429
-        return types.SimpleNamespace(status_code=200, headers={})
+        return SimpleNamespace(status_code=200, headers={})
 
     async def _run_seq() -> Any:
         with patch("asyncio.sleep", AsyncMock()) as mock_sleep:
@@ -672,8 +670,8 @@ def test_errors_and_retry_details_mutants(caplog: pytest.LogCaptureFixture) -> N
     ]
 
     # When response lacks is_closed attribute, _check_async_retry_response must NOT call aclose()
-    no_closed_attr_resp = types.SimpleNamespace(status_code=429, headers={}, aclose=AsyncMock())
-    seq2 = iter([no_closed_attr_resp, types.SimpleNamespace(status_code=200)])
+    no_closed_attr_resp = SimpleNamespace(status_code=429, headers={}, aclose=AsyncMock())
+    seq2 = iter([no_closed_attr_resp, SimpleNamespace(status_code=200)])
 
     async def _send_iter() -> Any:
         return next(seq2)

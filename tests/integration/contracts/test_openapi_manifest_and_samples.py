@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import importlib
 import json
+import logging
 import os
+from contextlib import ExitStack
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import mailjet_rest
 from mailjet_rest import Client, Config
 from mailjet_rest.client import _httpx2
 from mailjet_rest.routes import DEPRECATION_ADVISORY, ROUTE_MAP
@@ -64,19 +65,23 @@ def test_samples_public_helpers_against_loopback_contract(
     monkeypatch.chdir(tmp_path)
     monkeypatch.syspath_prepend(str(REPO_ROOT))
 
-    account_settings_sample = importlib.import_module("samples.account_settings_sample")
-    batch_sample = importlib.import_module("samples.batch_sample")
-    campaign_sample = importlib.import_module("samples.campaign_sample")
-    contacts_sample = importlib.import_module("samples.contacts_sample")
-    content_api_sample = importlib.import_module("samples.content_api_sample")
-    email_template_sample = importlib.import_module("samples.email_template_sample")
-    getting_started_sample = importlib.import_module("samples.getting_started_sample")
-    messages_sample = importlib.import_module("samples.messages_sample")
-    parse_api_sample = importlib.import_module("samples.parse_api_sample")
-    segments_sample = importlib.import_module("samples.segments_sample")
-    sender_and_domain_samples = importlib.import_module("samples.sender_and_domain_samples")
-    statistic_sample = importlib.import_module("samples.statistic_sample")
-    webhooks_sample = importlib.import_module("samples.webhooks_sample")
+    with ExitStack() as stack:
+        client_logger = logging.getLogger("mailjet_rest.client")
+        stack.callback(client_logger.setLevel, client_logger.level)
+
+        account_settings_sample = importlib.import_module("samples.account_settings_sample")
+        batch_sample = importlib.import_module("samples.batch_sample")
+        campaign_sample = importlib.import_module("samples.campaign_sample")
+        contacts_sample = importlib.import_module("samples.contacts_sample")
+        content_api_sample = importlib.import_module("samples.content_api_sample")
+        email_template_sample = importlib.import_module("samples.email_template_sample")
+        getting_started_sample = importlib.import_module("samples.getting_started_sample")
+        messages_sample = importlib.import_module("samples.messages_sample")
+        parse_api_sample = importlib.import_module("samples.parse_api_sample")
+        segments_sample = importlib.import_module("samples.segments_sample")
+        sender_and_domain_samples = importlib.import_module("samples.sender_and_domain_samples")
+        statistic_sample = importlib.import_module("samples.statistic_sample")
+        webhooks_sample = importlib.import_module("samples.webhooks_sample")
 
     url: str = contract_tls_server["url"]
     ca_path: Path = contract_tls_server["ca_path"]
@@ -175,7 +180,7 @@ def test_samples_public_helpers_against_loopback_contract(
 
         monkeypatch.setenv("MJ_APIKEY_PUBLIC", "pub")
         monkeypatch.setenv("MJ_APIKEY_PRIVATE", "priv")
-        monkeypatch.setattr(mailjet_rest, "Config", _loopback_config)
+        monkeypatch.setattr("mailjet_rest.Config", _loopback_config)
 
         server.clear_recorded()
         asyncio.run(async_client_sample.main())

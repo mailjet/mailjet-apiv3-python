@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import importlib
 import io
 import ssl
 import types
@@ -13,8 +14,6 @@ from typing import Any, cast
 
 import pytest
 
-import mailjet_rest
-import mailjet_rest.client as client_mod
 from mailjet_rest import (
     ActionDeniedError,
     ApiError,
@@ -75,6 +74,8 @@ from tests.integration.local_loopback._servers import (
 
 def test_lazy_package_exports_and_version_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     """Exercise mailjet_rest.__init__ lazy exports, client module __getattr__, and version.py helpers."""
+    mailjet_rest = importlib.import_module("mailjet_rest")
+    client_mod = importlib.import_module("mailjet_rest.client")
     assert mailjet_rest.__getattr__("__version__") == mailjet_rest.__version__
     assert mailjet_rest.__getattr__("Endpoint") is Endpoint
     assert mailjet_rest.__getattr__("AsyncEndpoint") is client_mod.AsyncEndpoint

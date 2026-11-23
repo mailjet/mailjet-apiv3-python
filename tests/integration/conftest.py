@@ -13,8 +13,18 @@ import pytest
 
 
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
-MANIFEST_PATH: Path = Path(__file__).resolve().parent / "fixtures" / "openapi_operations_manifest.json"
+MANIFEST_PATH: Path = REPO_ROOT / "tests" / "integration" / "fixtures" / "openapi_operations_manifest.json"
 HTTP_METHODS: tuple[str, ...] = ("get", "post", "put", "patch", "delete")
+
+__all__ = [
+    "HTTP_METHODS",
+    "MANIFEST_PATH",
+    "REPO_ROOT",
+    "generate_loopback_tls_cert",
+    "get_live_auth",
+    "has_live_credentials",
+    "load_openapi_manifest",
+]
 
 
 def load_openapi_manifest() -> dict[str, Any]:

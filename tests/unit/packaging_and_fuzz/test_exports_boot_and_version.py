@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import json
 import subprocess
 import sys
@@ -70,7 +71,7 @@ def test_pep562_lazy_top_level_import_isolation() -> None:
 
 def test_package_lazy_exports_and_missing_attr() -> None:
     """Top-level PEP 562 exposes Client, AsyncClient, AsyncEndpoint, Config, __version__ and rejects unknown attrs."""
-    import mailjet_rest  # ruff: ignore[import-outside-top-level]
+    mailjet_rest = importlib.import_module("mailjet_rest")
 
     assert mailjet_rest.Client is Client
     assert mailjet_rest.AsyncClient is AsyncClient

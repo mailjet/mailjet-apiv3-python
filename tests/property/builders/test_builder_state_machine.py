@@ -164,9 +164,11 @@ class MessageBuilderMachine(RuleBasedStateMachine):
                 self.builder.build()
 
 
-MessageBuilderMachine.TestCase.settings = settings(
+TestMessageBuilder = pytest.mark.property_heavy(MessageBuilderMachine.TestCase)
+TestMessageBuilder.settings = settings(
     max_examples=200,
     stateful_step_count=25,
     deadline=None,
 )
-TestMessageBuilder = pytest.mark.property_heavy(MessageBuilderMachine.TestCase)
+
+__all__ = ["MessageBuilderMachine", "TestMessageBuilder"]

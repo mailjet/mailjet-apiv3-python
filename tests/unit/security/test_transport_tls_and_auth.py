@@ -7,7 +7,6 @@ import os
 import socket
 import ssl
 import sys
-import types
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -355,7 +354,7 @@ def test_secret_auth_rejects_non_latin1_with_clean_value_error() -> None:
 def test_transport_security_op_no_compression_and_timeout_tuple() -> None:
     """Preserve existing SSL options with OP_NO_COMPRESSION and map tuple timeouts for httpx2."""
     # transport_security: OP_NO_COMPRESSION preserves existing flags & coerce_httpx2_timeout tuple args
-    fake_ctx = types.SimpleNamespace(minimum_version=None, check_hostname=False, verify_mode=None, options=0xFF)
+    fake_ctx = SimpleNamespace(minimum_version=None, check_hostname=False, verify_mode=None, options=0xFF)
     fake_ctx.load_verify_locations = MagicMock()
     with patch("mailjet_rest.utils.transport_security.ssl.create_default_context", return_value=fake_ctx):
         res_ctx = _new_secure_ssl_context(None)
@@ -367,5 +366,5 @@ def test_transport_security_op_no_compression_and_timeout_tuple() -> None:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             recorded_timeouts.append((args, kwargs))
 
-    coerce_httpx2_timeout(types.SimpleNamespace(Timeout=_FakeTimeout), (2.5, 7.5))
+    coerce_httpx2_timeout(SimpleNamespace(Timeout=_FakeTimeout), (2.5, 7.5))
     assert recorded_timeouts == [((7.5,), {"connect": 2.5, "read": 7.5, "write": 7.5, "pool": 2.5})]
