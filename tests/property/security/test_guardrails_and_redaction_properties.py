@@ -22,14 +22,27 @@ _SURROGATE_BLACKLIST: tuple[Literal["Cs"]] = ("Cs",)
 
 
 @settings(max_examples=500)
-@given(url=st.text())
+@given(
+    url=st.one_of(
+        st.text(),
+        st.builds(
+            lambda scheme, host, suffix: f"{scheme}://{host}{suffix}",
+            st.sampled_from(["http", "https", "ftp"]),
+            st.sampled_from(["mailjet.com", "api.mailjet.com", "localhost", "127.0.0.1", "[::1]", "evil.com"]),
+            st.sampled_from(["", "/", "/v3/send"]),
+        ),
+    )
+)
 def test_property_ssrf_url_validator(url: str) -> None:
-    """INVARIANT: The URL validator must reject any scheme other than HTTPS/mailjet.com."""
+    """INVARIANT: Remote domains require HTTPS; plaintext HTTP is restricted strictly to loopback."""
     with contextlib.suppress(ValueError):
         SecurityGuard.validate_config_url(url, "mailjet.com")
         parsed = urlparse(url)
-        assert parsed.scheme == "https"
-        assert parsed.hostname == "mailjet.com" or str(parsed.hostname).endswith(".mailjet.com")
+        if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+            assert parsed.scheme in {"http", "https"}
+        else:
+            assert parsed.scheme == "https"
+            assert parsed.hostname == "mailjet.com" or str(parsed.hostname).endswith(".mailjet.com")
 
 
 @settings(max_examples=500)

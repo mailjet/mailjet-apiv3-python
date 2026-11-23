@@ -9,6 +9,7 @@ import time
 
 import pytest
 
+from mailjet_rest.client import Client
 from mailjet_rest.config import Config
 from mailjet_rest.utils.guardrails import SecurityGuard
 from mailjet_rest.utils.transport_security import resolve_tls_verify
@@ -123,3 +124,42 @@ def test_validate_target_url_rejects_fragment_allows_query() -> None:
             "https://api.mailjet.com/v3/REST/contact#frag",
             base_api_url="https://api.mailjet.com/",
         )
+
+
+@pytest.mark.parametrize(
+    "cleartext_remote_url",
+    [
+        "http://mailjet.com",
+        "http://api.mailjet.com",
+        "http://api.mailjet.com/",
+        "http://api.us.mailjet.com/v3.1/send",
+        "http://API.MAILJET.COM/v3/REST/contact",
+    ],
+)
+def test_http_scheme_rejected_for_mailjet_domains_cwe319(cleartext_remote_url: str) -> None:
+    """CWE-319: Unencrypted 'http://' must be rejected for mailjet.com and *.mailjet.com."""
+    with pytest.raises(ValueError, match="CWE-319") as exc_cfg:
+        Config(api_url=cleartext_remote_url)
+    assert "CWE-319" in str(exc_cfg.value)
+    with pytest.raises(ValueError, match="CWE-319"):
+        SecurityGuard.validate_target_url(cleartext_remote_url, base_api_url="https://api.mailjet.com/")
+    with Client(auth=("pub", "priv")) as client, pytest.raises(ValueError, match="CWE-319"):
+        client.api_call(auth=("pub", "priv"), method="GET", url=cleartext_remote_url)
+
+
+@pytest.mark.parametrize(
+    "loopback_url",
+    [
+        "http://localhost:8080/",
+        "http://127.0.0.1:8080/",
+        "http://[::1]:8080/",
+        "https://localhost:8443/",
+        "https://127.0.0.1:8443/",
+        "https://[::1]:8443/",
+    ],
+)
+def test_http_and_https_allowed_for_loopback_hosts(loopback_url: str) -> None:
+    """Loopback hosts ('localhost', '127.0.0.1', '::1') remain permitted over both http and https."""
+    cfg = Config(api_url=loopback_url)
+    assert cfg.api_url == loopback_url
+    SecurityGuard.validate_target_url(f"{loopback_url}v3/REST/contact", base_api_url=loopback_url)

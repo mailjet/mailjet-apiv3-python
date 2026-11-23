@@ -53,8 +53,9 @@ from mailjet_rest.utils.telemetry import record_debug_telemetry
 
 
 def test_config_api_url_validation_scheme() -> None:
-    """Verify that insecure URLs are immediately rejected (CWE-319)."""
-    # Changed from http:// to ftp:// because http:// is now legally allowed for localhost CI/CD
+    """Verify that insecure or unsupported URL schemes are immediately rejected (CWE-319 / CWE-918)."""
+    with pytest.raises(ValueError, match="Security Alert \\(CWE-319\\): Unencrypted 'http://'"):
+        Config(api_url="http://api.mailjet.com")
     with pytest.raises(ValueError, match="Security Alert \\(CWE-918\\): Invalid scheme 'ftp'"):
         Config(api_url="ftp://api.mailjet.com")
 

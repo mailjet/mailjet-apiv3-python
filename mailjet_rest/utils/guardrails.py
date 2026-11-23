@@ -309,6 +309,9 @@ class RedactingFilter(logging.Filter):
         return True
 
 
+_LOOPBACK_HOSTS: Final[frozenset[str]] = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
 def _validate_url_hostname(parsed: Any, allowed_root_domain: str) -> None:
     hostname = parsed.hostname or ""
     if "%" in hostname:
@@ -318,19 +321,22 @@ def _validate_url_hostname(parsed: Any, allowed_root_domain: str) -> None:
         )
         raise ValueError(msg)
 
-    allowed_exact_hosts = frozenset(
-        {
-            allowed_root_domain,
-            f"api.{allowed_root_domain}",
-            "localhost",
-            "127.0.0.1",
-            "::1",
-        }
-    )
+    allowed_exact_hosts = _LOOPBACK_HOSTS | {
+        allowed_root_domain,
+        f"api.{allowed_root_domain}",
+    }
     if hostname not in allowed_exact_hosts and not hostname.endswith(f".{allowed_root_domain}"):
         msg = (
             f"Security Alert (CWE-918): Hostname '{hostname}' is not permitted. "
             f"Must be a '{allowed_root_domain}' domain or a local loopback for testing."
+        )
+        raise ValueError(msg)
+
+    if parsed.scheme == "http" and hostname not in _LOOPBACK_HOSTS:
+        msg = (
+            f"Security Alert (CWE-319): Unencrypted 'http://' scheme is forbidden for '{hostname}'. "
+            "Use 'https://' for Mailjet API endpoints; 'http://' is permitted only for local loopback "
+            "('localhost', '127.0.0.1', '::1')."
         )
         raise ValueError(msg)
 

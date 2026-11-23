@@ -73,6 +73,8 @@ This library `mailjet-rest` officially supports the following Python versions:
 
 - Python >= 3.10 (3.10 - 3.15)
 
+> **Upcoming Python 3.10 End-of-Support Notice:** Because Python 3.10 reaches upstream End-of-Life (EOL) on October 31, 2026, `v1.10.x` is the final minor release series with `requires-python = ">=3.10"`. Support for Python 3.10 will be dropped in **`v1.11.0`** (`requires-python = ">=3.11"`).
+
 ## Requirements
 
 - **Build backend:** `setuptools`, `wheel`, `setuptools-scm`

@@ -258,7 +258,9 @@ class TestSecurityGuard:
         SecurityGuard.validate_config_url("https://api.mailjet.com/v3", "mailjet.com")
 
     def test_validate_config_url_http(self) -> None:
-        """Coverage: Invalid scheme is blocked (CWE-918)."""
+        """Coverage: Unencrypted HTTP to remote domain and invalid schemes are blocked (CWE-319 / CWE-918)."""
+        with pytest.raises(ValueError, match="CWE-319"):
+            SecurityGuard.validate_config_url("http://api.mailjet.com")
         with pytest.raises(ValueError, match="Invalid scheme 'ftp'"):
             SecurityGuard.validate_config_url("ftp://api.mailjet.com")
 
