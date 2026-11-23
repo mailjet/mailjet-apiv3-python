@@ -94,7 +94,7 @@ linting = [
 ]
 
 tests = [
-    "coverage>=7.17.3",
+    "coverage>=7.16.2",
     "httpx2>=2.0.0",
     "hypothesis",
     "pyfakefs",

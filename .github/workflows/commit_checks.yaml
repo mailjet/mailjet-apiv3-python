@@ -55,7 +55,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb # v4.1.0
         with:
           activate-environment: mailjet
-          auto-activate-base: false
+          auto-activate: false
           python-version: ${{ matrix.python-version }}
           channels: defaults
           show-channel-urls: true
@@ -86,5 +86,5 @@ jobs:
       - name: Upload Coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
