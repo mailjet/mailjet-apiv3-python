@@ -9,6 +9,8 @@ ______________________________________________________________________
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-23
+
 ### Added
 
 - **Asynchronous Client (`mailjet-rest[async]`):** Added `AsyncClient` and `AsyncEndpoint` backed by `httpx2>=2.0.0` (with HTTP/2 support, connection pool self-healing on `.is_closed`, isolated ephemeral mTLS/proxy clients, and non-blocking `asyncio.sleep` full-jitter retries).
@@ -57,12 +59,25 @@ ______________________________________________________________________
 
 ### Pull Requests Merged
 
+- PR #184: Release 1.10.0.
+- PR #183: build(deps): bump oss-fuzz-base/base-builder-python from `6b2b3a7` to `21f6fab` in /.clusterfuzzlite.
+- PR #181: build(deps): bump google/osv-scanner-action/osv-scanner-action from 2.7.0 to 2.7.1.
+- PR #179: feat(async): add AsyncClient and AsyncEndpoint backed by httpx2.
 - PR #177: feat(typing): add strict .pyi stubs, stateful Hypothesis rules, and mutation gates.
 - PR #176: fix(builders): harden stream pagination, RFC 8058 builders, and PEP 440 semver.
 - PR #175: perf(core): add lazy imports, `__slots__`, TLS context caching, and lazy sessions.
 - PR #174: fix(security): harden TLS verification, streaming, redaction, and routing guards.
 - PR #173: fix(ci): harden workflows, fuzz harness, and dev scripts for v1.9.2.
-- PR #162–#170: build(deps): bump GitHub Actions (`upload-artifact`, `codeql-action`, `osv-scanner-action`, `ossf/scorecard-action`, `setup-python`, `gh-action-pypi-publish`).
+- PR #171: build(deps): bump github/codeql-action/analyze from 4.39.1 to 4.39.3.
+- PR #170: build(deps): bump github/codeql-action/upload-sarif from 4.38.3 to 4.39.1.
+- PR #169: build(deps): bump github/codeql-action/analyze from 4.38.3 to 4.39.1.
+- PR #168: build(deps): bump pypa/gh-action-pypi-publish from 1.14.2 to 1.14.3.
+- PR #167: build(deps): bump actions/setup-python from 7.0.0 to 7.1.0.
+- PR #166: build(deps): bump ossf/scorecard-action from 2.4.4 to 2.5.0.
+- PR #165: build(deps): bump github/codeql-action/upload-sarif from 4.38.2 to 4.38.3.
+- PR #164: build(deps): bump google/osv-scanner-action/osv-scanner-action from 2.6.0 to 2.7.0.
+- PR #163: build(deps): bump github/codeql-action/analyze from 4.38.2 to 4.38.3.
+- PR #162: build(deps): bump actions/upload-artifact from 7.0.1 to 7.0.2.
 
 ## [1.9.1] - 2026-10-08
 

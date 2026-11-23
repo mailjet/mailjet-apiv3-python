@@ -4,10 +4,10 @@
 
 We currently provide security updates for the active major version of the Mailjet Python Wrapper.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.9.x   | :white_check_mark: |
-| < 1.9.1 | :x:                |
+| Version  | Supported          |
+| -------- | ------------------ |
+| 1.10.x   | :white_check_mark: |
+| < 1.10.0 | :x:                |
 
 # Vulnerability Disclosure
 
