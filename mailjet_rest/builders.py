@@ -24,6 +24,7 @@ from mailjet_rest.utils.guardrails import SecurityGuard
 
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
     from mailjet_rest.types import SendV31Message, SendV31Payload, TrackingMode
@@ -31,8 +32,42 @@ if TYPE_CHECKING:
 
 _CRLF_CONTROL_RE: Final = re.compile(r"[\r\n\x00]")
 _SAFE_CID_RE: Final = re.compile(r"^[A-Za-z0-9._@-]{1,255}$")
+_CID_PREFIX_RE: Final = re.compile(r"cid:", re.IGNORECASE)
 _CID_REF_RE: Final = re.compile(r"""cid:([^\s"'<>]+)""", re.IGNORECASE)
 _TRACKING_MODES: Final[frozenset[str]] = frozenset({"enabled", "disabled"})
+
+
+def _clone_message_payload(payload: Mapping[str, Any]) -> SendV31Message:
+    cloned: dict[str, Any] = dict(payload)
+    for list_key in ("To", "Cc", "Bcc"):
+        if list_key in cloned:
+            cloned[list_key] = [entry.copy() for entry in cloned[list_key]]
+    for map_key in ("From", "ReplyTo", "Headers"):
+        if map_key in cloned and isinstance(cloned[map_key], dict):
+            cloned[map_key] = cloned[map_key].copy()
+    for deep_key in ("Variables", "Attachments", "InlinedAttachments"):
+        if deep_key in cloned:
+            cloned[deep_key] = copy.deepcopy(cloned[deep_key])
+    return cloned  # type: ignore[return-value]
+
+
+def _estimate_json_char_upper_bound(node: Any) -> int:
+    stack: list[Any] = [node]
+    total = 0
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            total += len(item) + 2
+        elif isinstance(item, dict):
+            total += 2 + len(item) * 2
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple)):
+            total += 2 + len(item)
+            stack.extend(item)
+        else:
+            total += 24
+    return total
 
 
 def _assert_no_crlf(value: object, field_name: str) -> str:
@@ -69,6 +104,47 @@ class ChunkedStreamer:
     __slots__ = ()
 
     @staticmethod
+    def _assert_regular_bounded_fd(fd: int, validated: Path, max_bytes: int) -> None:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            msg = f"Security Alert (CWE-400): Path is not a regular file: {validated}"
+            raise ValueError(msg)
+        if st.st_size > max_bytes:
+            msg = f"Security Violation: File '{validated.name}' exceeds safe threshold."
+            raise ValueError(msg)
+
+    @staticmethod
+    def _open_verified_fd(validated: Path, max_bytes: int) -> int:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            fd = os.open(os.fspath(validated), flags)
+        except OSError as e:
+            if e.errno == errno.ELOOP:
+                msg = "Security Violation (CWE-22): Symlinks are strictly forbidden for attachments."
+                raise ValueError(msg) from e
+            raise
+
+        try:
+            ChunkedStreamer._assert_regular_bounded_fd(fd, validated, max_bytes)
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
+
+    @staticmethod
+    def _read_base64_chunks(fd: int, filename: str, step: int, max_bytes: int) -> str:
+        encoded_chunks: list[str] = []
+        total_read = 0
+        with os.fdopen(fd, "rb") as f:
+            while chunk := f.read(step):
+                total_read += len(chunk)
+                if total_read > max_bytes:
+                    msg = f"Security Violation: File '{filename}' exceeds safe threshold."
+                    raise ValueError(msg)
+                encoded_chunks.append(base64.b64encode(chunk).decode("ascii"))
+        return "".join(encoded_chunks)
+
+    @staticmethod
     def encode_file(
         path: str | Path,
         chunk_size: int = 512 * 1024,
@@ -93,40 +169,8 @@ class ChunkedStreamer:
 
         validated = SecurityGuard.validate_attachment_path(path, safe_base_dir=safe_base_dir)
         step = max(3, (chunk_size // 3) * 3)
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-
-        try:
-            fd = os.open(os.fspath(validated), flags)
-        except OSError as e:
-            if e.errno == errno.ELOOP:
-                msg = "Security Violation (CWE-22): Symlinks are strictly forbidden for attachments."
-                raise ValueError(msg) from e
-            raise
-
-        fd_owned = True
-        try:
-            st = os.fstat(fd)
-            if not stat.S_ISREG(st.st_mode):
-                msg = f"Security Alert (CWE-400): Path is not a regular file: {validated}"
-                raise ValueError(msg)
-            if st.st_size > max_bytes:
-                msg = f"Security Violation: File '{validated.name}' exceeds safe threshold."
-                raise ValueError(msg)
-
-            encoded_chunks: list[str] = []
-            total_read = 0
-            with os.fdopen(fd, "rb") as f:
-                fd_owned = False
-                while chunk := f.read(step):
-                    total_read += len(chunk)
-                    if total_read > max_bytes:
-                        msg = f"Security Violation: File '{validated.name}' exceeds safe threshold."
-                        raise ValueError(msg)
-                    encoded_chunks.append(base64.b64encode(chunk).decode("ascii"))
-            return "".join(encoded_chunks)
-        finally:
-            if fd_owned:
-                os.close(fd)
+        fd = ChunkedStreamer._open_verified_fd(validated, max_bytes)
+        return ChunkedStreamer._read_base64_chunks(fd, validated.name, step, max_bytes)
 
 
 class _BaseContentBuilder:
@@ -143,6 +187,42 @@ class _BaseContentBuilder:
     def __init__(self) -> None:
         """Initialize the base builder instance and an empty payload."""
         self._payload: dict[str, Any] = {}
+
+    def _assign_html_content(self, field_key: str, html: str | None) -> None:
+        if not html:
+            return
+        if self.ENABLE_SPAM_GUARD:
+            analysis = SecurityGuard.analyze_html_safety(html)
+            if not analysis["is_safe"]:
+                warnings.warn(f"Deliverability Warning: {analysis['issues']}", UserWarning, stacklevel=3)
+        self._payload[field_key] = html
+
+    @staticmethod
+    def _prepare_attachment_record(
+        file_path: str | Path,
+        content_type: str | None,
+        base_dir: Path | str | None,
+        *,
+        inline: bool = False,
+        content_id: str | None = None,
+    ) -> dict[str, str]:
+        target = SecurityGuard.validate_attachment_path(file_path, base_dir)
+        SecurityGuard.check_file_size(target)
+        clean_cid = _sanitize_cid(content_id if content_id is not None else target.name) if inline else None
+        if content_type is not None:
+            ctype = content_type
+        else:
+            import mimetypes  # ruff: ignore[import-outside-top-level]
+
+            ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
+        record: dict[str, str] = {
+            "ContentType": ctype,
+            "Filename": target.name,
+            "Base64Content": ChunkedStreamer.encode_file(target, safe_base_dir=base_dir),
+        }
+        if clean_cid is not None:
+            record["ContentID"] = clean_cid
+        return record
 
     def set_headers(self, headers: dict[str, str]) -> Self:
         """Sets the Headers JSON object structure crossing the ingress gate.
@@ -190,16 +270,18 @@ class MessageBuilder(_BaseContentBuilder):
         self._payload["From"] = self._build_recipient(email, name, "sender")
         return self
 
+    def _append_recipient(self, list_key: str, email: str, name: str | None, field_name: str) -> Self:
+        recipients = self._payload.setdefault(list_key, [])
+        recipients.append(self._build_recipient(email, name, field_name))
+        return self
+
     def add_recipient(self, email: str, name: str | None = None) -> Self:
         """Add a recipient.
 
         Returns:
             Self: The builder instance for method chaining.
         """
-        if "To" not in self._payload:
-            self._payload["To"] = []
-        self._payload["To"].append(self._build_recipient(email, name, "recipient"))
-        return self
+        return self._append_recipient("To", email, name, "recipient")
 
     def add_cc(self, email: str, name: str | None = None) -> Self:
         """Add a CC recipient.
@@ -207,10 +289,7 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        if "Cc" not in self._payload:
-            self._payload["Cc"] = []
-        self._payload["Cc"].append(self._build_recipient(email, name, "cc"))
-        return self
+        return self._append_recipient("Cc", email, name, "cc")
 
     def add_bcc(self, email: str, name: str | None = None) -> Self:
         """Add a BCC recipient.
@@ -218,10 +297,7 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        if "Bcc" not in self._payload:
-            self._payload["Bcc"] = []
-        self._payload["Bcc"].append(self._build_recipient(email, name, "bcc"))
-        return self
+        return self._append_recipient("Bcc", email, name, "bcc")
 
     def set_reply_to(self, email: str, name: str | None = None) -> Self:
         """Set the Reply-To address.
@@ -329,14 +405,7 @@ class MessageBuilder(_BaseContentBuilder):
         """
         if text:
             self._payload["TextPart"] = text
-
-        if html:
-            if self.ENABLE_SPAM_GUARD:
-                analysis = SecurityGuard.analyze_html_safety(html)
-                if not analysis["is_safe"]:
-                    warnings.warn(f"Deliverability Warning: {analysis['issues']}", UserWarning, stacklevel=2)
-            self._payload["HTMLPart"] = html
-
+        self._assign_html_content("HTMLPart", html)
         return self
 
     def set_template(self, template_id: int, language_active: bool = True) -> Self:
@@ -364,6 +433,22 @@ class MessageBuilder(_BaseContentBuilder):
         self._payload["Variables"] = copy.deepcopy(variables)
         return self
 
+    def _add_attachment_entry(
+        self,
+        list_key: str,
+        file_path: str | Path,
+        content_type: str | None,
+        base_dir: Path | str | None,
+        *,
+        inline: bool = False,
+        content_id: str | None = None,
+    ) -> Self:
+        record = self._prepare_attachment_record(
+            file_path, content_type, base_dir, inline=inline, content_id=content_id
+        )
+        self._payload.setdefault(list_key, []).append(record)
+        return self
+
     def attach_file(
         self, file_path: str | Path, content_type: str | None = None, base_dir: Path | str | None = None
     ) -> Self:
@@ -372,27 +457,7 @@ class MessageBuilder(_BaseContentBuilder):
         Returns:
             Self: The builder instance for method chaining.
         """
-        target = SecurityGuard.validate_attachment_path(file_path, base_dir)
-        SecurityGuard.check_file_size(target)
-
-        if content_type is not None:
-            ctype = content_type
-        else:
-            import mimetypes  # ruff: ignore[import-outside-top-level]
-
-            ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
-
-        if "Attachments" not in self._payload:
-            self._payload["Attachments"] = []
-
-        self._payload["Attachments"].append(
-            {
-                "ContentType": ctype,
-                "Filename": target.name,
-                "Base64Content": ChunkedStreamer.encode_file(target, safe_base_dir=base_dir),
-            }
-        )
-        return self
+        return self._add_attachment_entry("Attachments", file_path, content_type, base_dir)
 
     def attach_inline(
         self,
@@ -407,28 +472,10 @@ class MessageBuilder(_BaseContentBuilder):
             Self: The builder instance for method chaining.
         """
         target = SecurityGuard.validate_attachment_path(file_path, base_dir)
-        SecurityGuard.check_file_size(target)
-        clean_cid = _sanitize_cid(content_id if content_id is not None else target.name)
-
-        if content_type is not None:
-            ctype = content_type
-        else:
-            import mimetypes  # ruff: ignore[import-outside-top-level]
-
-            ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
-
-        if "InlinedAttachments" not in self._payload:
-            self._payload["InlinedAttachments"] = []
-
-        self._payload["InlinedAttachments"].append(
-            {
-                "ContentType": ctype,
-                "Filename": target.name,
-                "ContentID": clean_cid,
-                "Base64Content": ChunkedStreamer.encode_file(target, safe_base_dir=base_dir),
-            }
+        cid_val = content_id if content_id is not None else target.name
+        return self._add_attachment_entry(
+            "InlinedAttachments", target, content_type, base_dir, inline=True, content_id=cid_val
         )
-        return self
 
     def _warn_html_deliverability(self, html_part: str, html_bytes_len: int) -> None:
         if html_bytes_len > self.GMAIL_CLIP_BYTES:
@@ -438,64 +485,69 @@ class MessageBuilder(_BaseContentBuilder):
                 stacklevel=3,
             )
 
-        cid_refs = set(_CID_REF_RE.findall(html_part))
-        if cid_refs:
-            attached_cids = {
-                str(item["ContentID"])
-                for item in self._payload.get("InlinedAttachments", ())
-                if isinstance(item, dict) and item.get("ContentID") is not None
-            }
-            missing = sorted(cid_refs - attached_cids)
-            if missing:
-                warnings.warn(
-                    f"Inline CID references missing matching InlinedAttachments ContentID: {missing}",
-                    UserWarning,
-                    stacklevel=3,
-                )
+        if "cid:" in html_part or (":" in html_part and _CID_PREFIX_RE.search(html_part) is not None):
+            cid_refs = set(_CID_REF_RE.findall(html_part))
+            if cid_refs:
+                attached_cids = {
+                    str(item["ContentID"])
+                    for item in self._payload.get("InlinedAttachments", ())
+                    if isinstance(item, dict) and item.get("ContentID") is not None
+                }
+                missing = sorted(cid_refs - attached_cids)
+                if missing:
+                    warnings.warn(
+                        f"Inline CID references missing matching InlinedAttachments ContentID: {missing}",
+                        UserWarning,
+                        stacklevel=3,
+                    )
+
+    def _validate_required_fields(self) -> None:
+        if "From" not in self._payload:
+            msg = "Message validation failed: Sender (From) is required."
+            raise ValueError(msg)
+        if not self._payload.get("To") and not self._payload.get("Cc") and not self._payload.get("Bcc"):
+            msg = "Message validation failed: At least one recipient (To, Cc, or Bcc) is required."
+            raise ValueError(msg)
+        if not any(k in self._payload for k in ("TextPart", "HTMLPart", "TemplateID")):
+            msg = "Message validation failed: TextPart, HTMLPart, or TemplateID is required."
+            raise ValueError(msg)
+
+    def _validate_html_and_text_sizes(self) -> tuple[str | None, int]:
+        html_part = self._payload.get("HTMLPart")
+        html_bytes_len = 0
+        if isinstance(html_part, str) and len(html_part) > self.GMAIL_CLIP_BYTES // 4:
+            html_bytes_len = len(html_part.encode("utf-8", errors="ignore"))
+            if html_bytes_len > self.MAX_PART_SIZE:
+                msg = "Security Violation: HTMLPart exceeds 5MB safe limit."
+                raise ValueError(msg)
+
+        text_part = self._payload.get("TextPart")
+        if (
+            isinstance(text_part, str)
+            and len(text_part) > self.MAX_PART_SIZE // 4
+            and len(text_part.encode("utf-8", errors="ignore")) > self.MAX_PART_SIZE
+        ):
+            msg = "Security Violation: TextPart exceeds 5MB safe limit."
+            raise ValueError(msg)
+        return html_part if isinstance(html_part, str) else None, html_bytes_len
+
+    def _validate_part_sizes(self) -> tuple[str | None, int]:
+        if "Variables" in self._payload and len(json.dumps(self._payload["Variables"], default=str)) > 1024 * 1024:
+            msg = "Security Violation: Variables payload too large (exceeds 1MB)."
+            raise ValueError(msg)
+        return self._validate_html_and_text_sizes()
 
     def build(self) -> SendV31Message:
         """Validate and return the message payload.
 
         Returns:
             SendV31Message: The validated dictionary matching the Mailjet Send V3.1 JSON schema.
-
-        Raises:
-            ValueError: If structural validation (like missing Sender) fails.
         """
-        if "From" not in self._payload:
-            msg = "Message validation failed: Sender (From) is required."
-            raise ValueError(msg)
-
-        if not self._payload.get("To") and not self._payload.get("Cc") and not self._payload.get("Bcc"):
-            msg = "Message validation failed: At least one recipient (To, Cc, or Bcc) is required."
-            raise ValueError(msg)
-
-        if not any(k in self._payload for k in ("TextPart", "HTMLPart", "TemplateID")):
-            msg = "Message validation failed: TextPart, HTMLPart, or TemplateID is required."
-            raise ValueError(msg)
-
-        # OOM Guards
-        # Use default=str to prevent crash if variables contain non-serializable objects (like datetime or UUID)
-        if "Variables" in self._payload and len(json.dumps(self._payload["Variables"], default=str)) > 1024 * 1024:
-            msg = "Security Violation: Variables payload too large (exceeds 1MB)."
-            raise ValueError(msg)
-
-        # Apply strict payload size limits to major content vectors
-        html_part = self._payload.get("HTMLPart")
-        html_bytes_len = len(html_part.encode("utf-8", errors="ignore")) if isinstance(html_part, str) else 0
-        if html_bytes_len > self.MAX_PART_SIZE:
-            msg = "Security Violation: HTMLPart exceeds 5MB safe limit."
-            raise ValueError(msg)
-
-        text_part = self._payload.get("TextPart")
-        if isinstance(text_part, str) and len(text_part.encode("utf-8", errors="ignore")) > self.MAX_PART_SIZE:
-            msg = "Security Violation: TextPart exceeds 5MB safe limit."
-            raise ValueError(msg)
-
-        if isinstance(html_part, str):
+        self._validate_required_fields()
+        html_part, html_bytes_len = self._validate_part_sizes()
+        if html_part is not None:
             self._warn_html_deliverability(html_part, html_bytes_len)
-
-        return copy.deepcopy(self._payload)  # type: ignore[return-value]
+        return _clone_message_payload(self._payload)
 
 
 class SendPayloadBuilder:
@@ -570,7 +622,7 @@ class SendPayloadBuilder:
             msg = f"Payload validation failed: Send v3.1 allows at most {self.MAX_MESSAGES} messages per request."
             raise ValueError(msg)
 
-        payload: dict[str, Any] = {"Messages": copy.deepcopy(self._messages)}
+        payload: dict[str, Any] = {"Messages": [_clone_message_payload(m) for m in self._messages]}
 
         if self._sandbox:
             payload["SandboxMode"] = True
@@ -578,7 +630,10 @@ class SendPayloadBuilder:
         if self._globals is not None:
             payload["Globals"] = copy.deepcopy(self._globals)
 
-        if len(json.dumps(payload, default=str).encode("utf-8")) > self.MAX_TOTAL_BYTES:
+        if (
+            _estimate_json_char_upper_bound(payload) > self.MAX_TOTAL_BYTES // 6
+            and len(json.dumps(payload, default=str).encode("utf-8")) > self.MAX_TOTAL_BYTES
+        ):
             msg = "Payload validation failed: Batch payload exceeds 15MB limit."
             raise ValueError(msg)
 
@@ -625,17 +680,9 @@ class TemplateContentBuilder(_BaseContentBuilder):
         """
         if text:
             self._payload["Text-part"] = text
-
-        if html:
-            if self.ENABLE_SPAM_GUARD:
-                analysis = SecurityGuard.analyze_html_safety(html)
-                if not analysis["is_safe"]:
-                    warnings.warn(f"Deliverability Warning: {analysis['issues']}", UserWarning, stacklevel=2)
-            self._payload["Html-part"] = html
-
+        self._assign_html_content("Html-part", html)
         if mjml:
             self._payload["MJMLContent"] = mjml
-
         return self
 
     def build(self) -> dict[str, Any]:

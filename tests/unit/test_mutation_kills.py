@@ -255,6 +255,7 @@ def test_config_validation_exact_messages_and_minimum_bounds() -> None:
         Config(pool_maxsize=0)
     with pytest.raises(ValueError, match=r"^max_retries must be an integer >= 0, got -1\.$"):
         Config(max_retries=-1)
+
     class _CustomDomainConfig(Config):
         ALLOWED_ROOT_DOMAIN = "custom.example"
 
@@ -413,7 +414,9 @@ def test_endpoint_retry_routing_and_transport_security_mutants() -> None:
 
     # Endpoint.patch exact forwarding including ensure_ascii & data_encoding
     with patch.object(Endpoint, "__call__", return_value=MagicMock()) as mock_ep_call:
-        ep.patch(id=3, data={"Name": "N"}, action_id="act", headers={"X-P": "1"}, ensure_ascii=True, data_encoding="latin-1")
+        ep.patch(
+            id=3, data={"Name": "N"}, action_id="act", headers={"X-P": "1"}, ensure_ascii=True, data_encoding="latin-1"
+        )
     assert mock_ep_call.call_args.kwargs == {
         "method": "PATCH",
         "id": 3,
@@ -437,8 +440,10 @@ def test_endpoint_retry_routing_and_transport_security_mutants() -> None:
 
     # Retry: raise_on_status=False, zero backoff skips SystemRandom.uniform, stream reset depth 4 vs 5, OSError/ValueError
     assert DEFAULT_RETRY_STRATEGY.raise_on_status is False
-    jr0 = JitterRetry(total=3, backoff_factor=0.0).increment(method="GET", url="https://api.mailjet.com").increment(
-        method="GET", url="https://api.mailjet.com"
+    jr0 = (
+        JitterRetry(total=3, backoff_factor=0.0)
+        .increment(method="GET", url="https://api.mailjet.com")
+        .increment(method="GET", url="https://api.mailjet.com")
     )
     with patch("mailjet_rest.utils.retry.secrets.SystemRandom.uniform") as mock_uni:
         assert jr0.get_backoff_time() == 0

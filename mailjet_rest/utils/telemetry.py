@@ -19,6 +19,14 @@ if TYPE_CHECKING:
 __all__ = ["extract_telemetry", "log_api_response", "record_debug_telemetry"]
 
 
+def _select_trace_mapping(data: Any) -> Mapping[str, Any] | None:
+    if not isinstance(data, (Mapping, list)):
+        return None
+    messages = data.get("Messages", [{}]) if isinstance(data, Mapping) else data
+    target = messages[0] if isinstance(messages, list) and messages else data
+    return target if isinstance(target, Mapping) else None
+
+
 def extract_telemetry(data: Any, _headers: HeadersMapping | None = None) -> tuple[str, dict[str, str]]:
     """Extract sanitized tracing identifiers for safe logging and structured telemetry.
 
@@ -28,16 +36,15 @@ def extract_telemetry(data: Any, _headers: HeadersMapping | None = None) -> tupl
     trace_ctx: list[str] = []
     structured_data: dict[str, str] = {}
     with suppress(Exception):
-        if isinstance(data, (Mapping, list)):
-            messages = data.get("Messages", [{}]) if isinstance(data, Mapping) else data
-            target_dict = messages[0] if isinstance(messages, list) and messages else data
-
-            if isinstance(target_dict, Mapping):
-                for field in _ALLOWED_TRACE_FIELDS:
-                    if val := target_dict.get(field) or (isinstance(data, Mapping) and data.get(field)):
-                        clean_val = SecurityGuard.sanitize_log_trace(val)
-                        trace_ctx.append(f"{field}={clean_val}")
-                        structured_data[f"mailjet.{field.lower()}"] = clean_val
+        target_dict = _select_trace_mapping(data)
+        if target_dict is not None:
+            parent_map = data if isinstance(data, Mapping) else None
+            for field in _ALLOWED_TRACE_FIELDS:
+                val = target_dict.get(field) or (parent_map.get(field) if parent_map is not None else None)
+                if val:
+                    clean_val = SecurityGuard.sanitize_log_trace(val)
+                    trace_ctx.append(f"{field}={clean_val}")
+                    structured_data[f"mailjet.{field.lower()}"] = clean_val
 
     return f" | Trace: [{' '.join(trace_ctx)}]" if trace_ctx else "", structured_data
 

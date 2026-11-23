@@ -389,7 +389,10 @@ class TestSecurityGuard:
             SecurityGuard.validate_timeout((1.0, 2.0, 3.0))  # type: ignore[arg-type]
 
         # Non-numeric tuple components
-        with pytest.raises(TypeError, match="Timeout must be a numeric float or int|Timeout tuple elements must be valid numeric values"):
+        with pytest.raises(
+            TypeError,
+            match="Timeout must be a numeric float or int|Timeout tuple elements must be valid numeric values",
+        ):
             SecurityGuard.validate_timeout((1.0, "invalid"))  # type: ignore[arg-type]
 
     # -------------------------------------------------------------------------

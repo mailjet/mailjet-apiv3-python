@@ -130,6 +130,25 @@ def resolve_registry_route(
     return f"{base_url}/{version}/{path}", id_val, action_id
 
 
+def _resolve_csv_data_route(
+    name_lower: str,
+    action_parts: list[str],
+    base_url: str,
+    version: str,
+    id_val: ResourceId | None,
+    action_id: ResourceId | None,
+) -> tuple[str, ResourceId | None, ResourceId | None]:
+    safe_part = SecurityGuard.sanitize_segment(action_parts[0])
+    url = f"{base_url}/{version}/DATA/{safe_part}"
+    if id_val is not None:
+        suffix = "CSVData/text:plain" if name_lower.endswith("_csvdata") else "CSVError/text:csv"
+        url += f"/{SecurityGuard.sanitize_segment(id_val)}/{suffix}"
+        id_val = None
+    if action_id is not None:
+        action_id = SecurityGuard.sanitize_segment(action_id)
+    return url, id_val, action_id
+
+
 def resolve_dynamic_route(
     name_lower: str,
     resource_lower: str,
@@ -148,30 +167,19 @@ def resolve_dynamic_route(
         return f"{base_url}/{version}/send", id_val, action_id
 
     if name_lower.endswith(("_csvdata", "_csverror")):
-        safe_part = SecurityGuard.sanitize_segment(action_parts[0])
-        url = f"{base_url}/{version}/DATA/{safe_part}"
-        if id_val is not None:
-            suffix = "CSVData/text:plain" if name_lower.endswith("_csvdata") else "CSVError/text:csv"
-            url += f"/{SecurityGuard.sanitize_segment(id_val)}/{suffix}"
-            id_val = None
-        if action_id is not None:
-            action_id = SecurityGuard.sanitize_segment(action_id)
-        return url, id_val, action_id
+        return _resolve_csv_data_route(name_lower, action_parts, base_url, version, id_val, action_id)
 
     if name_lower.startswith("data_"):
         safe_path = "/".join(SecurityGuard.sanitize_segment(p) for p in action_parts[1:])
         url = f"{base_url}/{version}/data/{safe_path}"
-        if action_id is not None:
-            action_id = SecurityGuard.sanitize_segment(action_id)
-        return url, id_val, action_id
+        return url, id_val, SecurityGuard.sanitize_segment(action_id) if action_id is not None else None
 
     safe_resource = SecurityGuard.sanitize_segment(resource_lower)
     url = f"{base_url}/{version}/REST/{safe_resource}"
     if len(action_parts) > 1:
         safe_action = "/".join(SecurityGuard.sanitize_segment(p) for p in action_parts[1:])
         if id_val is None:
-            id_val = action_id
-            action_id = safe_action
+            id_val, action_id = action_id, safe_action
         elif action_id is not None:
             action_id = f"{safe_action}/{SecurityGuard.sanitize_segment(action_id)}"
         else:
@@ -318,6 +326,12 @@ def normalize_stream_filters(filters: QueryFilters | None, chunk_size: int) -> t
     return current_filters, current_offset
 
 
+def _require_valid_int(value: Any, err_msg: str, *, allow_zero: bool = False) -> None:
+    min_val = 0 if allow_zero else 1
+    if isinstance(value, bool) or not isinstance(value, int) or value < min_val:
+        raise ValueError(err_msg)
+
+
 def validate_stream_args(
     method: HttpMethod,
     chunk_size: int,
@@ -330,10 +344,7 @@ def validate_stream_args(
         msg = f"stream() is designed for GET requests only, got {method}"
         raise ValueError(msg)
 
-    if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
-        msg = "stream() chunk_size must be a strictly positive integer."
-        raise ValueError(msg)
-
+    _require_valid_int(chunk_size, "stream() chunk_size must be a strictly positive integer.")
     if chunk_size > max_limit:
         msg = (
             f"stream() chunk_size ({chunk_size}) exceeds Mailjet's maximum Limit of {max_limit}. "
@@ -341,9 +352,12 @@ def validate_stream_args(
         )
         raise ValueError(msg)
 
-    if max_items is not None and (isinstance(max_items, bool) or not isinstance(max_items, int) or max_items < 0):
-        msg = "stream() max_items must be a non-negative integer or None."
-        raise ValueError(msg)
+    if max_items is not None:
+        _require_valid_int(
+            max_items,
+            "stream() max_items must be a non-negative integer or None.",
+            allow_zero=True,
+        )
 
 
 def parse_stream_page(response: Any) -> list[dict[str, Any]]:

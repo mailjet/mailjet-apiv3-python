@@ -10,12 +10,11 @@ import io
 import logging
 import socket
 import ssl
-import sys
 import uuid
 import warnings
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import requests
@@ -248,17 +247,17 @@ def test_async_client_security_guards_ca_isolation_and_redirects(
             resp_302 = _httpx2.Response(302, headers={"Location": "https://evil.example.com"}, request=req)
             monkeypatch.setattr(aclient.session, "request", AsyncMock(return_value=resp_302))
 
-            audit_events: list[tuple[str, tuple[Any, ...]]] = []
-
-            def audit_hook(event: str, args: tuple[Any, ...]) -> None:
-                if event == "mailjet.security.unexpected_redirect":
-                    audit_events.append((event, args))
-
-            sys.addaudithook(audit_hook)
-            with caplog.at_level(logging.WARNING):
+            with (
+                patch("mailjet_rest.client.sys.audit") as mock_audit,
+                caplog.at_level(logging.WARNING),
+            ):
                 res = await aclient.contact.get()
             assert res.status_code == 302
-            assert any(e[0] == "mailjet.security.unexpected_redirect" and e[1][1] == 302 for e in audit_events)
+            mock_audit.assert_any_call(
+                "mailjet.security.unexpected_redirect",
+                "https://api.mailjet.com/v3/REST/contact",
+                302,
+            )
             assert "redirects are disabled" in caplog.text
 
             # Per-call CA bundle uses isolated ephemeral transport without warning

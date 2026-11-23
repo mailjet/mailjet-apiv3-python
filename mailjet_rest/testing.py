@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from mailjet_rest.errors import raise_mapped_http_error
+from mailjet_rest.utils.routing import validate_stream_args
 
 
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from mailjet_rest.types import HeadersMapping, HttpMethod, PayloadType, QueryFilters, ResourceId
+    from mailjet_rest.types import HeadersMapping, HttpMethod, PayloadType, QueryFilters, ResourceId, TimeoutType
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -22,6 +23,21 @@ else:
 
 
 __all__ = ["MockEndpoint", "MockMailjetClient", "MockResponse"]
+
+
+class _ResolvedAwaitable:
+    """Zero-overhead iterator completing ``await`` immediately with a precomputed value."""
+
+    __slots__ = ("_value",)
+
+    def __init__(self, value: Any) -> None:
+        self._value = value
+
+    def __iter__(self) -> Self:
+        return self
+
+    def __next__(self) -> Any:
+        raise StopIteration(self._value)
 
 
 @dataclass(slots=True)
@@ -44,6 +60,69 @@ class MockResponse:
         """Raise the matching Mailjet SDK API error when ``status_code >= 400``."""
         if self.status_code >= 400:
             raise_mapped_http_error(self, RuntimeError(f"Mock HTTP {self.status_code}"))
+
+    def __await__(self) -> Generator[Any, None, Self]:
+        """Allow ``MockResponse`` instances to be ``await``ed transparently in async tests.
+
+        Returns:
+            Generator[Any, None, Self]: Awaitable iterator resolving to ``self``.
+        """
+        return cast("Generator[Any, None, Self]", _ResolvedAwaitable(self))
+
+
+class _MockStreamIterator:
+    """Dual sync/async iterator yielded by :meth:`MockEndpoint.stream`."""
+
+    __slots__ = ("_index", "_items")
+
+    def __init__(self, items: tuple[dict[str, Any], ...] = ()) -> None:
+        self._items = items
+        self._index = 0
+
+    def __iter__(self) -> Self:
+        return self
+
+    def __next__(self) -> dict[str, Any]:
+        if self._index >= len(self._items):
+            raise StopIteration
+        item = self._items[self._index]
+        self._index += 1
+        return item
+
+    def __aiter__(self) -> Self:
+        return self
+
+    async def __anext__(self) -> dict[str, Any]:
+        try:
+            return next(self)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+
+class _MockPingResult:
+    """Boolean-like ping probe result supporting both sync truth checks and ``await``."""
+
+    __slots__ = ("_ok",)
+
+    def __init__(self, ok: bool) -> None:
+        self._ok = ok
+
+    def __bool__(self) -> bool:
+        return self._ok
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, (bool, _MockPingResult)):
+            return self._ok is bool(other)
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._ok)
+
+    def __repr__(self) -> str:
+        return repr(self._ok)
+
+    def __await__(self) -> Generator[Any, None, bool]:
+        return cast("Generator[Any, None, bool]", _ResolvedAwaitable(self._ok))
 
 
 @dataclass(slots=True)
@@ -160,6 +239,11 @@ class MockEndpoint:
         """
         return self._record("PUT", id=id, action_id=action_id, data=data, headers=headers, **kwargs)
 
+    def _validate_required_id(self, id: ResourceId, action: str) -> None:
+        if id is None or isinstance(id, bool) or (isinstance(id, str) and not id.strip()):
+            msg = f"{self.__class__.__name__}.{action}() requires a non-empty, non-boolean resource 'id'."
+            raise ValueError(msg)
+
     def patch(
         self,
         id: ResourceId,
@@ -173,6 +257,7 @@ class MockEndpoint:
         Returns:
             MockResponse: In-memory mock HTTP response.
         """
+        self._validate_required_id(id, "patch")
         return self._record("PATCH", id=id, action_id=action_id, data=data, headers=headers, **kwargs)
 
     def delete(self, id: ResourceId, action_id: ResourceId | None = None, **kwargs: Any) -> MockResponse:
@@ -181,7 +266,28 @@ class MockEndpoint:
         Returns:
             MockResponse: In-memory mock HTTP response.
         """
+        self._validate_required_id(id, "delete")
         return self._record("DELETE", id=id, action_id=action_id, **kwargs)
+
+    def stream(
+        self,
+        id: ResourceId | None = None,
+        filters: QueryFilters | None = None,
+        action_id: ResourceId | None = None,
+        chunk_size: int = 1000,
+        method: HttpMethod = "GET",
+        *,
+        max_items: int | None = None,
+        **kwargs: Any,
+    ) -> _MockStreamIterator:
+        """Record a paginated stream request and return a sync/async empty-safe iterator.
+
+        Returns:
+            _MockStreamIterator: Iterator supporting both ``for`` and ``async for``.
+        """
+        validate_stream_args(method, chunk_size, max_items)
+        self._record(method, id=id, action_id=action_id, filters=filters, **kwargs)
+        return _MockStreamIterator()
 
 
 @dataclass(slots=True)
@@ -210,6 +316,15 @@ class MockMailjetClient:
             msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
             raise AttributeError(msg)
         return MockEndpoint(client=self, name=name)
+
+    def ping(self, timeout: TimeoutType = None) -> _MockPingResult:
+        """Return synthetic reachability status usable synchronously or via ``await``.
+
+        Returns:
+            _MockPingResult: Truthy when ``default_status < 400``, awaitable to ``bool``.
+        """
+        _ = timeout
+        return _MockPingResult(self.default_status < 400)
 
     def close(self) -> None:
         """Close the mock client cleanly (no-op)."""

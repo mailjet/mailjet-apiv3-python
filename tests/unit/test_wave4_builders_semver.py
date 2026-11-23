@@ -185,11 +185,7 @@ def test_inline_cid_and_gmail_102kb_warning(tmp_path: Path) -> None:
 def test_send_payload_and_template_batch_limits() -> None:
     """Verify SendPayloadBuilder 50-message limit, 15MB cap, and TemplateContentBuilder deepcopy."""
     msg = (
-        MessageBuilder()
-        .set_sender("sender@example.com")
-        .add_recipient("to@example.com")
-        .set_content(text="hi")
-        .build()
+        MessageBuilder().set_sender("sender@example.com").add_recipient("to@example.com").set_content(text="hi").build()
     )
 
     batch = SendPayloadBuilder()

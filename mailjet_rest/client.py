@@ -58,6 +58,7 @@ from mailjet_rest.utils.transport_security import build_httpx2_transport, coerce
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from types import TracebackType
 
     import httpx2
@@ -109,6 +110,7 @@ if not any(isinstance(f, RedactingFilter) for f in logger.filters):
 
 _EndpointT = TypeVar("_EndpointT")
 _AVAILABLE_ENDPOINTS: Final[tuple[str, ...]] = tuple(sorted(ROUTE_MAP))
+_DRY_RUN_BODY: Final[bytes] = b'{"DryRun":true,"Count":0,"Total":0,"Data":[],"Messages":[]}'
 _httpx2_cache: list[Any] = []
 
 
@@ -128,6 +130,27 @@ def _require_httpx2() -> Any:
         msg = "AsyncClient requires 'httpx2>=2.0.0'. Install with: pip install 'mailjet-rest[async]'"
         raise ImportError(msg)
     return mod
+
+
+def _resolve_proxy_url(proxies: Any) -> str | None:
+    """Resolve an HTTP/HTTPS proxy URL case-insensitively from str or proxy mappings.
+
+    Returns:
+        str | None: Selected proxy URL or None when absent.
+    """
+    if proxies is None:
+        return None
+    if isinstance(proxies, str):
+        return proxies
+    if isinstance(proxies, Mapping):
+        lowered = {str(k).lower().rstrip("/"): v for k, v in proxies.items() if v is not None}
+        for key in ("https:", "https", "all:", "all", "http:", "http"):
+            if key in lowered:
+                return str(lowered[key])
+        if lowered:
+            msg = f"Unsupported proxy mapping keys {sorted(proxies.keys())!r}; expected 'https' or 'http'."
+            raise ValueError(msg)
+    return None
 
 
 def __getattr__(name: str) -> Any:
@@ -158,6 +181,12 @@ class BaseClient:
     _MAX_ERROR_DETAIL_CHARS: ClassVar[int] = MAX_ERROR_DETAIL_CHARS
     _RETRY_ALLOWED_METHODS: ClassVar[tuple[str, ...]] = RETRY_ALLOWED_METHODS
     _RETRY_STRATEGY: ClassVar[JitterRetry] = DEFAULT_RETRY_STRATEGY
+    _closed: bool
+    _endpoint_cache: Any
+    _lock: threading.RLock
+    _session: Any
+    auth: str | SecretAuth | None
+    config: Config
 
     def __init__(
         self,
@@ -267,6 +296,30 @@ class BaseClient:
                 msg = f"'{self.__class__.__name__}' has no endpoint or attribute '{name}'. Did you mean '{matches[0]}'?"
                 raise AttributeError(msg)
 
+    def _resolve_via_loader(self, name: str, loader: Callable[[], type[_EndpointT]]) -> _EndpointT:
+        if not name.startswith("_"):
+            cached: _EndpointT | None = self._endpoint_cache.get(name)
+            if cached is not None:
+                return cached
+        if sys.meta_path is None:
+            raise AttributeError(name)
+        return self._resolve_endpoint(name, loader())
+
+    def _detach_session_for_close(self) -> Any:
+        with self._lock:
+            self._closed = True
+            session = self._session
+            self._session = None
+        if session is not None:
+            session.auth = None
+            session.headers.clear()
+        return session
+
+    def _close_sync_session(self) -> None:
+        session = self._detach_session_for_close()
+        if session is not None:
+            session.close()
+
     def _resolve_endpoint(self, name: str, endpoint_cls: type[_EndpointT]) -> _EndpointT:
         if name.startswith("_"):
             msg = f"'{self.__class__.__name__}' object has no attribute '{name}'"
@@ -359,7 +412,14 @@ class BaseClient:
             sys.audit("mailjet.security.unexpected_redirect", url, status_code)
             logger.warning("Unexpected HTTP redirect (%s) from %s; redirects are disabled.", status_code, url)
 
-    def _apply_idempotency(self, data: PayloadType, req_headers: RequestHeaders) -> None:
+    def _apply_idempotency(
+        self,
+        data: PayloadType,
+        req_headers: RequestHeaders,
+        *,
+        method: str = "",
+        url: str = "",
+    ) -> None:
         if any(k.lower() == "idempotency-key" for k in req_headers):
             return
         mode = getattr(self.config, "auto_idempotency_mode", "fingerprint")
@@ -368,7 +428,23 @@ class BaseClient:
         if mode == "uuid4":
             req_headers["Idempotency-Key"] = str(uuid.uuid4())
         elif isinstance(data, (Mapping, list)):
-            req_headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(data)
+            fingerprint_input: Any = {"m": method.upper(), "u": url, "d": data} if (method or url) else data
+            req_headers["Idempotency-Key"] = SecurityGuard.generate_payload_fingerprint(fingerprint_input)
+
+    def _resolve_call_timeout(self, timeout: TimeoutType) -> Any:
+        active_timeout = timeout if timeout is not None else self.config.timeout
+        try:
+            return SecurityGuard.validate_timeout(active_timeout)
+        except (ValueError, TypeError):
+            if timeout is None:
+                self.config.timeout = _DEFAULT_TIMEOUT
+            raise
+
+    @staticmethod
+    def _assert_redirects_disabled(kwargs: dict[str, Any]) -> None:
+        if kwargs.get("allow_redirects", False) is not False or kwargs.pop("follow_redirects", False) is not False:
+            msg = "Redirects are strictly disabled (allow_redirects=True / follow_redirects=True is forbidden)."
+            raise ValueError(msg)
 
     def _prepare_api_call(
         self,
@@ -388,23 +464,14 @@ class BaseClient:
         req_headers: RequestHeaders = {} if headers is None else SecurityGuard.sanitize_headers(headers)
 
         SecurityGuard.resolve_tls_verify(kwargs.get("verify", self.config.verify))
-        if kwargs.get("allow_redirects", False) is not False or kwargs.pop("follow_redirects", False) is not False:
-            msg = "Redirects are strictly disabled (allow_redirects=True / follow_redirects=True is forbidden)."
-            raise ValueError(msg)
-
-        active_timeout = timeout if timeout is not None else self.config.timeout
-        try:
-            req_timeout = SecurityGuard.validate_timeout(active_timeout)
-        except (ValueError, TypeError):
-            if timeout is None:
-                self.config.timeout = _DEFAULT_TIMEOUT
-            raise
+        self._assert_redirects_disabled(kwargs)
+        req_timeout = self._resolve_call_timeout(timeout)
 
         SecurityGuard.check_request_security(kwargs)
         safe_kwargs = SecurityGuard.filter_safe_kwargs(kwargs)
 
         if method.upper() in self._MUTATING_METHODS and not self.config.dry_run:
-            self._apply_idempotency(data, req_headers)
+            self._apply_idempotency(data, req_headers, method=method, url=url)
 
         clean_filters = {k: v for k, v in filters.items() if v is not None} if filters else None
         return req_headers, req_timeout, clean_filters, safe_kwargs
@@ -422,10 +489,13 @@ class BaseClient:
 
         files = kwargs.get("files")
         clean_headers = self._prepare_clean_headers(headers, files=files)
+        content_type = next(
+            (v for k, v in clean_headers.items() if k.lower() == "content-type" and isinstance(v, str)),
+            "",
+        )
+        ct_lower = content_type.lower()
         is_json = (
-            not files
-            and isinstance(data, (Mapping, list))
-            and "application/json" in clean_headers.get("Content-Type", "")
+            not files and isinstance(data, (Mapping, list)) and ("application/json" in ct_lower or "+json" in ct_lower)
         )
         normalized_data = dict(data) if isinstance(data, Mapping) and not isinstance(data, dict) else data
         return req_verify, clean_headers, is_json, normalized_data, files
@@ -441,6 +511,7 @@ class Client(BaseClient):
     def _build_session(self) -> requests.Session:
         resolved_verify = SecurityGuard.resolve_tls_verify(self.config.verify)
         session = requests.Session()
+        session.trust_env = self.config.trust_env
         session.verify = resolved_verify
         session.auth = self.auth if isinstance(self.auth, SecretAuth) else None
         session.headers.update(self._base_headers())
@@ -514,16 +585,7 @@ class Client(BaseClient):
 
     def close(self) -> None:
         """Clear credential headers and close the underlying ``requests.Session``."""
-        with self._lock:
-            self._closed = True
-            session = self._session
-            self._session = None
-        if session is not None:
-            try:
-                session.auth = None
-                session.headers.clear()
-            finally:
-                session.close()
+        self._close_sync_session()
 
     def __getattr__(self, name: str) -> Endpoint:
         """Resolve and cache a synchronous :class:`Endpoint` wrapper by route name.
@@ -531,6 +593,10 @@ class Client(BaseClient):
         Returns:
             Endpoint: Cached or newly created synchronous endpoint wrapper.
         """
+        if not name.startswith("_"):
+            cached = self._endpoint_cache.get(name)
+            if cached is not None:
+                return cached
         if sys.meta_path is None:
             raise AttributeError(name)
         from mailjet_rest.endpoint import Endpoint  # ruff: ignore[import-outside-top-level]
@@ -604,6 +670,9 @@ class Client(BaseClient):
             logger.info("DRY RUN: Intercepted %s request to %s", method, url)
             mock = requests.Response()
             mock.status_code = 200
+            mock._content = _DRY_RUN_BODY  # ruff: ignore[private-member-access]
+            mock.encoding = "utf-8"
+            mock.headers["Content-Type"] = "application/json"
             return mock
 
         try:
@@ -701,6 +770,7 @@ class AsyncClient(BaseClient):
             headers=client_headers,
             timeout=self._coerce_timeout(httpx2_mod, validated_timeout),
             follow_redirects=False,
+            trust_env=self.config.trust_env,
             transport=transport,
         )
         return session
@@ -766,20 +836,19 @@ class AsyncClient(BaseClient):
 
     async def aclose(self) -> None:
         """Clear credential headers and close the underlying async connection pool."""
-        with self._lock:
-            self._closed = True
-            session = self._session
-            self._session = None
+        session = self._detach_session_for_close()
         if session is not None:
-            try:
-                session.auth = None
-                session.headers.clear()
-            finally:
-                await session.aclose()
+            await session.aclose()
 
     async def close(self) -> None:
         """Alias for :meth:`aclose` providing symmetric teardown ergonomics."""
         await self.aclose()
+
+    @staticmethod
+    def _load_async_endpoint_cls() -> type[AsyncEndpoint]:
+        from mailjet_rest.endpoint import AsyncEndpoint  # ruff: ignore[import-outside-top-level]
+
+        return AsyncEndpoint
 
     def __getattr__(self, name: str) -> AsyncEndpoint:
         """Resolve and cache an asynchronous :class:`AsyncEndpoint` wrapper by route name.
@@ -787,11 +856,7 @@ class AsyncClient(BaseClient):
         Returns:
             AsyncEndpoint: Cached or newly created asynchronous endpoint wrapper.
         """
-        if sys.meta_path is None:
-            raise AttributeError(name)
-        from mailjet_rest.endpoint import AsyncEndpoint  # ruff: ignore[import-outside-top-level]
-
-        return self._resolve_endpoint(name, AsyncEndpoint)
+        return self._resolve_via_loader(name, self._load_async_endpoint_cls)
 
     async def _request_isolated(
         self,
@@ -801,17 +866,48 @@ class AsyncClient(BaseClient):
         cert: Any,
         req_kwargs: dict[str, Any],
     ) -> httpx2.Response:
-        proxy_url = proxies.get("https") or proxies.get("http") if isinstance(proxies, Mapping) else proxies
+        proxy_url = _resolve_proxy_url(proxies)
         auth_obj, base_headers = self._build_auth_and_headers()
         transport = self._build_transport(httpx2_mod, req_verify, proxy=proxy_url, cert=cert)
         async with httpx2_mod.AsyncClient(
             auth=auth_obj,
             headers=base_headers,
             follow_redirects=False,
+            trust_env=self.config.trust_env,
             transport=transport,
         ) as ephemeral_session:
             response: httpx2.Response = await ephemeral_session.request(**req_kwargs)
             return response
+
+    def _build_async_req_kwargs(
+        self,
+        httpx2_mod: Any,
+        method: str,
+        url: str,
+        headers: dict[str, Any],
+        data: Any,
+        params: Mapping[str, Any] | None,
+        timeout: Any,
+        kwargs: dict[str, Any],
+    ) -> tuple[bool | str, dict[str, Any], Any]:
+        req_verify, clean_headers, is_json, normalized_data, files = self._normalize_request_parts(
+            headers, data, kwargs
+        )
+        req_kwargs: dict[str, Any] = {
+            "method": method,
+            "url": url,
+            "headers": clean_headers,
+            "params": params,
+            "timeout": self._coerce_timeout(httpx2_mod, timeout),
+            **kwargs,
+        }
+        if is_json:
+            req_kwargs["json"] = normalized_data
+        elif isinstance(normalized_data, Mapping):
+            req_kwargs["data"] = normalized_data
+        elif data is not None:
+            req_kwargs["content"] = data
+        return req_verify, req_kwargs, files
 
     async def _execute_request(
         self,
@@ -831,36 +927,22 @@ class AsyncClient(BaseClient):
             msg = "stream=True is not supported on AsyncClient.api_call(); use endpoint.stream()."
             raise ValueError(msg)
 
-        req_verify, clean_headers, is_json, normalized_data, files = self._normalize_request_parts(
-            headers, data, kwargs
+        req_verify, req_kwargs, files = self._build_async_req_kwargs(
+            httpx2_mod, method, url, headers, data, params, timeout, kwargs
         )
-        req_kwargs: dict[str, Any] = {
-            "method": method,
-            "url": url,
-            "headers": clean_headers,
-            "params": params,
-            "timeout": self._coerce_timeout(httpx2_mod, timeout),
-            **kwargs,
-        }
-        if is_json:
-            req_kwargs["json"] = normalized_data
-        elif isinstance(normalized_data, Mapping):
-            req_kwargs["data"] = normalized_data
-        elif data is not None:
-            req_kwargs["content"] = data
-
         isolated = req_verify != default_verify or proxies is not None or cert is not None
         stream_reader = getattr(data, "read", None) if "content" in req_kwargs else None
+        if callable(stream_reader):
+            import asyncio  # ruff: ignore[import-outside-top-level]
+
+            raw_chunk = await asyncio.to_thread(stream_reader)
+            req_kwargs["content"] = raw_chunk.encode("utf-8") if isinstance(raw_chunk, str) else raw_chunk
+        retry_data = None if callable(stream_reader) else data
 
         async def _send() -> httpx2.Response:
-            call_kwargs = req_kwargs
-            if callable(stream_reader):
-                raw_chunk = stream_reader()
-                payload_bytes = raw_chunk.encode("utf-8") if isinstance(raw_chunk, str) else raw_chunk
-                call_kwargs = {**req_kwargs, "content": payload_bytes}
             if isolated:
-                return await self._request_isolated(httpx2_mod, req_verify, proxies, cert, call_kwargs)
-            resp: httpx2.Response = await self.session.request(**call_kwargs)
+                return await self._request_isolated(httpx2_mod, req_verify, proxies, cert, req_kwargs)
+            resp: httpx2.Response = await self.session.request(**req_kwargs)
             return resp
 
         response: httpx2.Response = await run_async_with_retries(
@@ -873,7 +955,7 @@ class AsyncClient(BaseClient):
             allowed_methods=self._RETRY_ALLOWED_METHODS,
             transient_status_codes=self._TRANSIENT_STATUS_CODES,
             max_delay=self._MAX_RETRY_DELAY,
-            data=data,
+            data=retry_data,
             files=files,
             log=logger,
         )
@@ -910,6 +992,8 @@ class AsyncClient(BaseClient):
             logger.info("DRY RUN: Intercepted %s request to %s", method, url)
             dry_resp: httpx2.Response = httpx2_mod.Response(
                 status_code=200,
+                content=_DRY_RUN_BODY,
+                headers={"Content-Type": "application/json"},
                 request=httpx2_mod.Request(method.upper(), url),
             )
             return dry_resp
@@ -947,11 +1031,13 @@ class AsyncClient(BaseClient):
         Returns:
             bool: True when the API responds cleanly (< 400); False on API or network error.
         """
+        url, filters = self._ping_url(), {"Limit": 1}
         try:
-            response = await self.api_call("GET", self._ping_url(), filters={"Limit": 1}, timeout=timeout)
+            response = await self.api_call("GET", url, filters=filters, timeout=timeout)
         except ApiError:
             return False
-        return bool(response.status_code < 400)
+        status = getattr(response, "status_code", 500)
+        return isinstance(status, int) and status < 400
 
 
 # --- Deprecated Wrappers ---

@@ -29,6 +29,7 @@ class Config:
         pool_maxsize (int): Maximum number of persistent connections saved per pool.
         warn_unclosed (bool): Emit ResourceWarning on garbage collection if session was not closed.
         max_retries (int): Maximum retry attempts for transient connection and HTTP errors.
+        trust_env (bool): Honor environment proxy/NETRC/CA variables when creating HTTP sessions.
     """
 
     ALLOWED_ROOT_DOMAIN: ClassVar[str] = "mailjet.com"
@@ -46,6 +47,13 @@ class Config:
     pool_maxsize: int = 100
     warn_unclosed: bool = False
     max_retries: int = 3
+    trust_env: bool = False
+
+    @staticmethod
+    def _validate_bool_flag(name: str, value: object) -> None:
+        if not isinstance(value, bool):
+            msg = f"{name} must be a bool, got {type(value).__name__}."
+            raise TypeError(msg)
 
     @staticmethod
     def _validate_int_min(name: str, value: int, minimum: int, maximum: int | None = None) -> None:
@@ -80,7 +88,5 @@ class Config:
         self._validate_int_min("pool_connections", self.pool_connections, 1)
         self._validate_int_min("pool_maxsize", self.pool_maxsize, 1)
         self._validate_int_min("max_retries", self.max_retries, 0, self.MAX_RETRIES_LIMIT)
-        raw_warn: object = self.warn_unclosed
-        if not isinstance(raw_warn, bool):
-            msg = f"warn_unclosed must be a bool, got {type(raw_warn).__name__}."
-            raise TypeError(msg)
+        self._validate_bool_flag("warn_unclosed", self.warn_unclosed)
+        self._validate_bool_flag("trust_env", self.trust_env)

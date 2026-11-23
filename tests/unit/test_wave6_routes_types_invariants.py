@@ -9,7 +9,6 @@ import importlib.util
 import io
 import ipaddress
 import logging
-import re
 import warnings
 from pathlib import Path
 from types import MappingProxyType
@@ -403,6 +402,15 @@ def test_async_client_routes_ssrf_multipart_retry_allowlist_and_gather(monkeypat
                 aclient.contacts.delete(id=55),
             )
             assert all(r.status_code == 200 for r in res_list)
+            assert set(observed) == {
+                ("POST", "https://api.mailjet.com/v3.1/send"),
+                ("GET", "https://api.mailjet.com/v1/REST/templates"),
+                ("POST", "https://api.mailjet.com/v1/REST/templates/7/contents/publish"),
+                ("POST", "https://api.mailjet.com/v1/REST/templates/7/contents/lock"),
+                ("POST", "https://api.mailjet.com/v1/REST/templates/7/contents/unlock"),
+                ("PUT", "https://api.mailjet.com/v1/data/images/img-1/thumbnail"),
+                ("DELETE", "https://api.mailjet.com/v4/contacts/55"),
+            }
 
         # Non-allowlisted HTTP method never retries even when max_retries > 0
         req = httpx2_mod.Request("TRACE", "https://api.mailjet.com/v3/REST/contact")
@@ -416,7 +424,6 @@ def test_async_client_routes_ssrf_multipart_retry_allowlist_and_gather(monkeypat
             assert mock_req.await_count == 1
 
     asyncio.run(_run())
-    assert re.search(r"/v4/contacts/55$", "https://api.mailjet.com/v4/contacts/55")
 
 
 def test_modular_scaffolding_exports_and_dx_helpers() -> None:
