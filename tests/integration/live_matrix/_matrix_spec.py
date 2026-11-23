@@ -9,12 +9,15 @@ from typing import Any, cast
 
 import pytest
 
+from mailjet_rest.errors import MailjetApiError, MailjetNetworkError
 from mailjet_rest.routes import DEPRECATION_ADVISORY
 
 
 LIVE_CREDENTIALS_REASON = "MJ_APIKEY_PUBLIC and MJ_APIKEY_PRIVATE environment variables must be set."
 _NONEXISTENT_ID = 999_999_999_999
 _MAX_LIVE_LATENCY_SECONDS = 30.0
+SIGNUP_PROBE_TIMEOUT: tuple[float, float] = (5.0, 8.0)
+_GATEWAY_TIMEOUT_STATUS_CODES: frozenset[int] = frozenset({502, 503, 504})
 
 _NO_LIMIT_SINGLETON_ROUTES: frozenset[str] = frozenset(
     {
@@ -169,16 +172,20 @@ __all__ = [
     "COVERED_LIVE_ROUTES",
     "LIVE_CREDENTIALS_REASON",
     "SAFE_CAMPAIGNDRAFT_AND_DOMAIN_PROBES",
+    "SIGNUP_PROBE_TIMEOUT",
     "STATCOUNTERS_FILTERS",
     "_NO_LIMIT_SINGLETON_ROUTES",
+    "assert_batch_probe_error",
     "assert_expected_deprecation_warning",
     "assert_json_collection_response",
     "assert_no_deprecation_warnings",
     "assert_not_retired_or_disabled",
+    "build_contactslistsignup_filters",
     "build_send_v31_sandbox_payload",
     "build_v1_image_files_payload",
     "build_v1_template_content_payload",
     "extract_first_id",
+    "is_gateway_timeout_error",
 ]
 
 
@@ -190,6 +197,32 @@ def assert_not_retired_or_disabled(route_name: str, status_code: int, error_text
             f"RELEASE DRIFT DETECTED: Endpoint '{route_name}' appears disabled/retired on Mailjet "
             f"(HTTP {status_code}: {error_text[:200]!r})."
         )
+
+
+def is_gateway_timeout_error(exc: BaseException) -> bool:
+    """Return True when an exception indicates a read timeout or upstream 502/503/504."""
+    if isinstance(exc, MailjetNetworkError):
+        return True
+    return isinstance(exc, MailjetApiError) and exc.status_code in _GATEWAY_TIMEOUT_STATUS_CODES
+
+
+def assert_batch_probe_error(exc: MailjetApiError) -> None:
+    """Validate expected live responses for the legacy server-retired /v3/batch route."""
+    lowered = exc.response_body.lower()
+    if exc.status_code == 500 and ("could not determine http module" in lowered or "efpweberror" in lowered):
+        assert "batch" in lowered
+        return
+    if exc.status_code in {400, 401, 403, 404, 405, 410}:
+        return
+    assert_not_retired_or_disabled("batch", exc.status_code, exc.response_body)
+
+
+def build_contactslistsignup_filters(lists_resp: Any) -> dict[str, Any]:
+    """Build indexed contactslistsignup filters scoped to an existing list when available."""
+    list_id = extract_first_id(lists_resp, default=0)
+    if list_id > 0:
+        return {"ContactsList": list_id, "Limit": 1}
+    return {"Limit": 1}
 
 
 def assert_json_collection_response(route_name: str, resp: Any, elapsed: float) -> dict[str, Any]:

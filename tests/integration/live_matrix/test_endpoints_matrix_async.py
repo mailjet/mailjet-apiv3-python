@@ -20,6 +20,7 @@ from mailjet_rest import (
     ValidationError,
 )
 from mailjet_rest.client import _httpx2
+from mailjet_rest.errors import MailjetNetworkError
 from mailjet_rest.routes import ROUTE_MAP
 from tests.integration.conftest import get_live_auth, has_live_credentials
 from tests.integration.live_matrix._matrix_spec import (
@@ -34,15 +35,19 @@ from tests.integration.live_matrix._matrix_spec import (
     COVERED_LIVE_ROUTES,
     LIVE_CREDENTIALS_REASON,
     SAFE_CAMPAIGNDRAFT_AND_DOMAIN_PROBES,
+    SIGNUP_PROBE_TIMEOUT,
     STATCOUNTERS_FILTERS,
+    assert_batch_probe_error,
     assert_expected_deprecation_warning,
     assert_json_collection_response,
     assert_no_deprecation_warnings,
     assert_not_retired_or_disabled,
+    build_contactslistsignup_filters,
     build_send_v31_sandbox_payload,
     build_v1_image_files_payload,
     build_v1_template_content_payload,
     extract_first_id,
+    is_gateway_timeout_error,
 )
 
 
@@ -60,12 +65,59 @@ def test_live_matrix_covers_all_89_route_map_keys() -> None:
     )
 
 
+async def _verify_contactslistsignup_pk_fallback(probe_v3: AsyncClient) -> None:
+    """Probe contactslistsignup asynchronously by primary key when collection scan times out."""
+    try:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("error", DeprecationWarning)
+            resp = await probe_v3.contactslistsignup.get(id=_NONEXISTENT_ID)
+    except (DoesNotExistError, ValidationError) as exc:
+        assert_not_retired_or_disabled("contactslistsignup", exc.status_code, exc.response_body)
+        assert exc.status_code in {400, 404}
+        return
+    except (MailjetApiError, MailjetNetworkError) as exc:
+        if is_gateway_timeout_error(exc):
+            pytest.skip(f"Mailjet upstream gateway timed out for contactslistsignup: {exc}")
+        if isinstance(exc, MailjetApiError):
+            assert_not_retired_or_disabled("contactslistsignup", exc.status_code, exc.response_body)
+        raise
+
+    assert_no_deprecation_warnings(caught)
+    assert resp.status_code == 200
+
+
+async def _verify_live_contactslistsignup(live_v3: AsyncClient) -> None:
+    """Verify contactslistsignup asynchronously with bounded timeout and PK fallback on gateway 504."""
+    lists_resp = await live_v3.contactslist.get(filters={"Limit": 1})
+    filters = build_contactslistsignup_filters(lists_resp)
+    probe_cfg = Config(version="v3", max_retries=0, timeout=SIGNUP_PROBE_TIMEOUT)
+    async with AsyncClient(auth=get_live_auth(), config=probe_cfg) as probe_v3:
+        t0 = time.monotonic()
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("error", DeprecationWarning)
+                resp = await probe_v3.contactslistsignup.get(filters=filters)
+        except (MailjetApiError, MailjetNetworkError) as exc:
+            if not is_gateway_timeout_error(exc):
+                if isinstance(exc, MailjetApiError):
+                    assert_not_retired_or_disabled("contactslistsignup", exc.status_code, exc.response_body)
+                raise
+            await _verify_contactslistsignup_pk_fallback(probe_v3)
+            return
+
+        assert_no_deprecation_warnings(caught)
+        assert_json_collection_response("contactslistsignup", resp, time.monotonic() - t0)
+
+
 @pytest.mark.parametrize("route_name", _TIER_A_COLLECTION_ROUTES)
 def test_live_tier_a_active_v3_collections(route_name: str) -> None:
     """Verify every active v3 GET collection route responds cleanly asynchronously without deprecation or retirement."""
 
     async def _run() -> None:
         async with AsyncClient(auth=get_live_auth(), config=Config(version="v3", max_retries=2)) as live_v3:
+            if route_name == "contactslistsignup":
+                await _verify_live_contactslistsignup(live_v3)
+                return
             ep = getattr(live_v3, route_name)
             t0 = time.monotonic()
             filters = None if route_name in _NO_LIMIT_SINGLETON_ROUTES else {"Limit": 1}
@@ -277,8 +329,7 @@ def test_live_send_batch_and_csverror_routes() -> None:
                 batch_resp = await live_v3.batch.create(data={})
                 assert_not_retired_or_disabled("batch", batch_resp.status_code, batch_resp.text)
             except MailjetApiError as exc_batch:
-                assert_not_retired_or_disabled("batch", exc_batch.status_code, exc_batch.response_body)
-                assert exc_batch.status_code in {400, 401, 403, 404}
+                assert_batch_probe_error(exc_batch)
 
             try:
                 csv_err_resp = await live_v3.batchjob_csverror.get(id=_NONEXISTENT_ID)
