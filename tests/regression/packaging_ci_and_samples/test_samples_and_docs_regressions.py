@@ -209,6 +209,7 @@ def test_readme_accurate_types_tls_adapter_and_patch_examples() -> None:
     assert "#patch-partial-update" not in readme
     assert "### Standard REST Actions (GET, POST, PUT, DELETE)" in readme
     assert "(#standard-rest-actions-get-post-put-delete)" in readme
+    assert "`client.send_v31` (`POST /v3.1/send`)" in readme
 
     async_sample_ref = next(
         (line for line in readme.splitlines() if "samples/async_client_sample.py" in line),

@@ -225,6 +225,7 @@ async def main() -> None:
     )
     async with AsyncClient(auth=auth) as mailjet:
         if await mailjet.ping():
+            # send_v31 is a "v3.1"-pinned shortcut for default version="v3" clients
             resp = await mailjet.send_v31.create(
                 data={
                     "Messages": [
@@ -297,6 +298,8 @@ with Client(
 ) as mailjet:
     pass  # Your requests here
 ```
+
+Alternatively, on a default `version="v3"` `Client` or `AsyncClient`, `client.send_v31` (`POST /v3.1/send`) acts as a `"v3.1"`-pinned shortcut so `/v3/REST/*` endpoints and Send API `v3.1` calls can share a single client instance and connection pool.
 
 For additional information refer to our [API Reference](https://dev.mailjet.com/reference/overview/versioning/).
 
