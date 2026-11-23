@@ -240,11 +240,6 @@ class _TransportIntegrationHandler(http.server.BaseHTTPRequestHandler):
         path, _ = self._record("PUT", body)
         self._write_json(200, {"Count": 1, "Data": [{"ID": 42}], "path": path})
 
-    def do_PATCH(self) -> None:
-        body = self._read_body()
-        path, _ = self._record("PATCH", body)
-        self._write_json(200, {"Count": 1, "Data": [{"ID": 42, "Patched": True}], "path": path})
-
     def do_DELETE(self) -> None:
         body = self._read_body()
         self._record("DELETE", body)

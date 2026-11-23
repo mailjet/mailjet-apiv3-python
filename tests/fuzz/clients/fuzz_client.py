@@ -111,7 +111,7 @@ def TestOneInput(data: bytes) -> None:
         raise RuntimeError("CRASH: Builder JSON Serialization hit Recursion Depth limit.")
 
     # ==========================================
-    # BLOCK 3: Sync Client Auth, Dry-Run, PATCH & Mocked Dispatch
+    # BLOCK 3: Sync Client Auth, Dry-Run, PUT & Mocked Dispatch
     # ==========================================
     try:
         if fdp.ConsumeIntInRange(0, 19) == 0:
@@ -137,7 +137,7 @@ def TestOneInput(data: bytes) -> None:
             raise_for_status=lambda: None,
         )
         with patch.object(_base_client.session, "request", return_value=fake_resp):
-            method = fdp.PickValueInList(["GET", "POST", "PUT", "PATCH", "DELETE"])
+            method = fdp.PickValueInList(["GET", "POST", "PUT", "DELETE"])
             _base_client.api_call(
                 method,
                 "https://api.mailjet.com/v3/REST/contact",

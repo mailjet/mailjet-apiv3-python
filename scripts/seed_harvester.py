@@ -218,12 +218,6 @@ TARGETS: tuple[HarvestTarget, ...] = (
         method="DELETE",
         url=f"{BASE_URL_V4}/contacts/999999999999",
     ),
-    HarvestTarget(
-        name="contact_patch_notfound",
-        method="PATCH",
-        url=f"{BASE_URL_V3}/contact/999999999999",
-        json_body={"Name": "FuzzPatch"},
-    ),
 )
 
 CORPUS_MAP: dict[str, tuple[str, ...]] = {
@@ -257,7 +251,6 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "template_contents_unlock_notfound_post",
         "data_images_by_type_notfound_get",
         "contacts_v4_notfound_delete",
-        "contact_patch_notfound",
     ),
     "fuzz_async_endpoint": (
         "contact_get",
@@ -273,7 +266,6 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "template_contents_unlock_notfound_post",
         "data_images_by_type_notfound_get",
         "contacts_v4_notfound_delete",
-        "contact_patch_notfound",
         "lifecycle_contact_create",
         "lifecycle_contact_get",
         "lifecycle_contact_update",
@@ -286,7 +278,6 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "contact_get",
         "contact_notfound_get",
         "contacts_v4_notfound_delete",
-        "contact_patch_notfound",
         "v1_templates_get",
         "lifecycle_contact_create",
     ),
@@ -337,7 +328,6 @@ CORPUS_MAP: dict[str, tuple[str, ...]] = {
         "labels_get",
         "v1_templates_get",
         "contacts_v4_notfound_delete",
-        "contact_patch_notfound",
     ),
     "fuzz_evil_server": (
         "send_v31_sandbox_post",

@@ -52,7 +52,6 @@ _REPO_SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _WORKFLOW_FILE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 _WAVE6_PROTOCOL_TOKENS: tuple[bytes, ...] = (
-    b"PATCH",
     b"Retry-After",
     b"retry-after",
     b"Idempotency-Key",

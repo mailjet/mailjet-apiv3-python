@@ -326,8 +326,6 @@ def test_mock_client_async_await_stream_ping_and_id_validation() -> None:
     with MockMailjetClient() as val_mock:
         for bad_id in (None, "", "   ", True):
             with pytest.raises(ValueError, match="requires a non-empty, non-boolean resource 'id'"):
-                val_mock.contact.patch(id=bad_id, data={"Name": "x"})  # type: ignore[arg-type]
-            with pytest.raises(ValueError, match="requires a non-empty, non-boolean resource 'id'"):
                 val_mock.contact.delete(id=bad_id)  # type: ignore[arg-type]
 
 

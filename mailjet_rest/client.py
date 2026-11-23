@@ -188,7 +188,7 @@ class BaseClient:
 
     __slots__ = ("_closed", "_endpoint_cache", "_lock", "_session", "auth", "config")
 
-    _MUTATING_METHODS: ClassVar[frozenset[str]] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+    _MUTATING_METHODS: ClassVar[frozenset[str]] = frozenset({"POST", "PUT", "DELETE"})
     _TRANSIENT_STATUS_CODES: ClassVar[frozenset[int]] = TRANSIENT_STATUS_CODES
     _MAX_RETRY_DELAY: ClassVar[float] = MAX_RETRY_DELAY
     _MAX_ERROR_LOG_CHARS: ClassVar[int] = MAX_ERROR_LOG_CHARS

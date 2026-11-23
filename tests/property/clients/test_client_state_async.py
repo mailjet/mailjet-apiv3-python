@@ -17,7 +17,7 @@ pytestmark = pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed
 
 
 class AsyncClientStateMachine(RuleBasedStateMachine):
-    """Verify AsyncClient session lifecycle, pool healing, CRUD/patch/stream, and ping invariants."""
+    """Verify AsyncClient session lifecycle, pool healing, CRUD/stream, and ping invariants."""
 
     def __init__(self) -> None:
         """Initialize the state machine instance."""
@@ -79,13 +79,13 @@ class AsyncClientStateMachine(RuleBasedStateMachine):
 
     @precondition(lambda self: not self.closed and self.client is not None)
     @rule(contact_id=st.integers(min_value=1, max_value=500), name=st.text(min_size=1, max_size=24))
-    def patch_contact(self, contact_id: int, name: str) -> None:
-        """Execute an authenticated PATCH partial update call."""
+    def update_contact(self, contact_id: int, name: str) -> None:
+        """Execute an authenticated PUT update call."""
         assert self.client is not None
         self.next_status = 200
-        resp = self._run(self.client.contact.patch(id=contact_id, data={"Name": name}))
+        resp = self._run(self.client.contact.update(id=contact_id, data={"Name": name}))
         assert resp.status_code == 200
-        assert self.observed_requests[-1][0] == "PATCH"
+        assert self.observed_requests[-1][0] == "PUT"
 
     @precondition(lambda self: not self.closed and self.client is not None)
     @rule(contact_id=st.integers(min_value=1, max_value=500))

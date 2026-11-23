@@ -792,13 +792,9 @@ def test_sync_client_and_endpoint_real_https_and_http_integration(
             assert client.contact.create(data="raw-string", ensure_ascii=True).status_code == 201
 
         upd_resp = client.contact.update(id=42, data={"Name": "Updated"})
-        patch_resp = client.contact.patch(id=42, data={"Name": "Patched"})
         del_resp = client.contact.delete(id=42)
         assert upd_resp.status_code == 200
-        assert patch_resp.json()["Data"][0]["Patched"] is True
         assert del_resp.status_code == 204
-        with pytest.raises(ValueError, match="non-empty"):
-            client.contact.patch(id="")
         with pytest.raises(ValueError, match="non-empty"):
             client.contact.delete(id="  ")
 

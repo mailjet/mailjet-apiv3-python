@@ -62,11 +62,10 @@ def test_mock_mailjet_client_async_endpoints_crud_and_parameter_forwarding() -> 
 
             await aclient.contact.get(id=42, filters={"Limit": 5})
             await aclient.contact.update(id=42, data={"Name": "Updated"})
-            await aclient.contact.patch(id=42, data={"Name": "Patched"})
             await aclient.contact.delete(id=42)
             await aclient.contact("GET", id=42, custom_flag=True)
 
-        assert [req["method"] for req in aclient.sent_requests] == ["POST", "GET", "PUT", "PATCH", "DELETE", "GET"]
+        assert [req["method"] for req in aclient.sent_requests] == ["POST", "GET", "PUT", "DELETE", "GET"]
         assert aclient.sent_requests[0]["endpoint"] == "send_v31"
         assert aclient.sent_requests[0]["headers"] == {"X-Test": "1"}
         assert aclient.sent_requests[1]["filters"] == {"Limit": 5}
@@ -97,8 +96,6 @@ def test_mock_mailjet_client_async_endpoints_crud_and_parameter_forwarding() -> 
         assert mc.sent_requests[-1]["method"] == "GET"
         await mc.contact.update(id=2, data={"k": "v"}, action_id="b", headers={"H": "2"}, timeout=4)
         assert mc.sent_requests[-1]["method"] == "PUT"
-        await mc.contact.patch(id=3, data={"k": "p"}, action_id="c", headers={"H": "3"}, timeout=5)
-        assert mc.sent_requests[-1]["method"] == "PATCH"
         await mc.contact.delete(id=4, action_id="d", timeout=6)
         assert mc.sent_requests[-1]["method"] == "DELETE"
         res_call = await mc.contact(
@@ -223,17 +220,13 @@ def test_mock_endpoint_async_validation_guards_and_context_exception() -> None:
             invalid_ids: tuple[Any, ...] = ("", "   ", None, True, False)
             for bad_id in invalid_ids:
                 with pytest.raises(
-                    ValueError, match=r"MockEndpoint\.patch\(\) requires a non-empty, non-boolean resource 'id'\."
-                ):
-                    await aclient.contact.patch(bad_id, data={"Name": "X"})
-                with pytest.raises(
                     ValueError, match=r"MockEndpoint\.delete\(\) requires a non-empty, non-boolean resource 'id'\."
                 ):
                     await aclient.contact.delete(bad_id)
 
-            patch_zero_resp = await aclient.contact.patch(0, data={"Name": "Zero"})
+            del_zero_int_resp = await aclient.contact.delete(0)
             del_zero_resp = await aclient.contact.delete("0")
-            assert patch_zero_resp.status_code == 200
+            assert del_zero_int_resp.status_code == 200
             assert del_zero_resp.status_code == 200
 
             with pytest.raises(ValueError, match="stream\\(\\) is designed for GET requests only"):

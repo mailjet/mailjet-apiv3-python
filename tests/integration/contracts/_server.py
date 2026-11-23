@@ -171,9 +171,6 @@ class _ContractHTTPHandler(http.server.BaseHTTPRequestHandler):
     def do_PUT(self) -> None:
         self._dispatch("PUT")
 
-    def do_PATCH(self) -> None:
-        self._dispatch("PATCH")
-
     def do_DELETE(self) -> None:
         self._dispatch("DELETE")
 

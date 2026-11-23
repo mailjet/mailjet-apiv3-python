@@ -10,11 +10,16 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 from unittest.mock import MagicMock
 
 import pytest
 
+from mailjet_rest.client import BaseClient
+from mailjet_rest.endpoint import AsyncEndpoint, Endpoint
+from mailjet_rest.testing import MockEndpoint
+from mailjet_rest.types import HttpMethod
+from mailjet_rest.utils.retry import RETRY_ALLOWED_METHODS
 from tests.regression.conftest import REPO_ROOT, SAMPLES_DIR
 
 
@@ -218,6 +223,30 @@ def test_readme_accurate_types_tls_adapter_and_patch_examples() -> None:
     assert async_sample_ref != ""
     assert "patch()" not in async_sample_ref
     assert "update()" in async_sample_ref
+
+
+def test_sdk_and_docs_omit_unsupported_patch_method() -> None:
+    """SDK core, types, retry policy, endpoints, mocks, and README Idempotency bullet omit unsupported HTTP PATCH."""
+    assert BaseClient._MUTATING_METHODS == frozenset({"POST", "PUT", "DELETE"})
+    assert "PATCH" not in BaseClient._MUTATING_METHODS
+    assert "PATCH" not in RETRY_ALLOWED_METHODS
+    assert get_args(HttpMethod) == ("GET", "POST", "PUT", "DELETE")
+    assert not hasattr(Endpoint, "patch")
+    assert not hasattr(AsyncEndpoint, "patch")
+    assert not hasattr(MockEndpoint, "patch")
+
+    endpoint_pyi = (REPO_ROOT / "mailjet_rest/endpoint.pyi").read_text(encoding="utf-8")
+    assert "def patch(" not in endpoint_pyi
+
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    idempotency_line = next(
+        (line for line in readme.splitlines() if "**Idempotency Fingerprinting:**" in line),
+        "",
+    )
+    assert idempotency_line != ""
+    assert "(`POST`, `PUT`, and `DELETE`)" in idempotency_line
+    assert "PATCH" not in idempotency_line
+    assert "A `PUT` request in the Mailjet API will work as a `PATCH` request" in readme
 
 
 def test_changelog_and_performance_metrics_consistent_with_codebase() -> None:

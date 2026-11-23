@@ -61,15 +61,6 @@ def test_async_endpoint_crud_operations(monkeypatch: pytest.MonkeyPatch) -> None
             assert r_update.status_code == 200
 
             assert repr(ep) == "<AsyncEndpoint name='contact'>"
-            monkeypatch.setattr(
-                aclient.session,
-                "request",
-                AsyncMock(
-                    return_value=httpx2_mod.Response(200, json={"Data": [{"ID": 1, "Name": "Patched"}]}, request=req)
-                ),
-            )
-            r_patch = await ep.patch(id=1, data={"Name": "Patched"})
-            assert r_patch.status_code == 200
 
             monkeypatch.setattr(
                 aclient.session,
@@ -166,8 +157,8 @@ def test_async_endpoint_stream_pagination_and_edge_cases(monkeypatch: pytest.Mon
 # ==========================================
 
 
-def test_async_endpoint_patch_forward_all_args() -> None:
-    """Kill survived argument-forwarding mutants in AsyncEndpoint.patch."""
+def test_async_endpoint_update_forward_all_args() -> None:
+    """Kill survived argument-forwarding mutants in AsyncEndpoint.update."""
 
     async def _run_async() -> None:
         async_client = MagicMock()
@@ -178,9 +169,9 @@ def test_async_endpoint_patch_forward_all_args() -> None:
         aep = AsyncEndpoint(async_client, "contact")
 
         with pytest.warns(DeprecationWarning, match="deprecated"):
-            res = await aep.patch(
+            res = await aep.update(
                 id=9,
-                data={"Name": "AsyncPatched"},
+                data={"Name": "AsyncUpdated"},
                 action_id="act",
                 headers={"X-Async": "2"},
                 ensure_ascii=False,
@@ -190,7 +181,7 @@ def test_async_endpoint_patch_forward_all_args() -> None:
         assert res is sentinel
         async_client.api_call.assert_awaited_once()
         a_kw = async_client.api_call.call_args.kwargs
-        assert a_kw["method"] == "PATCH"
+        assert a_kw["method"] == "PUT"
         assert "/v3/REST/contact/9/act" in a_kw["url"]
         assert a_kw["headers"]["X-Async"] == "2"
         assert a_kw["timeout"] == 9
@@ -320,8 +311,8 @@ def test_async_endpoint_dynamic_action_id_and_data_routing() -> None:
 
 
 @pytest.mark.skipif(_httpx2 is None, reason="httpx2 is not installed")
-def test_async_endpoint_update_and_patch_id_validation() -> None:
-    """Verify AsyncEndpoint update/patch/delete reject missing, blank, or boolean IDs while preserving empty update."""
+def test_async_endpoint_update_and_delete_id_validation() -> None:
+    """Verify AsyncEndpoint update/delete reject missing, blank, or boolean IDs while preserving empty update."""
     assert _httpx2 is not None
     httpx2_mod = _httpx2
 
@@ -339,12 +330,6 @@ def test_async_endpoint_update_and_patch_id_validation() -> None:
             max_retries=0,
         ) as aclient:
             for bad_id in (None, "", "   ", True, False):
-                with pytest.raises(
-                    ValueError,
-                    match=r"AsyncEndpoint\.patch\(\) requires a non-empty, non-boolean resource 'id'\.",
-                ):
-                    await aclient.contact.patch(id=bad_id, data={"Name": "Bad"})  # type: ignore[arg-type]
-
                 with pytest.raises(
                     ValueError,
                     match=r"AsyncEndpoint\.delete\(\) requires a non-empty, non-boolean resource 'id'\.",

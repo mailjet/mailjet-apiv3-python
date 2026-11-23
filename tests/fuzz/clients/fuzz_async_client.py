@@ -78,7 +78,7 @@ async def _fuzz_async_client_iteration(fdp: atheris.FuzzedDataProvider) -> None:
         return
 
     if mode == 1:
-        method = fdp.PickValueInList(["GET", "POST", "PUT", "PATCH", "DELETE"])
+        method = fdp.PickValueInList(["GET", "POST", "PUT", "DELETE"])
         status_code = fdp.PickValueInList([200, 201, 202, 204, 400, 401, 403, 404, 429, 500, 503])
         fault_mode = fdp.ConsumeIntInRange(0, 4)
 
@@ -168,7 +168,7 @@ async def _fuzz_async_client_iteration(fdp: atheris.FuzzedDataProvider) -> None:
             return
         return
 
-    # Mode 3: Concurrent fan-out (asyncio.gather), patch, and ping resilience
+    # Mode 3: Concurrent fan-out (asyncio.gather), update, and ping resilience
     n_tasks = fdp.ConsumeIntInRange(2, 6)
 
     async def concurrent_mock(**kwargs: Any) -> Any:
@@ -183,7 +183,7 @@ async def _fuzz_async_client_iteration(fdp: atheris.FuzzedDataProvider) -> None:
     try:
         tasks: list[Any] = [
             *(base_client.contact.get(id=i) for i in range(n_tasks)),
-            base_client.contact.patch(id=1, data={"Name": fdp.ConsumeUnicodeNoSurrogates(16)}),
+            base_client.contact.update(id=1, data={"Name": fdp.ConsumeUnicodeNoSurrogates(16)}),
             base_client.ping(),
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
