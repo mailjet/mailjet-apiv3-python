@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# 1. Install your project and dependencies
-pip3 install --no-cache-dir --no-deps .
+# 1. Register local project source in site-packages (.pth) for PyInstaller & Atheris
+python3 -c 'import os, pathlib, site; pathlib.Path(site.getsitepackages()[0], "mailjet_rest.pth").write_text(os.path.abspath(".") + "\n", encoding="utf-8")'
 
 # 2. Package each fuzzer file in parallel across available CPU cores
 build_fuzzer() {
@@ -15,7 +15,7 @@ build_fuzzer() {
 
   # Bundle standalone executable using isolated work/spec/cache paths for parallel safety
   PYINSTALLER_CONFIG_DIR="${work_dir}/pyi-cache" \
-    pyinstaller --distpath "${OUT}" --workpath "${work_dir}" --specpath "${work_dir}" \
+    pyinstaller --paths "${SRC}/mailjet-apiv3-python" --distpath "${OUT}" --workpath "${work_dir}" --specpath "${work_dir}" \
       --onefile --name "${fuzzer_package}" "${fuzzer}"
 
   # 3. Create execution wrapper script

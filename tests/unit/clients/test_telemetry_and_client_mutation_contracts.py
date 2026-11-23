@@ -8,7 +8,7 @@ import importlib
 import io
 import logging
 import warnings
-from types import MappingProxyType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 

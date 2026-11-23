@@ -4,13 +4,10 @@ FROM gcr.io/oss-fuzz-base/base-builder-python@sha256:21f6fab17ace4dc76e1c56de91e
 RUN apt-get update && apt-get install -y --no-install-recommends make build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install testing dependencies
-RUN pip3 install --no-cache-dir \
-    hypothesis==6.170.15 \
-    httpx2==2.16.2 \
-    pyinstaller==6.13.0 \
-    requests==2.34.2 \
-    typing-extensions==4.16.0
+# Install hash-pinned testing and packaging dependencies
+COPY .clusterfuzzlite/requirements.txt /tmp/cflite-requirements.txt
+RUN pip3 install --no-cache-dir --require-hashes -r /tmp/cflite-requirements.txt \
+    && rm -f /tmp/cflite-requirements.txt
 
 # Copy project source into the container
 COPY . "$SRC/mailjet-apiv3-python"

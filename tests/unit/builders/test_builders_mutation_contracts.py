@@ -105,7 +105,7 @@ def test_chunked_streamer_bounds_o_nofollow_and_builder_size_boundaries(tmp_path
     expected_flag = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     assert observed_flags == [expected_flag]
 
-    with pytest.raises(ValueError, match="Exceeds" if False else "exceeds safe threshold"):
+    with pytest.raises(ValueError, match="exceeds safe threshold"):
         ChunkedStreamer.encode_file(data_file, chunk_size=6, safe_base_dir=tmp_path, max_bytes=len(raw) - 1)
 
     # TemplateContentBuilder individual content keys emit no PendingDeprecationWarning

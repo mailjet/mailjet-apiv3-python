@@ -293,8 +293,10 @@ def test_mock_endpoint_validation_guards_and_close_semantics() -> None:
             mc.contact.delete(bad_id)
 
     # Numeric zero and string "0" remain valid identifiers
-    assert mc.contact.patch(0, data={"Name": "Zero"}).status_code == 200
-    assert mc.contact.delete("0").status_code == 200
+    patch_zero_resp = mc.contact.patch(0, data={"Name": "Zero"})
+    del_zero_resp = mc.contact.delete("0")
+    assert patch_zero_resp.status_code == 200
+    assert del_zero_resp.status_code == 200
 
     with pytest.raises(ValueError, match="stream\\(\\) is designed for GET requests only"):
         mc.contact.stream(method="POST")
@@ -310,7 +312,13 @@ def test_mock_endpoint_validation_guards_and_close_semantics() -> None:
 
     mc.close()
 
-    with pytest.raises(RuntimeError, match="boom"), MockMailjetClient() as err_mc:
-        err_mc.contact.get(id=1)
-        raise RuntimeError("boom")
+    caught_sync_err: RuntimeError | None = None
+    err_mc = MockMailjetClient()
+    try:
+        with err_mc:
+            err_mc.contact.get(id=1)
+            raise RuntimeError("boom")
+    except RuntimeError as exc:
+        caught_sync_err = exc
+    assert caught_sync_err is not None and str(caught_sync_err) == "boom"
     assert len(err_mc.sent_requests) == 1

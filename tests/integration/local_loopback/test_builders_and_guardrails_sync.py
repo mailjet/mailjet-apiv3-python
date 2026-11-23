@@ -33,7 +33,7 @@ from tests.integration.local_loopback._servers import (
     _IntegrationHTTPSServer,
     _ListHandler,
     _ModelDumpObj,
-    _SecretPair,
+    _SamplePair,
     _SlotsObj,
 )
 
@@ -878,7 +878,7 @@ def test_telemetry_and_redacting_filter_integration(
     # RedactingFilter deep coverage: msg, tuple args, dict args, NamedTuple, model_dump, __dict__, slots, broken __str__, sets, depth, exc, extras
     test_logger.info("Plain harmless message")
     test_logger.info("Authorization: Basic dXNlcjpwYXNz token=tok_inline")
-    test_logger.info("Tuple args %s %s", "Authorization: Bearer tok_tuple", _SecretPair("t1", "ok"))
+    test_logger.info("Tuple args %s %s", "Authorization: Bearer tok_tuple", _SamplePair("v1", "ok"))
     test_logger.info(
         "Dict args %(auth)s %(deep)s",
         {
