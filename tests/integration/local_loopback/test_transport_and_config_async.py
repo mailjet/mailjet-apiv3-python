@@ -320,14 +320,10 @@ def test_async_client_and_endpoint_real_https_and_http_integration(
                 assert (await ac.contact.create(data="raw-string", ensure_ascii=True)).status_code == 201
 
             upd_resp = await ac.contact.update(id=42, data={"Name": "AsyncPut"})
-            patch_resp = await ac.contact.patch(id=42, data={"Name": "AsyncPatch"})
             del_resp = await ac.contact.delete(id=42)
             assert upd_resp.status_code == 200
-            assert patch_resp.json()["Data"][0]["Patched"] is True
             assert del_resp.status_code == 204
 
-            with pytest.raises(ValueError, match="non-empty"):
-                await ac.contact.patch(id=" ")
             with pytest.raises(ValueError, match="non-empty"):
                 await ac.contact.delete(id="")
 

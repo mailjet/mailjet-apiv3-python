@@ -440,7 +440,7 @@ Additional built-in protections:
 - **SSRF & Open Redirects:** Hard-disabled automatic redirects and enforced strict hostname validation.
 - **CRLF Injection:** Native string evaluation blocks header injection attempts via compromised Bearer tokens or custom headers.
 - **Downgrade Attacks:** Enforced TLS 1.2+ minimum version via a custom `SecureHTTPAdapter`.
-- **Idempotency Fingerprinting:** Automatically generates SHA-256 `Idempotency-Key` headers for mutating requests (`POST`, `PUT`, `PATCH`, and `DELETE`), configurable via `Config.auto_idempotency_mode` (`"fingerprint"`, `"uuid4"`, or `"off"`).
+- **Idempotency Fingerprinting:** Automatically generates SHA-256 `Idempotency-Key` headers for mutating requests (`POST`, `PUT`, and `DELETE`), configurable via `Config.auto_idempotency_mode` (`"fingerprint"`, `"uuid4"`, or `"off"`).
 - **SpamGuard Analysis:** Pre-flight HTML static analyzer that intercepts and blocks XSS vectors (e.g., `<script>`, `onerror=`) before network dispatch.
 - **Secret Obfuscation (CWE-316):** Utilizes a custom `SecretAuth` transport adapter and `RedactingFilter` to strictly prevent API credentials from leaking in tracebacks, logs, or memory dumps.
 - **Punycode IDN Support:** Automatically normalizes Internationalized Domain Names (IDNs) in sender and recipient addresses to prevent Homograph attacks.

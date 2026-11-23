@@ -244,22 +244,6 @@ class MockEndpoint:
             msg = f"{self.__class__.__name__}.{action}() requires a non-empty, non-boolean resource 'id'."
             raise ValueError(msg)
 
-    def patch(
-        self,
-        id: ResourceId,
-        data: PayloadType = None,
-        action_id: ResourceId | None = None,
-        headers: HeadersMapping | None = None,
-        **kwargs: Any,
-    ) -> MockResponse:
-        """Record a mock PATCH request and return a synthetic response.
-
-        Returns:
-            MockResponse: In-memory mock HTTP response.
-        """
-        self._validate_required_id(id, "patch")
-        return self._record("PATCH", id=id, action_id=action_id, data=data, headers=headers, **kwargs)
-
     def delete(self, id: ResourceId, action_id: ResourceId | None = None, **kwargs: Any) -> MockResponse:
         """Record a mock DELETE request and return a synthetic response.
 

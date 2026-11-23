@@ -239,12 +239,9 @@ def test_mock_mailjet_client_sync_workflow() -> None:
         create_res = mock.send_v31.create(data={"Messages": [{"Subject": "Sync"}]})
         assert create_res.status_code == 200
 
-        update_res = mock.contact.update(id=42, data={"Name": "Updated Pilot"})
-        assert update_res.status_code == 200
-
         proxy_payload = types.MappingProxyType({"IsExcludedFromCampaigns": True})
-        patch_res = mock.contact.patch(id=42, data=proxy_payload, headers={"X-Patch": "1"}, extra_flag="yes")
-        assert patch_res.status_code == 200
+        update_res = mock.contact.update(id=42, data=proxy_payload, headers={"X-Update": "1"}, extra_flag="yes")
+        assert update_res.status_code == 200
 
         delete_res = mock.contact.delete(id=42, action_id="purge")
         assert delete_res.status_code == 200
@@ -263,14 +260,14 @@ def test_mock_mailjet_client_sync_workflow() -> None:
     assert mock.sent_requests[1]["filters"] == {"Limit": 5}
     assert mock.sent_requests[1]["headers"] == {"X-Trace": "sync"}
     assert mock.sent_requests[1]["kwargs"] == {"timeout": 2.0}
-    patch_record = mock.sent_requests[4]
-    assert patch_record["method"] == "PATCH"
-    assert type(patch_record["data"]) is dict
-    assert patch_record["data"] == {"IsExcludedFromCampaigns": True}
-    assert patch_record["headers"] == {"X-Patch": "1"}
-    assert patch_record["kwargs"] == {"extra_flag": "yes"}
-    assert mock.sent_requests[6]["method"] == "GET"
-    assert mock.sent_requests[6]["filters"] == {"Limit": 5}
+    update_record = mock.sent_requests[3]
+    assert update_record["method"] == "PUT"
+    assert type(update_record["data"]) is dict
+    assert update_record["data"] == {"IsExcludedFromCampaigns": True}
+    assert update_record["headers"] == {"X-Update": "1"}
+    assert update_record["kwargs"] == {"extra_flag": "yes"}
+    assert mock.sent_requests[5]["method"] == "GET"
+    assert mock.sent_requests[5]["filters"] == {"Limit": 5}
 
 
 def test_mock_mailjet_client_sync_errors_streaming_ping_and_validation() -> None:
@@ -292,11 +289,9 @@ def test_mock_mailjet_client_sync_errors_streaming_ping_and_validation() -> None
         with pytest.raises(MailjetApiError):
             resp_500.raise_for_status()
 
-    # Invalid ID checks for patch() and delete()
+    # Invalid ID checks for delete()
     with MockMailjetClient() as mock:
         for invalid_id in ("", "   ", None, True, False):
-            with pytest.raises(ValueError, match="non-empty, non-boolean resource 'id'"):
-                mock.contact.patch(id=invalid_id, data={})  # type: ignore[arg-type]
             with pytest.raises(ValueError, match="non-empty, non-boolean resource 'id'"):
                 mock.contact.delete(id=invalid_id)  # type: ignore[arg-type]
 

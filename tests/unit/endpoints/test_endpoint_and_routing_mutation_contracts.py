@@ -42,8 +42,8 @@ def test_sync_endpoint_stream_multi_page_limit_and_patch_id_guard() -> None:
             return SimpleNamespace(status_code=200, text="ok", json=lambda p=page: p)
 
     ep = Endpoint(_SyncStubClient(), "contact")
-    with pytest.raises(ValueError, match=r"Endpoint\.patch\(\) requires a non-empty"):
-        ep.patch(id="", data={"Name": "bad"})
+    with pytest.raises(ValueError, match=r"Endpoint\.delete\(\) requires a non-empty"):
+        ep.delete(id="")
 
     collected = list(ep.stream(chunk_size=2, max_items=5, filters={"Limit": 99, "Offset": "4"}))
     assert [row["ID"] for row in collected] == [1, 2, 3, 4, 5]
@@ -54,7 +54,7 @@ def test_sync_endpoint_stream_multi_page_limit_and_patch_id_guard() -> None:
 
 
 def test_async_endpoint_verbs_kwargs_and_multi_page_stream_contracts() -> None:
-    """Verify AsyncEndpoint get/create/update/patch/delete forwarding and multi-page streaming."""
+    """Verify AsyncEndpoint get/create/update/delete forwarding and multi-page streaming."""
     if _httpx2 is None:
         pytest.skip("httpx2 optional extra not installed")
 
@@ -101,14 +101,6 @@ def test_async_endpoint_verbs_kwargs_and_multi_page_stream_contracts() -> None:
                 ensure_ascii=False,
                 data_encoding="utf-8",
             )
-            await ep.patch(
-                id=4,
-                data={"Name": "café"},
-                action_id="partial",
-                headers={"X-P": "4"},
-                ensure_ascii=False,
-                data_encoding="utf-8",
-            )
         await ep.delete(id=5, action_id="sub", timeout=7.0)
 
         streamed = [item async for item in ep.stream(id=9, action_id="contacts", chunk_size=2, max_items=5)]
@@ -116,22 +108,20 @@ def test_async_endpoint_verbs_kwargs_and_multi_page_stream_contracts() -> None:
 
     asyncio.run(_exercise())
 
-    assert [(r["method"], r["url"]) for r in recorded[:5]] == [
+    assert [(r["method"], r["url"]) for r in recorded[:4]] == [
         ("GET", "https://api.mailjet.com/v3/REST/contactslist/1/recipients"),
         ("POST", "https://api.mailjet.com/v3/REST/contactslist/2/managecontact"),
         ("PUT", "https://api.mailjet.com/v3/REST/contactslist/3/meta"),
-        ("PATCH", "https://api.mailjet.com/v3/REST/contactslist/4/partial"),
         ("DELETE", "https://api.mailjet.com/v3/REST/contactslist/5/sub"),
     ]
     assert recorded[0]["headers"]["X-Test"] == "1"
     assert recorded[0]["timeout"] == 9.0
     assert recorded[1]["data"] == '{"Name": "café"}'.encode()
     assert recorded[2]["data"] == '{"Name": "café"}'.encode()
-    assert recorded[3]["data"] == '{"Name": "café"}'.encode()
-    assert recorded[4]["timeout"] == 7.0
+    assert recorded[3]["timeout"] == 7.0
     # Stream requests forward id, action_id, and Limit=2 -> remaining 1
-    assert recorded[5]["url"] == "https://api.mailjet.com/v3/REST/contactslist/9/contacts"
-    assert recorded[7]["filters"] == {"Offset": 4, "Limit": 1}
+    assert recorded[4]["url"] == "https://api.mailjet.com/v3/REST/contactslist/9/contacts"
+    assert recorded[6]["filters"] == {"Offset": 4, "Limit": 1}
 
 
 def test_routing_url_stacklevel_filters_parse_error_and_mappingproxy_contracts() -> None:

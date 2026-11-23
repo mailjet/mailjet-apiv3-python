@@ -115,7 +115,7 @@ async def _fuzz_mock_sync_async_parity(fdp: atheris.FuzzedDataProvider) -> None:
 
     sync_mock = MockMailjetClient(default_status=status)
     async_mock = MockMailjetClient(default_status=status)
-    op = fdp.ConsumeIntInRange(0, 6)
+    op = fdp.ConsumeIntInRange(0, 5)
     res_id: Any = fdp.ConsumeIntInRange(1, 500)
     payload = {"CustomID": fdp.ConsumeUnicodeNoSurrogates(20), "Email": "fuzz@example.com"}
     filters = {"Limit": fdp.ConsumeIntInRange(1, 50)}
@@ -130,12 +130,9 @@ async def _fuzz_mock_sync_async_parity(fdp: atheris.FuzzedDataProvider) -> None:
         r_sync = getattr(sync_mock, ep_name).update(id=res_id, data=payload)
         r_async = await getattr(async_mock, ep_name).update(id=res_id, data=payload)
     elif op == 3:
-        r_sync = getattr(sync_mock, ep_name).patch(id=res_id, data=payload)
-        r_async = await getattr(async_mock, ep_name).patch(id=res_id, data=payload)
-    elif op == 4:
         r_sync = getattr(sync_mock, ep_name).delete(id=res_id)
         r_async = await getattr(async_mock, ep_name).delete(id=res_id)
-    elif op == 5:
+    elif op == 4:
         _ = list(getattr(sync_mock, ep_name).stream(filters=filters, chunk_size=10))
         _ = [item async for item in getattr(async_mock, ep_name).stream(filters=filters, chunk_size=10)]
         r_sync = None

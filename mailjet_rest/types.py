@@ -64,7 +64,7 @@ __all__ = [
 
 ApiVersion: TypeAlias = Literal["v1", "v3", "v3.1", "v4"] | str  # ruff: ignore[redundant-literal-union]
 TimeoutType: TypeAlias = int | float | tuple[int | float, int | float] | None
-HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+HttpMethod: TypeAlias = Literal["GET", "POST", "PUT", "DELETE"]
 AutoIdempotencyMode: TypeAlias = Literal["fingerprint", "uuid4", "off"]
 TrackingMode: TypeAlias = Literal["enabled", "disabled"]
 TemplateContentType: TypeAlias = Literal["D", "P", "A"] | str  # ruff: ignore[redundant-literal-union]

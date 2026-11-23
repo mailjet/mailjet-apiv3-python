@@ -40,7 +40,6 @@ RETRY_ALLOWED_METHODS: Final[tuple[str, ...]] = (
     "OPTIONS",
     "POST",
     "PUT",
-    "PATCH",
     "DELETE",
 )
 

@@ -442,13 +442,12 @@ def test_stream_with_parse_qs_multidict(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 # ==========================================
-# 3. Repr, Patch Forwarding & Mutation Coverage
+# 3. Repr, Update Forwarding & Mutation Coverage
 # ==========================================
 
 
-def test_sync_endpoint_repr_and_patch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verify synchronous Endpoint repr() and PATCH execution."""
-    # Sync Endpoint repr and patch parity
+def test_sync_endpoint_repr_and_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify synchronous Endpoint repr() and PUT update execution."""
     with Client(auth=("key", "secret"), version="v3") as sync_client:
         sync_ep: Endpoint = sync_client.contact
         assert repr(sync_ep) == "<Endpoint name='contact'>"
@@ -459,9 +458,9 @@ def test_sync_endpoint_repr_and_patch(monkeypatch: pytest.MonkeyPatch) -> None:
             return type("Resp", (), {"status_code": 200, "raise_for_status": lambda _s=None: None})()
 
         monkeypatch.setattr(sync_client.session, "request", fake_sync_request)
-        sync_resp = sync_ep.patch(id=42, data={"Name": "SyncPatched"})
+        sync_resp = sync_ep.update(id=42, data={"Name": "SyncUpdated"})
         assert sync_resp.status_code == 200
-        assert captured["method"] == "PATCH"
+        assert captured["method"] == "PUT"
         assert captured["url"].endswith("/v3/REST/contact/42")
 
 
@@ -593,17 +592,17 @@ def test_endpoint_contracts_stream_errors_routing_and_cast(monkeypatch: pytest.M
     assert str(bool_num_exc.value) == "Boolean value is not a valid numeric query parameter."
 
 
-def test_endpoint_patch_forward_all_args() -> None:
-    """Kill survived argument-forwarding mutants in Endpoint.patch."""
+def test_endpoint_update_forward_all_args() -> None:
+    """Kill survived argument-forwarding mutants in Endpoint.update."""
     sync_client = MagicMock()
     sync_client.config.api_url = "https://api.mailjet.com"
     sync_client.config.version = "v3"
     ep = Endpoint(sync_client, "contact")
 
     with pytest.warns(DeprecationWarning, match="deprecated"):
-        ep.patch(
+        ep.update(
             id=7,
-            data={"Name": "Patched"},
+            data={"Name": "Updated"},
             action_id="sub",
             headers={"X-Test": "1"},
             ensure_ascii=False,
@@ -612,14 +611,14 @@ def test_endpoint_patch_forward_all_args() -> None:
         )
     sync_client.api_call.assert_called_once()
     call_kw = sync_client.api_call.call_args.kwargs
-    assert call_kw["method"] == "PATCH"
+    assert call_kw["method"] == "PUT"
     assert "/v3/REST/contact/7/sub" in call_kw["url"]
     assert call_kw["headers"]["X-Test"] == "1"
     assert call_kw["timeout"] == 5
 
 
 def test_endpoint_mutants() -> None:
-    """Kill surviving mutants across Endpoint.__call__, get, stream, and patch."""
+    """Kill surviving mutants across Endpoint.__call__, get, stream, and update."""
     sync_client = MagicMock()
     sync_client.config.api_url = "https://api.mailjet.com/"
     sync_client.config.version = "v3"
@@ -657,13 +656,13 @@ def test_endpoint_mutants() -> None:
     with pytest.raises(ValueError, match="exceeds Mailjet's maximum Limit of 1000"):
         list(ep.stream(chunk_size=1001))
 
-    # Endpoint.patch exact forwarding including ensure_ascii & data_encoding
+    # Endpoint.update exact forwarding including ensure_ascii & data_encoding
     with patch.object(Endpoint, "__call__", return_value=MagicMock()) as mock_ep_call:
-        ep.patch(
+        ep.update(
             id=3, data={"Name": "N"}, action_id="act", headers={"X-P": "1"}, ensure_ascii=True, data_encoding="latin-1"
         )
     assert mock_ep_call.call_args.kwargs == {
-        "method": "PATCH",
+        "method": "PUT",
         "id": 3,
         "data": {"Name": "N"},
         "action_id": "act",
