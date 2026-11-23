@@ -197,13 +197,31 @@ fuzz_all() {
     fi
 
     local fuzz_env="${FUZZ_CONDA_ENV_NAME:-mailjet-fuzz}"
+    local conda_bin="${CONDA_EXE:-}"
+    if [[ -z "${conda_bin}" ]] && command -v conda >/dev/null 2>&1; then
+        conda_bin="$(command -v conda)"
+        if [[ "${conda_bin}" == */envs/*/bin/conda ]]; then
+            local root_conda="${conda_bin%/envs/*/bin/conda}/bin/conda"
+            if [[ -x "${root_conda}" ]]; then
+                conda_bin="${root_conda}"
+            fi
+        fi
+    fi
+    local root_prefix=""
+    if [[ -n "${conda_bin}" ]]; then
+        root_prefix="$(cd -- "$(dirname -- "${conda_bin}")/.." && pwd)"
+    fi
     local -a exec_cmd=()
     if python -c "import atheris" >/dev/null 2>&1; then
         exec_cmd=("python")
-    elif command -v conda >/dev/null 2>&1 && conda run --name "${fuzz_env}" python -c "import atheris" >/dev/null 2>&1; then
-        exec_cmd=("conda" "run" "--name" "${fuzz_env}" "python")
+    elif [[ -n "${root_prefix}" && -x "${root_prefix}/envs/${fuzz_env}/bin/python" ]] && "${root_prefix}/envs/${fuzz_env}/bin/python" -c "import atheris" >/dev/null 2>&1; then
+        exec_cmd=("${root_prefix}/envs/${fuzz_env}/bin/python")
+    elif [[ -n "${conda_bin}" ]] && "${conda_bin}" run --name "${fuzz_env}" python -c "import atheris" >/dev/null 2>&1; then
+        exec_cmd=("${conda_bin}" "run" "--name" "${fuzz_env}" "python")
+    elif [[ -n "${conda_bin}" ]]; then
+        exec_cmd=("${conda_bin}" "run" "--name" "${CONDA_ENV_NAME}" "python")
     else
-        exec_cmd=("conda" "run" "--name" "${CONDA_ENV_NAME}" "python")
+        exec_cmd=("python")
     fi
 
     local -a pids=()

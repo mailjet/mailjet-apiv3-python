@@ -86,8 +86,14 @@ def test_conda_meta_yaml_optional_httpx2_and_git_describe_tag() -> None:
     source_files = re.search(r"\n  source_files:\n(.*?)(?=\n  requires:)", meta, flags=re.DOTALL)
     assert source_files is not None
     sf_block = source_files.group(1)
+    assert "- pyproject.toml" in sf_block
     assert "- tests/fuzz/" in sf_block
     assert "tests/fuzz/fuzz_*.py" not in sf_block
+    assert "GIT_DESCRIBE_NUMBER" in meta
+    assert "SETUPTOOLS_SCM_PRETEND_VERSION" in meta
+
+    manage_src = (REPO_ROOT / "manage.sh").read_text(encoding="utf-8")
+    assert "*/envs/*/bin/conda" in manage_src
 
 
 def test_conda_environment_files_clean_of_selectors_and_aligned_with_pyproject() -> None:

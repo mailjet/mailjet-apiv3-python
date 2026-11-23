@@ -2,11 +2,12 @@
 {% set project = pyproject['project'] %}
 
 {% set name = project['name'] %}
-{% set git_tag = environ.get('GIT_DESCRIBE_TAG', '').lstrip('v') %}
+{% set pretend_ver = environ.get('SETUPTOOLS_SCM_PRETEND_VERSION', '').lstrip('v') %}
+{% set git_tag = environ.get('GIT_DESCRIBE_TAG', '').lstrip('v') if environ.get('GIT_DESCRIBE_NUMBER', '0') == '0' else '' %}
 {% set version_match = load_file_regex(
   load_file=name.replace('-', '_') + "/_version.py",
   regex_pattern='__version__ = "(.+)"') %}
-{% set version = git_tag or version_match[1] %}
+{% set version = pretend_ver or git_tag or version_match[1] %}
 
 package:
   name: {{ name|lower }}
@@ -44,6 +45,7 @@ test:
     - mailjet_rest.webhooks
   source_files:
     - .clusterfuzzlite/build.sh
+    - pyproject.toml
     - scripts/
     - tests/__init__.py
     - tests/fuzz/
