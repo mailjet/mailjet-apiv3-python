@@ -460,32 +460,38 @@ def test_smoke_readme_runner_executes_under_cp1252_encoding(tmp_path: Path) -> N
     assert "UnicodeEncodeError" not in proc.stderr
 
 
-def test_manage_sh_fuzz_all_defaults_to_cpu_count_and_runs_all_waves(tmp_path: Path) -> None:
-    """manage.sh fuzz_all must default concurrency to nproc (not 3), validate FUZZ_JOBS, and log [i/N] progress."""
+def test_manage_sh_fuzz_all_launches_all_fuzzers_by_default_and_honors_fuzz_jobs(tmp_path: Path) -> None:
+    """manage.sh fuzz_all must launch all fuzzers concurrently by default, honor FUZZ_JOBS, and validate it."""
     manage_src = (REPO_ROOT / "manage.sh").read_text(encoding="utf-8")
+    assert 'max_jobs="${FUZZ_JOBS:-${total_fuzzers}}"' in manage_src
     assert "FUZZ_JOBS:-3" not in manage_src
+    assert "kill -0" in manage_src
+
+    if sys.platform == "win32":
+        return
 
     sandbox = tmp_path / "repo"
     fuzz_dir = sandbox / "tests" / "fuzz"
     fuzz_dir.mkdir(parents=True)
-    (fuzz_dir / "fuzzer.dict").write_text('token_a="abc"\n', encoding="utf-8")
+    (fuzz_dir / "fuzzer.dict").write_text('token_a="abc"\n', encoding="utf-8", newline="\n")
 
     manage_copy = sandbox / "manage.sh"
-    manage_copy.write_text(manage_src, encoding="utf-8")
+    manage_copy.write_text(manage_src, encoding="utf-8", newline="\n")
     manage_copy.chmod(0o755)
 
-    for idx in range(1, 6):
+    for idx in range(1, 7):
         (fuzz_dir / f"fuzz_0{idx}.py").write_text(
             "import pathlib, sys, time\n"
-            "time.sleep(0.12)\n"
+            "time.sleep(0.15)\n"
             "pathlib.Path('ran.ok').write_text(sys.argv[0], encoding='utf-8')\n",
             encoding="utf-8",
+            newline="\n",
         )
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     nproc_bin = bin_dir / "nproc"
-    nproc_bin.write_text("#!/usr/bin/env bash\necho 5\n", encoding="utf-8")
+    nproc_bin.write_text("#!/usr/bin/env bash\necho 2\n", encoding="utf-8", newline="\n")
     nproc_bin.chmod(0o755)
 
     py_bin = bin_dir / "python"
@@ -496,6 +502,7 @@ def test_manage_sh_fuzz_all_defaults_to_cpu_count_and_runs_all_waves(tmp_path: P
         "fi\n"
         f'exec {shlex.quote(sys.executable)} "$@"\n',
         encoding="utf-8",
+        newline="\n",
     )
     py_bin.chmod(0o755)
 
@@ -503,7 +510,7 @@ def test_manage_sh_fuzz_all_defaults_to_cpu_count_and_runs_all_waves(tmp_path: P
     base_env["PATH"] = f"{bin_dir}:{base_env.get('PATH', '')}"
     base_env.pop("FUZZ_JOBS", None)
 
-    # Case A: FUZZ_JOBS unset -> defaults to nproc (5) and launches all 5 with [i/5] progress
+    # Case A: FUZZ_JOBS unset -> ignores nproc=2 and launches all 6 fuzzers concurrently
     proc_a = subprocess.run(
         ["bash", str(manage_copy), "fuzz_all", "1"],
         cwd=str(sandbox),
@@ -514,13 +521,13 @@ def test_manage_sh_fuzz_all_defaults_to_cpu_count_and_runs_all_waves(tmp_path: P
         check=False,
     )
     assert proc_a.returncode == 0, f"Case A failed:\nSTDOUT:\n{proc_a.stdout}\nSTDERR:\n{proc_a.stderr}"
-    assert "max parallel jobs: 5" in proc_a.stdout
-    for idx in range(1, 6):
-        assert f"[{idx}/5] Running fuzzer: fuzz_0{idx}" in proc_a.stdout
+    assert "max parallel jobs: 6" in proc_a.stdout
+    for idx in range(1, 7):
+        assert f"[{idx}/6] Running fuzzer: fuzz_0{idx}" in proc_a.stdout
         assert (sandbox / "logs" / f"fuzz_0{idx}" / "ran.ok").is_file()
         (sandbox / "logs" / f"fuzz_0{idx}" / "ran.ok").unlink()
 
-    # Case B: FUZZ_JOBS=2 -> completes all 5 fuzzers across 3 waves
+    # Case B: FUZZ_JOBS=2 -> completes all 6 fuzzers across 3 waves
     env_b = base_env.copy()
     env_b["FUZZ_JOBS"] = "2"
     proc_b = subprocess.run(
@@ -534,7 +541,7 @@ def test_manage_sh_fuzz_all_defaults_to_cpu_count_and_runs_all_waves(tmp_path: P
     )
     assert proc_b.returncode == 0, f"Case B failed:\nSTDOUT:\n{proc_b.stdout}\nSTDERR:\n{proc_b.stderr}"
     assert "max parallel jobs: 2" in proc_b.stdout
-    for idx in range(1, 6):
+    for idx in range(1, 7):
         assert (sandbox / "logs" / f"fuzz_0{idx}" / "ran.ok").is_file()
 
     # Case C: FUZZ_JOBS=0 -> fails fast with validation message
